@@ -106,7 +106,7 @@ extract_source_files_from_requirements() {
             while (match(line, /`[^`]+`/)) {
                 token = substr(line, RSTART + 1, RLENGTH - 2)
                 sub(/^\.\//, "", token)
-                if (token ~ /^[A-Za-z0-9._\/-]+\.(sh|py|swift|sql|c|cc|cpp|cxx|m|mm|h|hpp)$/ || token == "Makefile" || token == ".gitignore") {
+                if (token ~ /^[A-Za-z0-9._\/-]+\.(sh|py|swift|sql|c|cc|cpp|cxx|m|mm|h|hpp)$/ || token == ".gitignore") {
                     print token
                 }
                 line = substr(line, RSTART + RLENGTH)
@@ -138,7 +138,7 @@ import sys
 search_root = sys.argv[1]
 stem = sys.argv[2]
 allowed_exts = {"sh", "py", "swift", "sql", "c", "cc", "cpp", "cxx", "m", "mm", "h", "hpp"}
-allowed_stems = {"Makefile", ".gitignore"}
+allowed_stems = {".gitignore"}
 matches = []
 
 if os.path.isdir(search_root):
@@ -248,8 +248,6 @@ for source_file in source_files:
     source_norm = source_file.replace("\\", "/")
     if ext == ".sh":
         add_path(f"testing/sh/{stem}.bats", "default")
-    if base == "Makefile":
-        add_path("testing/Makefile.bats", "default")
     if ext == ".py":
         add_path(f"testing/sh/{stem}.bats", "default")
     if ext == ".sql":

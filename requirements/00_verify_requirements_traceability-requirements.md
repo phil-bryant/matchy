@@ -60,10 +60,9 @@ Tests:
 - Point it back to matching `NN_` source and verify alignment pass output.
 
 R050  Statement: Discover candidate test files for each requirements document.
-Design: Infer test files from requirements path and scoped source conventions, including shell Bats lanes and Makefile-mapped Bats coverage.
+Design: Infer test files from requirements path and scoped source conventions, including shell Bats lanes.
 Tests:
-- Verify shell-script requirements discover matching `Tests/sh/*.bats` candidates.
-- Verify top-level `Makefile` requirements discover `Tests/sh/Makefile.bats`.
+- Verify shell-script requirements discover matching `testing/sh/*.bats` candidates.
 - Verify Swift requirements discover `Tests/*Tests.swift` candidates without duplicate symlink entries.
 
 R055  Statement: Detect requirement IDs that require UI-lane test coverage.
@@ -88,7 +87,7 @@ Tests:
 - 2026-05-12: Updated wording to Matchy-oriented Bats discovery language (removed copied Piston/SwiftPM phrasing).
 - 2026-05-09: Updated traceability-tag test placeholder to use a ShellCheck-safe always-pass assertion (`true`) instead of SC2050 tautologies.
 - 2026-05-07: Reswizzled discovery conventions for Piston (`Tests/sh` + SwiftPM `Tests/`) and removed email app-specific paths.
-- 2026-05-06: Added test discovery convention for top-level `Makefile` requirements mapping to `Tests/sh/Makefile.bats`.
+- 2026-05-12: Removed Makefile-specific test discovery convention; traceability now follows numbered scripts and shell test lanes.
 - 2026-04-24: Added numbered script coverage enforcement for `NN_` script/requirements parity.
 - 2026-04-24: Added `NN_` requirements-to-source prefix alignment enforcement.
 - 2026-04-25: Added requirement-to-test traceability enforcement with contextual Swift UI lane policy.
