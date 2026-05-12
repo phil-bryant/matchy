@@ -122,6 +122,10 @@ print_tool_header \
   "https://pypi.org/project/pip-audit/"
 echo "Report: ${REPORT_DIR}/pip-audit.json"
 echo "▶ Running pip-audit"
+#R045: Use an isolated pip cache path so stale global cache entries cannot trigger cachecontrol deserialization warnings.
+PIP_CACHE_DIR="${REPORT_DIR}/.pip-cache"
+mkdir -p "${PIP_CACHE_DIR}"
+export PIP_CACHE_DIR
 if [ -f "./requirements.txt" ]; then
   pip-audit -r "./requirements.txt" --format json --output "${REPORT_DIR}/pip-audit.json" || true
 else

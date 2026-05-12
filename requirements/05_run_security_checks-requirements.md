@@ -49,7 +49,14 @@ Design: Emit operator-facing lane start indicators like `▶ Running ShellCheck`
 Tests:
  - Run script with stubbed tools and verify output includes `▶ Running ShellCheck`.
 
+R045  Statement: Isolate pip-audit cache to prevent stale cache deserialization warnings without suppressing output.
+Design: Set and export `PIP_CACHE_DIR` to a run-local path under `${SECURITY_REPORT_DIR:-./.security-reports}` before invoking `pip-audit`.
+Tests:
+ - Stub `pip-audit` to record `PIP_CACHE_DIR` and verify it points to `${REPORT_DIR}/.pip-cache`.
+ - Verify the cache directory is created and pip-audit output remains visible (no `/dev/null` suppression for the lane).
+
 ## Changelog
 
+- 2026-05-12: Added isolated pip-audit cache requirement to prevent cachecontrol deserialization warnings without suppression.
 - 2026-05-12: Expanded Matchy security lanes to include detect-secrets, ruff, bandit, and pip-audit.
 - 2026-05-12: Added requirements for standardized tool headers and running indicators.

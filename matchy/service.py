@@ -4,7 +4,7 @@ import re
 from sqlalchemy import text
 
 from .ai_ranker import AiRanker, PROMPT_VERSION
-from .email_client import EmailClient
+from .mailcart_client import MailcartClient
 from .repository import MatchRepository
 from .scoring import rank_candidates
 from .settings import Settings
@@ -14,7 +14,7 @@ class MatchService:
     def __init__(self, settings: Settings):
         self._settings = settings
         self._repository = MatchRepository(settings)
-        self._email_client = EmailClient(settings)
+        self._mailcart_client = MailcartClient(settings)
         self._ai_ranker = AiRanker(settings)
 
     def match_transaction(self, transaction_id: str, trigger_source: str = "manual") -> dict:
@@ -31,7 +31,7 @@ class MatchService:
             )
             try:
                 query = self._build_query(txn.description, txn.counterparty_name)
-                candidates = self._email_client.search_candidates(query=query, limit=75)
+                candidates = self._mailcart_client.search_candidates(query=query, limit=75)
                 active_ids = set(
                     row["email_message_id"]
                     for row in session.execute(

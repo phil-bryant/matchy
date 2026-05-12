@@ -34,9 +34,9 @@ isProject: false
   - API: [`/Users/phil/local/src/teller/teller/teller_classification_api.py`](/Users/phil/local/src/teller/teller/teller_classification_api.py)
   - macOS UI: [`/Users/phil/local/src/teller/macos-ui/Sources/TransactionClassifier/ClassificationViewModel.swift`](/Users/phil/local/src/teller/macos-ui/Sources/TransactionClassifier/ClassificationViewModel.swift)
 - Email search/read and UI bridge exist here:
-  - Bridge API: [`/Users/phil/local/src/email/macos_app/Bridge/OutlookClientBridge.h`](/Users/phil/local/src/email/macos_app/Bridge/OutlookClientBridge.h)
-  - DTOs: [`/Users/phil/local/src/email/macos_app/Bridge/OutlookBridgeModels.h`](/Users/phil/local/src/email/macos_app/Bridge/OutlookBridgeModels.h)
-  - Current auth scope is `Mail.Read` in [`/Users/phil/local/src/email/README.md`](/Users/phil/local/src/email/README.md) (must expand to write scope for folder moves).
+  - Bridge API: [`/Users/phil/local/src/mailcart/macos_app/Bridge/OutlookClientBridge.h`](/Users/phil/local/src/mailcart/macos_app/Bridge/OutlookClientBridge.h)
+  - DTOs: [`/Users/phil/local/src/mailcart/macos_app/Bridge/OutlookBridgeModels.h`](/Users/phil/local/src/mailcart/macos_app/Bridge/OutlookBridgeModels.h)
+  - Current auth scope is `Mail.Read` in [`/Users/phil/local/src/mailcart/README.md`](/Users/phil/local/src/mailcart/README.md) (must expand to write scope for folder moves).
 
 ## Target Data Model (In Teller DB)
 Add new tables under `teller` schema:
@@ -107,10 +107,10 @@ Extend existing transaction classifier UX patterns:
   - Mark intentionally no-email (keeps explicit unresolved marker)
 - Reuse write-token guarded mutating endpoints pattern from [`/Users/phil/local/src/teller/teller/teller_classification_api.py`](/Users/phil/local/src/teller/teller/teller_classification_api.py).
 
-## Email Repo Changes
+## Mailcart Repo Changes
 - Add message move support to Outlook bridge/client layers (new bridge method and C++ gateway implementation).
 - Ensure folder existence logic for `matchy` (create-once if missing, then cache folder id).
-- Update Graph scopes from read-only to include write capability and update docs in [`/Users/phil/local/src/email/README.md`](/Users/phil/local/src/email/README.md).
+- Update Graph scopes from read-only to include write capability and update docs in [`/Users/phil/local/src/mailcart/README.md`](/Users/phil/local/src/mailcart/README.md).
 - Keep Email UI as an operator aid (open/read context) but do final confirmation in Teller UI.
 
 ## Migration And Rollout

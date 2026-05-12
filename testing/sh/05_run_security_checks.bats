@@ -56,3 +56,23 @@ EOF
   pip_audit_args="$(<"${FIXTURE_ROOT}/pip-audit-args.txt")"
   [[ "$pip_audit_args" == *"requirements.txt"* ]]
 }
+
+@test "uses isolated pip-audit cache directory to avoid stale-cache warnings" {
+  #R045: pip-audit cache isolation is enforced without output suppression.
+  stub_cmd shellcheck "printf '[]'; exit 0"
+  stub_cmd semgrep "while [ \$# -gt 0 ]; do if [ \"\$1\" = \"--output\" ]; then printf '{\"results\":[]}' > \"\$2\"; fi; shift; done; exit 0"
+  stub_cmd gitleaks "while [ \$# -gt 0 ]; do if [ \"\$1\" = \"--report-path\" ]; then printf '[]' > \"\$2\"; fi; shift; done; exit 0"
+  stub_cmd detect-secrets "printf '{\"results\":{}}'; exit 0"
+  stub_cmd ruff "printf '[]'; exit 0"
+  stub_cmd bandit "while [ \$# -gt 0 ]; do if [ \"\$1\" = \"-o\" ]; then printf '{\"results\":[]}' > \"\$2\"; fi; shift; done; exit 0"
+  stub_cmd pip-audit "printf '%s' \"\$PIP_CACHE_DIR\" > \"${FIXTURE_ROOT}/pip-cache-dir.txt\"; while [ \$# -gt 0 ]; do if [ \"\$1\" = \"--output\" ]; then printf '{\"dependencies\":[]}' > \"\$2\"; fi; shift; done; exit 0"
+  cat > "${FIXTURE_ROOT}/requirements.txt" <<'EOF'
+requests>=2.34.0
+EOF
+  run bash "${FIXTURE_ROOT}/05_run_security_checks.sh"
+  [ "$status" -eq 0 ]
+  [ -d "${FIXTURE_ROOT}/.security-reports/.pip-cache" ]
+  pip_cache_dir="$(<"${FIXTURE_ROOT}/pip-cache-dir.txt")"
+  [ "$pip_cache_dir" = "./.security-reports/.pip-cache" ]
+  [[ "$output" == *"▶ Running pip-audit"* ]]
+}

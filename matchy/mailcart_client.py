@@ -8,10 +8,10 @@ from .models import EmailCandidate
 from .settings import Settings
 
 
-class EmailClient:
+class MailcartClient:
     def __init__(self, settings: Settings):
-        self._base = settings.email_service_base_url.rstrip("/")
-        self._token = settings.email_service_token
+        self._base = settings.mailcart_service_base_url.rstrip("/")
+        self._token = settings.mailcart_service_token
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
