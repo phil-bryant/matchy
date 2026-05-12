@@ -1,0 +1,11 @@
+#R001: Ignore local build artifacts.
+.build/
+#R005: Ignore IDE-specific local metadata.
+DerivedData/
+*.xcuserdatad/
+*.xcuserstate
+#R010: Keep source and package metadata trackable (no ignore rule for source or Package.swift).
+#R015: Ignore policy supports cached removals for already-tracked artifacts.
+#R020: Ensure ignored build outputs remain untracked in git index.
+#R025: Ignore security report artifacts and generated caches.
+.security-reports/

@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "matchy"
+version = "0.1.0"
+description = "Transaction to email matching worker"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi",
+  "openai",
+  "psycopg2-binary",
+  "sqlalchemy",
+  "uvicorn",
+  "requests",
+]
+
+[tool.setuptools]
+packages = ["matchy"]

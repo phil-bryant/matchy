@@ -1,0 +1,6 @@
+fastapi
+openai
+psycopg2-binary
+sqlalchemy
+uvicorn
+requests
