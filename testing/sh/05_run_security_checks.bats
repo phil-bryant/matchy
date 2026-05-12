@@ -20,6 +20,8 @@ teardown() {
   #R020: Semgrep report generation behavior.
   #R025: Gitleaks report generation behavior.
   #R030: Completion line contains report directory.
+  #R035: Standardized tool header format is emitted per lane.
+  #R040: Running indicators are emitted before each lane executes.
   run env PATH="/usr/bin:/bin" bash "${FIXTURE_ROOT}/05_run_security_checks.sh"
   [ "$status" -ne 0 ]
   [[ "$output" == *"Missing required command: shellcheck"* ]]
@@ -29,9 +31,28 @@ teardown() {
   stub_cmd shellcheck "printf '[]'; exit 0"
   stub_cmd semgrep "while [ \$# -gt 0 ]; do if [ \"\$1\" = \"--output\" ]; then printf '{\"results\":[]}' > \"\$2\"; fi; shift; done; exit 0"
   stub_cmd gitleaks "while [ \$# -gt 0 ]; do if [ \"\$1\" = \"--report-path\" ]; then printf '[]' > \"\$2\"; fi; shift; done; exit 0"
+  stub_cmd detect-secrets "printf '{\"results\":{}}'; exit 0"
+  stub_cmd ruff "printf '[]'; exit 0"
+  stub_cmd bandit "printf '%s' \"\$*\" > \"${FIXTURE_ROOT}/bandit-args.txt\"; while [ \$# -gt 0 ]; do if [ \"\$1\" = \"-o\" ]; then printf '{\"results\":[]}' > \"\$2\"; fi; shift; done; exit 0"
+  stub_cmd pip-audit "printf '%s' \"\$*\" > \"${FIXTURE_ROOT}/pip-audit-args.txt\"; while [ \$# -gt 0 ]; do if [ \"\$1\" = \"--output\" ]; then printf '{\"dependencies\":[]}' > \"\$2\"; fi; shift; done; exit 0"
+  cat > "${FIXTURE_ROOT}/requirements.txt" <<'EOF'
+requests>=2.34.0
+EOF
   run bash "${FIXTURE_ROOT}/05_run_security_checks.sh"
   [ "$status" -eq 0 ]
+  [[ "$output" == *"+==============================================================================+"* ]]
+  [[ "$output" == *"Security Tool: ShellCheck"* ]]
+  [[ "$output" == *"▶ Running ShellCheck"* ]]
   [ -f "${FIXTURE_ROOT}/.security-reports/shellcheck.json" ]
   [ -f "${FIXTURE_ROOT}/.security-reports/semgrep.json" ]
   [ -f "${FIXTURE_ROOT}/.security-reports/gitleaks.json" ]
+  [ -f "${FIXTURE_ROOT}/.security-reports/detect-secrets.json" ]
+  [ -f "${FIXTURE_ROOT}/.security-reports/ruff.json" ]
+  [ -f "${FIXTURE_ROOT}/.security-reports/bandit.json" ]
+  [ -f "${FIXTURE_ROOT}/.security-reports/pip-audit.json" ]
+  bandit_args="$(<"${FIXTURE_ROOT}/bandit-args.txt")"
+  [[ "$bandit_args" != *"./matchy-venv"* ]]
+  [[ "$bandit_args" == *"./matchy"* ]]
+  pip_audit_args="$(<"${FIXTURE_ROOT}/pip-audit-args.txt")"
+  [[ "$pip_audit_args" == *"requirements.txt"* ]]
 }

@@ -15,7 +15,7 @@ Tests:
 - Run with `brew` unavailable and verify clear failure guidance.
 
 R010  Statement: Ensure required CLI formulas are available for Matchy workflows.
-Design: Install/check `shellcheck`, `semgrep`, `gitleaks`, and `bats` (via `bats-core`) through Homebrew.
+Design: Install/check `shellcheck`, `semgrep`, `gitleaks`, `detect-secrets`, `ruff`, `bandit`, `pip-audit`, and `bats` (via `bats-core`) through Homebrew.
 Tests:
  - Run without these commands and verify Homebrew install attempts.
  - Rerun with tools already present and verify idempotent success.

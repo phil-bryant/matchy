@@ -31,6 +31,10 @@ ensure_formula() {
 ensure_formula shellcheck
 ensure_formula semgrep
 ensure_formula gitleaks
+ensure_formula detect-secrets
+ensure_formula ruff
+ensure_formula bandit
+ensure_formula pip-audit
 ensure_formula bats-core bats
 
 #R030: Treat 1psa as optional advisory, not a hard requirement.
