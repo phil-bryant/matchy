@@ -9,3 +9,8 @@ DerivedData/
 #R020: Ensure ignored build outputs remain untracked in git index.
 #R025: Ignore security report artifacts and generated caches.
 .security-reports/
+#R025: Ignore Python bytecode caches generated during local runs.
+__pycache__/
+*.pyc
+#R025: Ignore local recovery stash for safe artifact moves.
+.trash/
