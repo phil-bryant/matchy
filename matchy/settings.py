@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class Settings:
+    teller_db_password_item: str = os.environ.get("TELLER_DB_PASSWORD_1PSA_ITEM", "localhost_postgres_teller")
     teller_db_host: str = os.environ.get("TELLER_DB_HOST", "localhost")
     teller_db_port: int = int(os.environ.get("TELLER_DB_PORT", "5432"))
     teller_db_name: str = os.environ.get("TELLER_DB_NAME", "prod")
@@ -18,3 +20,42 @@ class Settings:
     auto_confirm_threshold: float = float(os.environ.get("MATCHY_AUTO_CONFIRM_THRESHOLD", "0.90"))
     write_enabled: bool = os.environ.get("MATCHY_WRITE_ENABLED", "true").lower() == "true"
     email_move_enabled: bool = os.environ.get("MATCHY_EMAIL_MOVE_ENABLED", "false").lower() == "true"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "teller_db_password", self._resolve_teller_db_password())
+
+    def _resolve_teller_db_password(self) -> str:
+        #R001: Resolve Teller DB password from 1psa using default item name when no override is provided.
+        secret_ref = os.environ.get("TELLER_DB_PASSWORD_1PSA_REF", "").strip()
+        if not secret_ref:
+            secret_ref = self.teller_db_password_item
+        #R005: Support both item-name and op:// references in 1psa lookups.
+        password = self._load_secret_from_1psa(secret_ref)
+        return password
+
+    def _load_secret_from_1psa(self, secret_ref: str) -> str:
+        #R010: Raise clear runtime failures when 1psa cannot return a usable secret.
+        output = ""
+        command = ["1psa", "-p", secret_ref]
+        if secret_ref.startswith("op://"):
+            command = ["1psa", "read", secret_ref]
+        try:
+            completed = subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            output = completed.stdout.strip()
+        except FileNotFoundError as exc:
+            raise RuntimeError("TELLER_DB_PASSWORD_1PSA_REF is set but 1psa is not installed or not on PATH") from exc
+        except subprocess.CalledProcessError as exc:
+            detail = exc.stderr.strip() if exc.stderr else "unknown 1psa error"
+            if ("Forbidden" in detail or "auth/start" in detail) and os.environ.get("OP_SERVICE_ACCOUNT_TOKEN", "").strip():
+                raise RuntimeError(
+                    "1psa authentication failed for OP_SERVICE_ACCOUNT_TOKEN; verify token validity and secret access."
+                ) from exc
+            raise RuntimeError(f"1psa failed to resolve TELLER_DB_PASSWORD_1PSA_REF: {detail}") from exc
+        if not output:
+            raise RuntimeError("1psa returned an empty secret for TELLER_DB_PASSWORD_1PSA_REF")
+        return output

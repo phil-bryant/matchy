@@ -22,7 +22,7 @@ class AiRanker:
         if self._client is None:
             top = ranked_candidates[:2]
             return AiSelection(
-                selected_message_ids=[row.candidate.message_id for row in top if row.score >= 0.65],
+                selected_message_ids=[row.candidate.message_id for row in top if row.score >= 0.60],
                 confidence=top[0].score if top else 0.0,
                 uncertain=(top[0].score < 0.9),
                 rationale="OpenAI key unavailable; used deterministic fallback.",

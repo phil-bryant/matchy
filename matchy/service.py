@@ -31,7 +31,27 @@ class MatchService:
             )
             try:
                 query = self._build_query(txn.description, txn.counterparty_name)
-                candidates = self._mailcart_client.search_candidates(query=query, limit=75)
+                candidates = []
+                try:
+                    candidates = self._mailcart_client.search_candidates(query=query, limit=75)
+                except Exception:
+                    candidates = []
+                if not candidates:
+                    broad_query = self._build_broad_query(txn.description, txn.counterparty_name)
+                    try:
+                        candidates = self._mailcart_client.search_candidates(query=broad_query, limit=75)
+                    except Exception:
+                        candidates = []
+                if not candidates and "doordash" in (txn.description or "").lower():
+                    try:
+                        candidates = self._mailcart_client.search_candidates(query="doordash", limit=75)
+                    except Exception:
+                        candidates = []
+                if not candidates:
+                    try:
+                        candidates = self._mailcart_client.search_candidates(query="", limit=75)
+                    except Exception:
+                        candidates = []
                 active_ids = set(
                     row["email_message_id"]
                     for row in session.execute(
@@ -41,8 +61,10 @@ class MatchService:
                               FROM teller.transaction_email_match
                              WHERE active = TRUE
                                AND email_message_id IS NOT NULL
+                               AND transaction_id <> :transaction_id
                             """
-                        )
+                        ),
+                        {"transaction_id": transaction_id},
                     ).mappings().all()
                 )
                 ranked = rank_candidates(txn, candidates, already_matched_ids=active_ids)
@@ -75,7 +97,22 @@ class MatchService:
         }
 
     def _build_query(self, description: str, counterparty_name: str) -> str:
-        text = f"{description} {counterparty_name}".strip()
-        compact = re.sub(r"\s+", " ", text)
-        parts = compact.split(" ")
-        return " ".join(parts[:8])
+        raw = f"{counterparty_name} {description}".lower()
+        normalized = re.sub(r"[^a-z0-9\s]", " ", raw)
+        tokens = [token for token in normalized.split(" ") if len(token) >= 4 and not token.isdigit()]
+        if not tokens:
+            return ""
+        return " ".join(tokens[:3])
+
+    def _build_broad_query(self, description: str, counterparty_name: str) -> str:
+        raw = f"{counterparty_name} {description}".lower()
+        normalized = re.sub(r"[^a-z0-9\s]", " ", raw)
+        tokens = [token for token in normalized.split(" ") if len(token) >= 4 and not token.isdigit()]
+        specific_tokens = [token for token in tokens if token not in {"doordash", "doordashcom"}]
+        if specific_tokens:
+            return specific_tokens[0]
+        if "doordash" in tokens:
+            return "doordash"
+        if tokens:
+            return tokens[0]
+        return ""

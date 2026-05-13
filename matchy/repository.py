@@ -54,7 +54,7 @@ class MatchRepository:
              LEFT JOIN teller.transaction_details td
                     ON td.transaction_details_id = tt.transaction_details_id
              LEFT JOIN teller.transaction_details_counterparty tdc
-                    ON tdc.transaction_details_counterparty_id = td.counterparty_id
+                    ON tdc.transaction_details_counterparty_id = td.transaction_details_counterparty_id
                  WHERE tt.transaction_id = :transaction_id
                  LIMIT 1
                 """
@@ -160,6 +160,18 @@ class MatchRepository:
         selected = []
         now = datetime.now(tz=timezone.utc)
         selected_ids = set(ai_selection.selected_message_ids)
+        session.execute(
+            text(
+                """
+                UPDATE teller.transaction_email_match
+                   SET active = FALSE,
+                       updated_at = CURRENT_TIMESTAMP
+                 WHERE transaction_id = :transaction_id
+                   AND active = TRUE
+                """
+            ),
+            {"transaction_id": transaction_id},
+        )
 
         if not ranked_candidates or not selected_ids:
             session.execute(

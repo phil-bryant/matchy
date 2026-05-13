@@ -24,7 +24,7 @@ teardown() {
 @test "run script loads app and uses deterministic bind settings" {
   #R001: Script is an executable Python entrypoint.
   #R005: uvicorn bind host/port are deterministic for local runs.
-  run env PYTHONPATH="${FIXTURE_ROOT}" python3 "${FIXTURE_ROOT}/07_run_matchy_api.py"
+  run env MATCHY_PORT_GUARD="false" PYTHONPATH="${FIXTURE_ROOT}" python3 "${FIXTURE_ROOT}/07_run_matchy_api.py"
   [ "$status" -eq 0 ]
   [[ "$output" == *"host=127.0.0.1"* ]]
   [[ "$output" == *"port=8790"* ]]

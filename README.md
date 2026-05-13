@@ -7,7 +7,7 @@ Matchy starts from Teller transactions and finds candidate Outlook emails, then 
 1. Install dependencies:
    - `python3 -m pip install -e .`
 2. Set required environment variables:
-   - `TELLER_DB_PASSWORD`
+   - Teller DB password is resolved via `1psa` (default item: `localhost_postgres_teller`; optional override: `TELLER_DB_PASSWORD_1PSA_REF`)
    - `MAILCART_SERVICE_BASE_URL`
    - `MAILCART_SERVICE_TOKEN` (optional if Mailcart is running without auth)
    - `OPENAI_API_KEY` (optional; fallback deterministic mode if unset)
