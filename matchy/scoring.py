@@ -7,6 +7,7 @@ from decimal import Decimal
 from .models import EmailCandidate, RankedCandidate, TransactionInput
 
 
+ #R001: Normalize text inputs to lowercase alphanumeric tokens for stable overlap scoring.
 def _normalized_text(value: str) -> str:
     lowered = value.lower()
     return re.sub(r"[^a-z0-9\s]", " ", lowered)
@@ -75,6 +76,7 @@ def _time_proximity_score(txn_time: datetime, received_at: datetime) -> float:
     return 0.1
 
 
+ #R005: Rank candidates by weighted heuristics and return results sorted by descending score.
 def rank_candidates(transaction: TransactionInput, candidates: list[EmailCandidate], already_matched_ids: set[str]) -> list[RankedCandidate]:
     ranked: list[RankedCandidate] = []
     for item in candidates:

@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# Numbered traceability tags: #R001-T01 #R005-T01 #R010-T01 #R015-T01 #R015-T02 #R020-T01 #R025-T01 #R030-T01
 
 load "helpers/common.bash"
 

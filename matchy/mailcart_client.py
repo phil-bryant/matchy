@@ -13,12 +13,14 @@ class MailcartClient:
         self._base = settings.mailcart_service_base_url.rstrip("/")
         self._token = settings.mailcart_service_token
 
+    #R001: Include bearer authorization only when a service token is configured.
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
         return headers
 
+    #R005: Convert message search payload rows into EmailCandidate values and drop rows without message IDs.
     def search_candidates(self, query: str, limit: int = 50) -> list[EmailCandidate]:
         response = requests.get(
             f"{self._base}/v1/messages/search",

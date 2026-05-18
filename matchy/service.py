@@ -17,6 +17,7 @@ class MatchService:
         self._mailcart_client = MailcartClient(settings)
         self._ai_ranker = AiRanker(settings)
 
+    #R001: Raise a ValueError when a requested transaction cannot be loaded.
     def match_transaction(self, transaction_id: str, trigger_source: str = "manual") -> dict:
         with self._repository.session() as session:
             txn = self._repository.load_transaction(session, transaction_id)
@@ -96,6 +97,7 @@ class MatchService:
             "uncertain": ai_selection.uncertain,
         }
 
+    #R005: Build search queries from normalized, non-numeric tokens with deterministic truncation.
     def _build_query(self, description: str, counterparty_name: str) -> str:
         raw = f"{counterparty_name} {description}".lower()
         normalized = re.sub(r"[^a-z0-9\s]", " ", raw)

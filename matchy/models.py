@@ -5,6 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 
 
+#R001: Keep transaction inputs immutable once instantiated.
 @dataclass(frozen=True)
 class TransactionInput:
     transaction_id: str
@@ -29,6 +30,7 @@ class EmailCandidate:
 class RankedCandidate:
     candidate: EmailCandidate
     score: float
+    #R005: Initialize ranking reasons with a per-instance dict default to avoid shared mutable state.
     reasons: dict = field(default_factory=dict)
 
 

@@ -13,6 +13,7 @@ from .settings import Settings
 
 
 class MatchRepository:
+    #R001: Refuse repository initialization when Teller DB credentials are unavailable.
     def __init__(self, settings: Settings):
         if not settings.teller_db_password:
             raise RuntimeError("TELLER_DB_PASSWORD is required for matchy writes")
@@ -28,6 +29,7 @@ class MatchRepository:
         )
         self._session_factory = sessionmaker(bind=self._engine)
 
+    #R005: Commit successful unit-of-work sessions and rollback on failures.
     @contextmanager
     def session(self):
         session = self._session_factory()

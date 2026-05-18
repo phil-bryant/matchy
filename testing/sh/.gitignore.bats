@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# Numbered traceability tags: #R001-T01 #R005-T01 #R010-T01 #R015-T01 #R020-T01 #R025-T01
 
 @test ".build artifacts are ignored and hidden from git status" {
   #R001: Build output must be ignored recursively.

@@ -35,10 +35,12 @@ def create_app() -> FastAPI:
                 ) from exc
         return service
 
+    #R001: Publish a health endpoint that always returns an ok status payload.
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    #R005: Translate unknown transactions from service ValueError into HTTP 404 responses.
     @app.post("/v1/matchy/runs", response_model=MatchRunResponse)
     def run_matches(request: MatchRunRequest) -> MatchRunResponse:
         rows: list[dict] = []
