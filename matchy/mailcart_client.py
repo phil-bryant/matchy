@@ -46,6 +46,24 @@ class MailcartClient:
             )
         return [item for item in result if item.message_id]
 
+    #R010: Fetch a single Mailcart message envelope (subject/sender/body) so callers can enrich
+    #R010: search candidates with the full body. Returns the raw payload dict from Mailcart's
+    #R010: GET /v1/messages/{id} endpoint, or an empty dict when the upstream returns a 404
+    #R010: (so a per-id miss does not abort enrichment of the whole candidate list).
+    def get_message(self, message_id: str) -> dict:
+        if not message_id:
+            return {}
+        response = requests.get(
+            f"{self._base}/v1/messages/{message_id}",
+            headers=self._headers(),
+            timeout=20,
+        )
+        if response.status_code == 404:
+            return {}
+        response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
+
     def move_to_matchy(self, message_id: str) -> bool:
         response = requests.post(
             f"{self._base}/v1/messages/{message_id}/move",

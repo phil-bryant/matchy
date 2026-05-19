@@ -108,7 +108,11 @@ class MatchRepository:
             {"model_name": model_name, "match_run_id": run_id},
         )
 
-    #R010: Return deterministic pending transaction IDs for active-unmatched rows within a lookback window.
+    #R010: Return deterministic pending transaction IDs for any transaction within the lookback window
+    #R010: whose active match is not in a settled state. Settled = high-confidence AI match,
+    #R010: human-confirmed match, human-overridden match, or human-marked no-email
+    #R010: (state='ai_no_match_found' with selected_by='human'). Everything else — never matched,
+    #R010: AI-only "no match found", or "candidate uncertain" — is re-queued so matchy retries it.
     def list_pending_transaction_ids(self, session, limit: int = 100, lookback_days: int = 14) -> list[str]:
         rows = session.execute(
             text(
@@ -118,8 +122,12 @@ class MatchRepository:
              LEFT JOIN teller.transaction_email_match tem
                     ON tem.transaction_id = tt.transaction_id
                    AND tem.active = TRUE
-                 WHERE tem.match_id IS NULL
-                   AND tt.date >= CURRENT_DATE - (:lookback_days * INTERVAL '1 day')
+                 WHERE tt.date >= CURRENT_DATE - (:lookback_days * INTERVAL '1 day')
+                   AND (
+                       tem.match_id IS NULL
+                       OR tem.state::text = 'ai_candidate_uncertain'
+                       OR (tem.state::text = 'ai_no_match_found' AND tem.selected_by::text = 'ai')
+                   )
                  ORDER BY tt.date DESC, tt.transaction_id ASC
                  LIMIT :limit
                 """
@@ -127,6 +135,70 @@ class MatchRepository:
             {"lookback_days": lookback_days, "limit": limit},
         ).mappings().all()
         return [str(row["transaction_id"]) for row in rows]
+
+    #R015: Read the most recent match_run for a transaction plus the candidate id set that run scored.
+    #R015: Used by MatchService to decide whether the AI call is necessary on this iteration; if the
+    #R015: previous run was a real evaluation under the same model+prompt with the same candidate id
+    #R015: set as the current search returns, calling Claude again would be a guaranteed no-op.
+    def read_last_run_summary(self, session, transaction_id: str) -> dict | None:
+        run_row = session.execute(
+            text(
+                """
+                SELECT match_run_id, status::text AS status, model_name, prompt_version
+                  FROM teller.transaction_email_match_run
+                 WHERE transaction_id = :transaction_id
+                 ORDER BY match_run_id DESC
+                 LIMIT 1
+                """
+            ),
+            {"transaction_id": transaction_id},
+        ).mappings().fetchone()
+        if run_row is None:
+            return None
+        candidate_rows = session.execute(
+            text(
+                """
+                SELECT email_message_id
+                  FROM teller.transaction_email_candidate
+                 WHERE match_run_id = :match_run_id
+                """
+            ),
+            {"match_run_id": run_row["match_run_id"]},
+        ).mappings().all()
+        return {
+            "match_run_id": int(run_row["match_run_id"]),
+            "status": str(run_row["status"]),
+            "model_name": str(run_row["model_name"]),
+            "prompt_version": str(run_row["prompt_version"]),
+            "candidate_message_ids": [str(row["email_message_id"]) for row in candidate_rows],
+        }
+
+    #R015: Read the active match row so service callers can echo the cached AI decision back to clients
+    #R015: when they short-circuit on a cache hit (no new AI evaluation was performed this iteration).
+    def read_active_match_summary(self, session, transaction_id: str) -> dict | None:
+        row = session.execute(
+            text(
+                """
+                SELECT match_id, email_message_id, state::text AS state,
+                       ai_confidence, selected_by::text AS selected_by
+                  FROM teller.transaction_email_match
+                 WHERE transaction_id = :transaction_id
+                   AND active = TRUE
+                 LIMIT 1
+                """
+            ),
+            {"transaction_id": transaction_id},
+        ).mappings().fetchone()
+        if row is None:
+            return None
+        confidence = row.get("ai_confidence")
+        return {
+            "match_id": int(row["match_id"]),
+            "email_message_id": row.get("email_message_id"),
+            "state": str(row["state"]),
+            "selected_by": str(row["selected_by"]),
+            "ai_confidence": float(confidence) if confidence is not None else None,
+        }
 
     def insert_candidates(self, session, match_run_id: int, transaction_id: str, candidates: list[RankedCandidate], ai_selected_ids: set[str]) -> None:
         for ranked in candidates:

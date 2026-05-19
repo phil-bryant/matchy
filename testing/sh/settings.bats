@@ -126,3 +126,40 @@ exit 5'
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
+
+@test "mailcart body enrichment flags default to enabled and limit 75" {
+  #R030: Default Mailcart body-enrichment feature flag is enabled with a sane default limit.
+  #R030-T01: Verify mailcart_body_enrichment_enabled is True and limit is 75 with no env overrides.
+  stub_1psa_routed 'case "$2" in localhost_postgres_teller) echo "secret-teller"; exit 0 ;; esac; exit 7'
+  run env PYTHONPATH="$(repo_root)" TELLER_DB_PASSWORD="" TELLER_DB_PASSWORD_1PSA_REF="" ANTHROPIC_API_KEY="" OPENAI_API_KEY="" MATCHY_MAILCART_BODY_ENRICHMENT="" MATCHY_MAILCART_BODY_ENRICHMENT_LIMIT="" "${SETTINGS_PROBE}" mailcart_body_enrichment_enabled
+  [ "$status" -eq 0 ]
+  [ "$output" = "True" ]
+  run env PYTHONPATH="$(repo_root)" TELLER_DB_PASSWORD="" TELLER_DB_PASSWORD_1PSA_REF="" ANTHROPIC_API_KEY="" OPENAI_API_KEY="" "${SETTINGS_PROBE}" mailcart_body_enrichment_limit
+  [ "$status" -eq 0 ]
+  [ "$output" = "75" ]
+}
+
+@test "default anthropic_model is the dated stable id and respects env override" {
+  #R035: Anthropic model defaults to a pinned dated id; env var overrides it.
+  #R035-T01: Verify default anthropic_model is claude-sonnet-4-5.
+  #R035-T02: Verify MATCHY_ANTHROPIC_MODEL override is respected.
+  stub_1psa_routed 'case "$2" in localhost_postgres_teller) echo "secret-teller"; exit 0 ;; esac; exit 7'
+  run env PYTHONPATH="$(repo_root)" TELLER_DB_PASSWORD="" TELLER_DB_PASSWORD_1PSA_REF="" ANTHROPIC_API_KEY="" OPENAI_API_KEY="" MATCHY_ANTHROPIC_MODEL="" "${SETTINGS_PROBE}" anthropic_model
+  [ "$status" -eq 0 ]
+  [ "$output" = "claude-sonnet-4-5" ]
+  run env PYTHONPATH="$(repo_root)" TELLER_DB_PASSWORD="" TELLER_DB_PASSWORD_1PSA_REF="" ANTHROPIC_API_KEY="" OPENAI_API_KEY="" MATCHY_ANTHROPIC_MODEL="claude-opus-x" "${SETTINGS_PROBE}" anthropic_model
+  [ "$status" -eq 0 ]
+  [ "$output" = "claude-opus-x" ]
+}
+
+@test "mailcart body enrichment flags honor env overrides" {
+  #R030: Mailcart body-enrichment env overrides flip the flag and resize the limit.
+  #R030-T02: Verify MATCHY_MAILCART_BODY_ENRICHMENT=false and ..._LIMIT=10 are reflected on Settings.
+  stub_1psa_routed 'case "$2" in localhost_postgres_teller) echo "secret-teller"; exit 0 ;; esac; exit 7'
+  run env PYTHONPATH="$(repo_root)" TELLER_DB_PASSWORD="" TELLER_DB_PASSWORD_1PSA_REF="" ANTHROPIC_API_KEY="" OPENAI_API_KEY="" MATCHY_MAILCART_BODY_ENRICHMENT="false" MATCHY_MAILCART_BODY_ENRICHMENT_LIMIT="10" "${SETTINGS_PROBE}" mailcart_body_enrichment_enabled
+  [ "$status" -eq 0 ]
+  [ "$output" = "False" ]
+  run env PYTHONPATH="$(repo_root)" TELLER_DB_PASSWORD="" TELLER_DB_PASSWORD_1PSA_REF="" ANTHROPIC_API_KEY="" OPENAI_API_KEY="" MATCHY_MAILCART_BODY_ENRICHMENT="false" MATCHY_MAILCART_BODY_ENRICHMENT_LIMIT="10" "${SETTINGS_PROBE}" mailcart_body_enrichment_limit
+  [ "$status" -eq 0 ]
+  [ "$output" = "10" ]
+}

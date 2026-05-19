@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Numbered traceability tags: #R001-T01 #R005-T01 #R010-T01
+# Numbered traceability tags: #R001-T01 #R005-T01 #R010-T01 #R010-T02 #R015-T01 #R015-T02
 
 @test "repository initialization fails without teller db password" {
   #R001: Repository rejects missing teller_db_password.
@@ -80,6 +80,119 @@ class FakeSession:
 repo = object.__new__(MatchRepository)
 rows = repo.list_pending_transaction_ids(FakeSession(), limit=4, lookback_days=3)
 print(rows == ["txn_1", "txn_2"])
+PY
+  [ "$status" -eq 0 ]
+  [ "$output" = "True" ]
+}
+
+@test "repository read_last_run_summary returns run + candidate id set" {
+  #R015: read_last_run_summary returns the newest run plus its persisted candidate id set.
+  #R015-T01: Verify the helper returns the run summary + candidate ids; returns None when no runs.
+  run env PYTHONPATH="$(pwd)" "$(pwd)/matchy-venv/bin/python3" - <<'PY'
+from matchy.repository import MatchRepository
+
+class FakeResult:
+    def __init__(self, row=None, rows=None):
+        self._row = row
+        self._rows = rows or []
+    def mappings(self): return self
+    def fetchone(self): return self._row
+    def all(self): return self._rows
+
+class FakeSession:
+    def __init__(self, results):
+        self._results = list(results)
+    def execute(self, *_args, **_kwargs):
+        return self._results.pop(0)
+
+session_with_runs = FakeSession([
+    FakeResult(row={"match_run_id": 42, "status": "succeeded", "model_name": "claude-sonnet-4-5", "prompt_version": "v1"}),
+    FakeResult(rows=[{"email_message_id": "m1"}, {"email_message_id": "m2"}]),
+])
+session_empty = FakeSession([FakeResult(row=None)])
+repo = object.__new__(MatchRepository)
+out = repo.read_last_run_summary(session_with_runs, "txn_1")
+empty = repo.read_last_run_summary(session_empty, "txn_missing")
+checks = [
+    out == {"match_run_id": 42, "status": "succeeded", "model_name": "claude-sonnet-4-5",
+            "prompt_version": "v1", "candidate_message_ids": ["m1", "m2"]},
+    empty is None,
+]
+print(all(checks))
+PY
+  [ "$status" -eq 0 ]
+  [ "$output" = "True" ]
+}
+
+@test "repository read_active_match_summary returns active row or None" {
+  #R015: read_active_match_summary returns the active match row metadata for cache-hit responses.
+  #R015-T02: Verify it returns the dict shape and handles the no-active-row case.
+  run env PYTHONPATH="$(pwd)" "$(pwd)/matchy-venv/bin/python3" - <<'PY'
+from decimal import Decimal
+from matchy.repository import MatchRepository
+
+class FakeResult:
+    def __init__(self, row):
+        self._row = row
+    def mappings(self): return self
+    def fetchone(self): return self._row
+
+class FakeSession:
+    def __init__(self, results):
+        self._results = list(results)
+    def execute(self, *_args, **_kwargs):
+        return self._results.pop(0)
+
+session_with = FakeSession([FakeResult({"match_id": 7, "email_message_id": "m9", "state": "ai_match_confident",
+                                        "ai_confidence": Decimal("0.9500"), "selected_by": "ai"})])
+session_empty = FakeSession([FakeResult(None)])
+repo = object.__new__(MatchRepository)
+out = repo.read_active_match_summary(session_with, "txn_1")
+empty = repo.read_active_match_summary(session_empty, "txn_missing")
+checks = [
+    out == {"match_id": 7, "email_message_id": "m9", "state": "ai_match_confident",
+            "selected_by": "ai", "ai_confidence": 0.95},
+    empty is None,
+]
+print(all(checks))
+PY
+  [ "$status" -eq 0 ]
+  [ "$output" = "True" ]
+}
+
+@test "repository pending transaction query re-queues unsettled but skips human-authoritative rows" {
+  #R010: Pending discovery re-queues AI-only no-match and uncertain rows.
+  #R010-T02: Verify the SQL predicate includes the re-queue clauses for AI-only verdicts.
+  run env PYTHONPATH="$(pwd)" "$(pwd)/matchy-venv/bin/python3" - <<'PY'
+from matchy.repository import MatchRepository
+
+class FakeResult:
+    def mappings(self):
+        return self
+    def all(self):
+        return []
+
+class CapturingSession:
+    def __init__(self):
+        self.statements = []
+    def execute(self, statement, params=None):
+        self.statements.append((str(statement), dict(params or {})))
+        return FakeResult()
+
+repo = object.__new__(MatchRepository)
+session = CapturingSession()
+repo.list_pending_transaction_ids(session, limit=10, lookback_days=14)
+sql, params = session.statements[0]
+checks = [
+    "ai_candidate_uncertain" in sql,
+    "ai_no_match_found" in sql,
+    "selected_by::text = 'ai'" in sql,
+    "tem.match_id IS NULL" in sql,
+    "human_confirmed_ai_match" not in sql,
+    "human_overrode_ai_match" not in sql,
+    params == {"lookback_days": 14, "limit": 10},
+]
+print(all(checks))
 PY
   [ "$status" -eq 0 ]
   [ "$output" = "True" ]

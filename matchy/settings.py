@@ -15,11 +15,25 @@ class Settings:
     teller_db_password: str = os.environ.get("TELLER_DB_PASSWORD", "")
     mailcart_service_base_url: str = os.environ.get("MAILCART_SERVICE_BASE_URL", "http://127.0.0.1:8788")
     mailcart_service_token: str = os.environ.get("MAILCART_SERVICE_TOKEN", "")
+    #R030: Enrich search candidates with the full Mailcart message body before scoring so amount/keyword
+    #R030: hints can match against the email body (not just bodyPreview). Disable when callers want the
+    #R030: legacy preview-only behavior for performance or determinism reasons. Empty env var values
+    #R030: collapse to the default so `MATCHY_MAILCART_BODY_ENRICHMENT=""` behaves the same as unset.
+    mailcart_body_enrichment_enabled: bool = (
+        (os.environ.get("MATCHY_MAILCART_BODY_ENRICHMENT") or "true").strip().lower() == "true"
+    )
+    mailcart_body_enrichment_limit: int = int(
+        (os.environ.get("MATCHY_MAILCART_BODY_ENRICHMENT_LIMIT") or "75").strip() or "75"
+    )
     anthropic_api_key_item: str = os.environ.get("MATCHY_ANTHROPIC_API_KEY_1PSA_ITEM", "anthropic_api_key")
     openai_api_key_item: str = os.environ.get("MATCHY_OPENAI_API_KEY_1PSA_ITEM", "openai_api_key")
     anthropic_api_key: str = os.environ.get("ANTHROPIC_API_KEY", "")
     openai_api_key: str = os.environ.get("OPENAI_API_KEY", "")
-    anthropic_model: str = os.environ.get("MATCHY_ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
+    #R035: Default Anthropic model. The `-latest` aliases (e.g., `claude-3-5-sonnet-latest`) were
+    #R035: deprecated by Anthropic and now return 404 when called. Pin a dated/stable model id so the
+    #R035: AI ranker keeps working out of the box; callers can override via `MATCHY_ANTHROPIC_MODEL`.
+    #R035: Empty env values collapse to the default so `MATCHY_ANTHROPIC_MODEL=""` behaves like unset.
+    anthropic_model: str = (os.environ.get("MATCHY_ANTHROPIC_MODEL") or "claude-sonnet-4-5").strip() or "claude-sonnet-4-5"
     openai_model: str = os.environ.get("MATCHY_OPENAI_MODEL", "gpt-4.1-mini")
     auto_confirm_threshold: float = float(os.environ.get("MATCHY_AUTO_CONFIRM_THRESHOLD", "0.90"))
     write_enabled: bool = os.environ.get("MATCHY_WRITE_ENABLED", "true").lower() == "true"

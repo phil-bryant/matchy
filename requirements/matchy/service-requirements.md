@@ -19,7 +19,28 @@ Design: Load pending transaction ids from repository lookback query and invoke `
 Tests:
 - R010-T01: Stub pending id discovery and verify `match_pending_transactions` delegates each id to `match_transaction`.
 
+R025  Statement: `match_pending_transactions` tolerates per-transaction failures.
+Design: A single transaction's exception (transient Anthropic 429, Mailcart blip, Graph error, etc.) MUST NOT abort the rest of the batch. Each entry in the returned list either reflects a real evaluation, a cache hit, or `{error: <message>, selected_message_ids: [], uncertain: True, ...}`. `mark_run_failed` has already recorded the per-row failure in the DB, so the next driver loop naturally retries that transaction.
+Tests:
+- R025-T01: Inject a `match_transaction` that raises on the second transaction and verify the batch still returns three entries (with the failing entry carrying `error`), and the third transaction was still processed.
+
+R020  Statement: Skip the AI evaluation when nothing has changed since the previous run for the transaction.
+Design: `match_transaction` runs the Mailcart search up-front (before creating a new `match_run` row) and computes a deterministic SHA-256 fingerprint of the candidate id set. It then queries `read_last_run_summary` for the most recent `match_run`, and short-circuits with `skipped=True` when (a) the last run's `status` is a completed AI evaluation (`succeeded`, `needs_review`, or `no_candidates`), (b) its `model_name` matches `AiRanker.planned_model_name()`, (c) its `prompt_version` equals `PROMPT_VERSION`, and (d) its candidate id set hashes to the same value as the current search. The skipped response echoes the active `transaction_email_match` row's `email_message_id`/`ai_confidence`/`state` so callers get parity with a fresh evaluation. Failed runs are NOT cache-eligible so transient Mailcart/Anthropic errors self-heal on the next loop. The cache lives entirely in Postgres so taking matchy up and down does not re-pay AI cost.
+Tests:
+- R020-T01: Seed a prior `succeeded` run whose model+prompt+candidate id set matches the current search and verify `match_transaction` returns `skipped=True`, no new `match_run` row is created, and the AI ranker is not invoked.
+- R020-T02: Change one candidate id (or change the model/prompt) and verify `match_transaction` proceeds to a full AI evaluation that creates a new `match_run` row.
+- R020-T03: Seed a prior `failed` run and verify the cache check refuses the short-circuit so transient errors retry.
+
+R015  Statement: Enrich search candidates with the full Mailcart message body before scoring so amount, keyword, and compact-merchant hints can match against the real email body.
+Design: `_enrich_candidate_bodies` iterates the candidate list returned from any `search_candidates(...)` call, fetches each candidate's full body via `MailcartClient.get_message(message_id)`, and replaces the candidate's `body_text` with the upstream `text_body` (or `html_body` if no plain-text body) before invoking `rank_candidates`. Behavior is gated by `settings.mailcart_body_enrichment_enabled` (default `True`) and bounded by `settings.mailcart_body_enrichment_limit` (default `75`). Per-id Mailcart failures and empty bodies fall through to the original candidate so a flaky or missing message does not poison the whole run. Older Mailcart clients without `get_message` are no-ops.
+Tests:
+- R015-T01: Stub a `MailcartClient` whose `get_message` returns a body for one id and a 404 for another; verify the enriched candidate carries the new `body_text` while the un-enriched candidate retains its original preview-only `body_text`.
+- R015-T02: Disable `mailcart_body_enrichment_enabled` via settings and verify candidates pass through unchanged (no `get_message` calls).
+
 ## Changelog
 
 - 2026-05-18: Added service requirements coverage for missing transaction and query construction behavior.
 - 2026-05-18: Added R010 pending batch-matching requirements for driver orchestration.
+- 2026-05-19: Added R015 candidate-body enrichment so scoring can disambiguate same-day same-merchant transactions whose fare appears only in the email body (Lyft, Uber, food delivery, etc.).
+- 2026-05-19: Added R020 Postgres-backed cache so matchy skips redundant AI evaluations when the candidate id set and model+prompt are unchanged since the previous run, keeping the auto-driver's per-loop cost bounded to a single Mailcart search.
+- 2026-05-19: Added R025 per-transaction error tolerance in `match_pending_transactions` so a single 429/blip does not abort the whole batch.

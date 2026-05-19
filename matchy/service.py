@@ -1,16 +1,23 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from sqlalchemy import text
 
 from .ai_ranker import AiRanker, PROMPT_VERSION
 from .mailcart_client import MailcartClient
+from .models import EmailCandidate
 from .repository import MatchRepository
 from .scoring import rank_candidates
 from .settings import Settings
 
 LOGGER = logging.getLogger(__name__)
+
+#R020: Statuses that represent a completed AI evaluation; only these are cache-eligible. `failed`
+#R020: runs are NOT in this set so transient errors (Mailcart down, Anthropic 404, etc.) self-heal
+#R020: on the next loop instead of being permanently cached as no-ops.
+_CACHE_HIT_STATUSES = frozenset({"succeeded", "needs_review", "no_candidates"})
 
 
 class MatchService:
@@ -21,45 +28,36 @@ class MatchService:
         self._ai_ranker = AiRanker(settings)
 
     #R001: Raise a ValueError when a requested transaction cannot be loaded.
+    #R020: Run the Mailcart search up-front and skip the AI call when nothing meaningful has changed
+    #R020: since the previous run (same candidate id set under the same model + prompt version). This
+    #R020: keeps the matchy auto-driver's per-loop cost bounded to a single Mailcart search per
+    #R020: transaction instead of also paying for per-candidate body fetches and a Claude/GPT call.
     def match_transaction(self, transaction_id: str, trigger_source: str = "manual") -> dict:
         with self._repository.session() as session:
             txn = self._repository.load_transaction(session, transaction_id)
             if txn is None:
                 raise ValueError(f"Unknown transaction_id: {transaction_id}")
+            candidates = self._search_candidates(txn, transaction_id)
+            planned_model = self._ai_ranker.planned_model_name()
+            current_hash = self._candidate_set_hash([c.message_id for c in candidates])
+            cached_response = self._maybe_cached_response(
+                session=session,
+                transaction_id=transaction_id,
+                candidates=candidates,
+                planned_model=planned_model,
+                current_hash=current_hash,
+            )
+            if cached_response is not None:
+                return cached_response
             run_id = self._repository.create_run(
                 session=session,
                 transaction_id=transaction_id,
                 trigger_source=trigger_source,
-                model_name=self._ai_ranker.planned_model_name(),
+                model_name=planned_model,
                 prompt_version=PROMPT_VERSION,
             )
             try:
-                query = self._build_query(txn.description, txn.counterparty_name)
-                candidates = []
-                try:
-                    candidates = self._mailcart_client.search_candidates(query=query, limit=75)
-                except Exception as exc:
-                    LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", query, transaction_id, exc)
-                    candidates = []
-                if not candidates:
-                    broad_query = self._build_broad_query(txn.description, txn.counterparty_name)
-                    try:
-                        candidates = self._mailcart_client.search_candidates(query=broad_query, limit=75)
-                    except Exception as exc:
-                        LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", broad_query, transaction_id, exc)
-                        candidates = []
-                if not candidates and "doordash" in (txn.description or "").lower():
-                    try:
-                        candidates = self._mailcart_client.search_candidates(query="doordash", limit=75)
-                    except Exception as exc:
-                        LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", "doordash", transaction_id, exc)
-                        candidates = []
-                if not candidates:
-                    try:
-                        candidates = self._mailcart_client.search_candidates(query="", limit=75)
-                    except Exception as exc:
-                        LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", "", transaction_id, exc)
-                        candidates = []
+                candidates = self._enrich_candidate_bodies(candidates, transaction_id=transaction_id)
                 active_ids = set(
                     row["email_message_id"]
                     for row in session.execute(
@@ -103,9 +101,109 @@ class MatchService:
             "candidate_count": len(candidates),
             "ai_confidence": ai_selection.confidence,
             "uncertain": ai_selection.uncertain,
+            "skipped": False,
         }
 
-    #R010: Discover pending transactions and run each through match_transaction with the caller-specified trigger source.
+    #R020: Execute the existing 4-step search fallback chain (specific → broad → doordash → empty)
+    #R020: without yet creating a match_run row. Mailcart search errors are swallowed so a transient
+    #R020: Mailcart blip still allows the cache check to decide whether the last run's verdict stands.
+    def _search_candidates(self, txn, transaction_id: str) -> list[EmailCandidate]:
+        query = self._build_query(txn.description, txn.counterparty_name)
+        candidates: list[EmailCandidate] = []
+        try:
+            candidates = self._mailcart_client.search_candidates(query=query, limit=75)
+        except Exception as exc:
+            LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", query, transaction_id, exc)
+            candidates = []
+        if not candidates:
+            broad_query = self._build_broad_query(txn.description, txn.counterparty_name)
+            try:
+                candidates = self._mailcart_client.search_candidates(query=broad_query, limit=75)
+            except Exception as exc:
+                LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", broad_query, transaction_id, exc)
+                candidates = []
+        if not candidates and "doordash" in (txn.description or "").lower():
+            try:
+                candidates = self._mailcart_client.search_candidates(query="doordash", limit=75)
+            except Exception as exc:
+                LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", "doordash", transaction_id, exc)
+                candidates = []
+        if not candidates:
+            try:
+                candidates = self._mailcart_client.search_candidates(query="", limit=75)
+            except Exception as exc:
+                LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", "", transaction_id, exc)
+                candidates = []
+        return candidates
+
+    #R020: Decide whether the previous AI verdict still applies. Returns a cached response dict (the
+    #R020: same shape as a fresh evaluation, with `skipped=True`) when all of these hold:
+    #R020:   - a prior run exists,
+    #R020:   - its status was a real completed evaluation (`_CACHE_HIT_STATUSES`),
+    #R020:   - its model_name matches what the current ranker would use,
+    #R020:   - its prompt_version matches the current `PROMPT_VERSION`, and
+    #R020:   - its candidate id set is byte-identical (after sorting) to the current search result.
+    #R020: Returns None to indicate the caller should fall through to the full AI pipeline.
+    def _maybe_cached_response(
+        self,
+        session,
+        transaction_id: str,
+        candidates: list[EmailCandidate],
+        planned_model: str,
+        current_hash: str,
+    ) -> dict | None:
+        last_summary = self._repository.read_last_run_summary(session, transaction_id)
+        if last_summary is None:
+            return None
+        if last_summary["status"] not in _CACHE_HIT_STATUSES:
+            return None
+        if last_summary["model_name"] != planned_model:
+            return None
+        if last_summary["prompt_version"] != PROMPT_VERSION:
+            return None
+        cached_hash = self._candidate_set_hash(last_summary["candidate_message_ids"])
+        if cached_hash != current_hash:
+            return None
+        active = self._repository.read_active_match_summary(session, transaction_id) or {}
+        selected_ids: list[str] = []
+        active_email_id = active.get("email_message_id")
+        if active_email_id and active.get("state") != "ai_no_match_found":
+            selected_ids = [str(active_email_id)]
+        LOGGER.info(
+            "matchy cache hit transaction_id=%s last_run_id=%s candidates=%d model=%s prompt=%s",
+            transaction_id,
+            last_summary["match_run_id"],
+            len(candidates),
+            planned_model,
+            PROMPT_VERSION,
+        )
+        return {
+            "transaction_id": transaction_id,
+            "run_id": last_summary["match_run_id"],
+            "selected_message_ids": selected_ids,
+            "candidate_count": len(candidates),
+            "ai_confidence": active.get("ai_confidence") if active else None,
+            "uncertain": None,
+            "skipped": True,
+            "skip_reason": "candidate_set_unchanged_for_model_and_prompt",
+            "state": active.get("state") if active else None,
+        }
+
+    #R020: Deterministic, order-independent fingerprint of the candidate id set. We sort first so a
+    #R020: shuffled order from Mailcart doesn't masquerade as a real change.
+    @staticmethod
+    def _candidate_set_hash(message_ids: list[str]) -> str:
+        digest = hashlib.sha256()
+        for message_id in sorted(str(item) for item in message_ids):
+            digest.update(message_id.encode("utf-8"))
+            digest.update(b"\n")
+        return digest.hexdigest()
+
+    #R010: Discover pending transactions and run each through match_transaction with the caller-specified
+    #R010: trigger source.
+    #R025: A single transaction's failure (e.g., transient Anthropic 429, Mailcart blip) must NOT abort
+    #R025: the rest of the batch — each error is captured into the result row, mark_run_failed has
+    #R025: already recorded the failure in the DB, and the next driver loop will retry that transaction.
     def match_pending_transactions(self, limit: int = 100, lookback_days: int = 14, trigger_source: str = "auto") -> list[dict]:
         with self._repository.session() as session:
             transaction_ids = self._repository.list_pending_transaction_ids(
@@ -115,8 +213,70 @@ class MatchService:
             )
         results: list[dict] = []
         for transaction_id in transaction_ids:
-            results.append(self.match_transaction(transaction_id=transaction_id, trigger_source=trigger_source))
+            try:
+                results.append(self.match_transaction(transaction_id=transaction_id, trigger_source=trigger_source))
+            except Exception as exc:
+                LOGGER.warning(
+                    "matchy batch entry failed transaction_id=%s error=%s",
+                    transaction_id, exc,
+                )
+                results.append({
+                    "transaction_id": transaction_id,
+                    "run_id": None,
+                    "selected_message_ids": [],
+                    "candidate_count": 0,
+                    "ai_confidence": 0.0,
+                    "uncertain": True,
+                    "skipped": False,
+                    "error": str(exc),
+                })
         return results
+
+    #R015: Replace each candidate's body_text with the full email body fetched from Mailcart so that
+    #R015: amount/keyword/compact-merchant hints can score against the real message body. Returns the
+    #R015: original candidates unchanged when the feature flag is off or when the client is missing
+    #R015: get_message (older Mailcart deployments). Per-candidate failures fall through to the
+    #R015: original candidate so a flaky message id does not poison the whole run.
+    def _enrich_candidate_bodies(self, candidates: list[EmailCandidate], transaction_id: str) -> list[EmailCandidate]:
+        if not candidates:
+            return candidates
+        if not getattr(self._settings, "mailcart_body_enrichment_enabled", False):
+            return candidates
+        get_message = getattr(self._mailcart_client, "get_message", None)
+        if not callable(get_message):
+            return candidates
+        limit = int(getattr(self._settings, "mailcart_body_enrichment_limit", 75) or 75)
+        enriched: list[EmailCandidate] = []
+        for index, candidate in enumerate(candidates):
+            if index >= limit:
+                enriched.extend(candidates[index:])
+                break
+            try:
+                payload = get_message(candidate.message_id) or {}
+            except Exception as exc:
+                LOGGER.warning(
+                    "mailcart get_message failed message_id=%s transaction_id=%s error=%s",
+                    candidate.message_id, transaction_id, exc,
+                )
+                enriched.append(candidate)
+                continue
+            body_text = (
+                str(payload.get("text_body") or "").strip()
+                or str(payload.get("html_body") or "").strip()
+                or str(payload.get("body_text") or "").strip()
+            )
+            if not body_text:
+                enriched.append(candidate)
+                continue
+            enriched.append(EmailCandidate(
+                message_id=candidate.message_id,
+                subject=candidate.subject or str(payload.get("subject") or ""),
+                preview=candidate.preview or str(payload.get("preview") or ""),
+                received_at=candidate.received_at,
+                sender=candidate.sender or str(payload.get("sender") or ""),
+                body_text=body_text,
+            ))
+        return enriched
 
     #R005: Build search queries from normalized, non-numeric tokens with deterministic truncation.
     def _build_query(self, description: str, counterparty_name: str) -> str:
