@@ -96,6 +96,38 @@ class MatchRepository:
             ).scalar_one()
         )
 
+    def update_run_model_name(self, session, run_id: int, model_name: str) -> None:
+        session.execute(
+            text(
+                """
+                UPDATE teller.transaction_email_match_run
+                   SET model_name = :model_name
+                 WHERE match_run_id = :match_run_id
+                """
+            ),
+            {"model_name": model_name, "match_run_id": run_id},
+        )
+
+    #R010: Return deterministic pending transaction IDs for active-unmatched rows within a lookback window.
+    def list_pending_transaction_ids(self, session, limit: int = 100, lookback_days: int = 14) -> list[str]:
+        rows = session.execute(
+            text(
+                """
+                SELECT tt.transaction_id
+                  FROM teller.transaction tt
+             LEFT JOIN teller.transaction_email_match tem
+                    ON tem.transaction_id = tt.transaction_id
+                   AND tem.active = TRUE
+                 WHERE tem.match_id IS NULL
+                   AND tt.date >= CURRENT_DATE - (:lookback_days * INTERVAL '1 day')
+                 ORDER BY tt.date DESC, tt.transaction_id ASC
+                 LIMIT :limit
+                """
+            ),
+            {"lookback_days": lookback_days, "limit": limit},
+        ).mappings().all()
+        return [str(row["transaction_id"]) for row in rows]
+
     def insert_candidates(self, session, match_run_id: int, transaction_id: str, candidates: list[RankedCandidate], ai_selected_ids: set[str]) -> None:
         for ranked in candidates:
             session.execute(

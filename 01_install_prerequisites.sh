@@ -44,10 +44,3 @@ fi
 
 #R025: Print next-step guidance for local Matchy workflow.
 echo "✅ Prerequisites complete."
-echo "Next commands:"
-echo "- ./02_create_venv.sh"
-echo "- ./03_load_requirements.sh"
-echo "- ./04_run_unit_tests.sh"
-echo "- ./05_run_security_checks.sh"
-echo "- ./06_run_av_checks.sh"
-echo "- ./07_run_matchy_api.py"

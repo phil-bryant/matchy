@@ -45,7 +45,14 @@ class AiRanker:
     def select(self, transaction: TransactionInput, ranked_candidates: list[RankedCandidate]) -> AiSelection:
         selection: AiSelection
         if not ranked_candidates:
-            selection = AiSelection(selected_message_ids=[], confidence=0.0, uncertain=True, rationale="No candidates found.")
+            selection = AiSelection(
+                selected_message_ids=[],
+                confidence=0.0,
+                uncertain=True,
+                rationale="No candidates found.",
+                backend="none",
+                model_name="none:no_candidates",
+            )
         elif self._anthropic_client is not None:
             selection = self._select_with_anthropic(transaction, ranked_candidates)
         elif self._openai_client is not None:
@@ -53,6 +60,14 @@ class AiRanker:
         else:
             selection = self._select_deterministic(ranked_candidates)
         return selection
+
+    def planned_model_name(self) -> str:
+        model_name = "deterministic"
+        if self._anthropic_client is not None:
+            model_name = self._settings.anthropic_model
+        if self._anthropic_client is None and self._openai_client is not None:
+            model_name = self._settings.openai_model
+        return model_name
 
     #R001: Fallback to deterministic top-candidate selection when no AI client is available.
     def _select_deterministic(self, ranked_candidates: list[RankedCandidate]) -> AiSelection:
@@ -62,6 +77,8 @@ class AiRanker:
             confidence=top[0].score if top else 0.0,
             uncertain=(top[0].score < 0.9) if top else True,
             rationale="No AI key available via 1psa or env; used deterministic fallback.",
+            backend="deterministic",
+            model_name="deterministic",
         )
 
     def _build_prompt_payload(self, transaction: TransactionInput, ranked_candidates: list[RankedCandidate]) -> dict:
@@ -134,4 +151,6 @@ class AiRanker:
             confidence=float(parsed.get("confidence", 0.0)),
             uncertain=bool(parsed.get("uncertain", True)),
             rationale=str(parsed.get("rationale", f"No rationale provided by {backend}.")),
+            backend=backend,
+            model_name=self._settings.anthropic_model if backend == "anthropic" else self._settings.openai_model,
         )

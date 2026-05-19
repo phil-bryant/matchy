@@ -1,4 +1,4 @@
-anthropic
+anthropic==0.103.0
 click==8.4.0
 fastapi
 idna==3.15

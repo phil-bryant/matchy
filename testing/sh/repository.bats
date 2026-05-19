@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Numbered traceability tags: #R001-T01 #R005-T01
+# Numbered traceability tags: #R001-T01 #R005-T01 #R010-T01
 
 @test "repository initialization fails without teller db password" {
   #R001: Repository rejects missing teller_db_password.
@@ -56,6 +56,30 @@ except RuntimeError:
     pass
 second = sessions[-1]
 print(ok and second.commits == 0 and second.rollbacks == 1 and second.closed == 1)
+PY
+  [ "$status" -eq 0 ]
+  [ "$output" = "True" ]
+}
+
+@test "repository pending transaction query returns ordered transaction ids" {
+  #R010: Pending transaction id discovery returns string IDs from active-unmatched lookback query.
+  #R010-T01: Verify list_pending_transaction_ids reads rows and returns transaction_id values.
+  run env PYTHONPATH="$(pwd)" "$(pwd)/matchy-venv/bin/python3" - <<'PY'
+from matchy.repository import MatchRepository
+
+class FakeResult:
+    def mappings(self):
+        return self
+    def all(self):
+        return [{"transaction_id": "txn_1"}, {"transaction_id": "txn_2"}]
+
+class FakeSession:
+    def execute(self, *_args, **_kwargs):
+        return FakeResult()
+
+repo = object.__new__(MatchRepository)
+rows = repo.list_pending_transaction_ids(FakeSession(), limit=4, lookback_days=3)
+print(rows == ["txn_1", "txn_2"])
 PY
   [ "$status" -eq 0 ]
   [ "$output" = "True" ]

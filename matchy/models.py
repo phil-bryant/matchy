@@ -40,3 +40,5 @@ class AiSelection:
     confidence: float
     uncertain: bool
     rationale: str
+    backend: str = "deterministic"
+    model_name: str = "deterministic"

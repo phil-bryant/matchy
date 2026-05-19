@@ -17,6 +17,11 @@ class MatchRunRequest(BaseModel):
 class MatchRunResponse(BaseModel):
     results: list[dict]
 
+class PendingMatchRunRequest(BaseModel):
+    limit: int = Field(default=100, ge=1, le=500)
+    lookback_days: int = Field(default=14, ge=1, le=365)
+    trigger_source: Literal["auto", "manual", "retry"] = "auto"
+
 
 def create_app() -> FastAPI:
     app = FastAPI(title="matchy")
@@ -49,6 +54,16 @@ def create_app() -> FastAPI:
                 rows.append(_service().match_transaction(transaction_id=transaction_id, trigger_source=request.trigger_source))
             except ValueError as exc:
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return MatchRunResponse(results=rows)
+
+    #R010: Publish a pending-transaction batch endpoint for driver-triggered matching runs.
+    @app.post("/v1/matchy/runs/pending", response_model=MatchRunResponse)
+    def run_pending_matches(request: PendingMatchRunRequest) -> MatchRunResponse:
+        rows = _service().match_pending_transactions(
+            limit=request.limit,
+            lookback_days=request.lookback_days,
+            trigger_source=request.trigger_source,
+        )
         return MatchRunResponse(results=rows)
 
     return app

@@ -14,6 +14,12 @@ Design: Catch `ValueError` raised by match execution and translate it to `HTTPEx
 Tests:
 - R005-T01: Stub service lookup failure and verify `/v1/matchy/runs` returns 404.
 
+R010  Statement: Expose pending-transaction batch endpoint for driver-triggered runs.
+Design: Register `POST /v1/matchy/runs/pending`, validate request fields, and delegate to service pending matcher.
+Tests:
+- R010-T01: Stub pending matcher and verify endpoint returns delegated rows with request values.
+
 ## Changelog
 
 - 2026-05-18: Added API requirements coverage for run and health paths.
+- 2026-05-18: Added R010 pending-run endpoint requirements for external driver workflows.

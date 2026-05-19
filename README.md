@@ -10,15 +10,23 @@ Matchy starts from Teller transactions and finds candidate Outlook emails, then 
    - Teller DB password is resolved via `1psa` (default item: `localhost_postgres_teller`; optional override: `TELLER_DB_PASSWORD_1PSA_REF`)
    - `MAILCART_SERVICE_BASE_URL`
    - `MAILCART_SERVICE_TOKEN` (optional if Mailcart is running without auth)
-   - `OPENAI_API_KEY` (optional; fallback deterministic mode if unset)
+   - AI keys for the match ranker are resolved via `1psa` with Anthropic primary and OpenAI fallback:
+     - `anthropic_api_key` (default 1psa item; override `MATCHY_ANTHROPIC_API_KEY_1PSA_ITEM`; env override `ANTHROPIC_API_KEY`)
+     - `openai_api_key` (default 1psa item; override `MATCHY_OPENAI_API_KEY_1PSA_ITEM`; env override `OPENAI_API_KEY`)
+     - If neither is available, Matchy falls back to deterministic scoring only.
 3. Start API:
-   - `python3 01_run_matchy_api.py`
+   - `./08_run_matchy_api.py`
 
 ## Endpoint
 
 - `POST /v1/matchy/runs`
   - Body:
     - `{"transaction_ids": ["txn_1"], "trigger_source": "manual"}`
+- `POST /v1/matchy/runs/pending`
+  - Body:
+    - `{"limit": 100, "lookback_days": 14, "trigger_source": "auto"}`
+  - Purpose:
+    - Driver-friendly endpoint that discovers active-unmatched transactions and runs matching in batch.
 
 ## GLOBAL ARCHITECTURE: TELLER → MATCHY ← MAILCART
 ```text
@@ -73,7 +81,7 @@ TRIGGER FLOW
 │  │ 3) build query from description/counterparty                          │          │
 │  │ 4) search candidates in Mailcart                                      │          │
 │  │ 5) rank_candidates() deterministic scoring                            │          │
-│  │ 6) AiRanker.select() (OpenAI or deterministic fallback)               │          │
+│  │ 6) AiRanker.select() (Anthropic → OpenAI → deterministic fallback)    │          │
 │  │ 7) insert_candidates() + persist_ai_result()                          │          │
 │  │ 8) mark run status: succeeded / needs_review / no_candidates / failed │          │
 │  └──────────────────┬────────────────────────────────────────────────────┘          │
@@ -84,10 +92,11 @@ TRIGGER FLOW
 │  ┌────────────────────────┐  ┌─────────────────────┐  ┌──────────────────────────┐  │
 │  │ MatchRepository        │  │ rank_candidates     │  │ AiRanker                 │  │
 │  │ (`repository.py`)      │  │ (`scoring.py`)      │  │ (`ai_ranker.py`)         │  │
-│  │ - SQLAlchemy session   │  │ - token overlap     │  │ - OpenAI JSON selection  │  │
-│  │ - read transaction     │  │ - amount hint score │  │ - fallback if no API key │  │
-│  │ - write run/candidate/ │  │ - time proximity    │  │ - confidence + uncertain │  │
-│  │   match tables         │  │ - unmatched bonus   │  │   + rationale            │  │
+│  │ - SQLAlchemy session   │  │ - token overlap     │  │ - Anthropic Claude JSON  │  │
+│  │ - read transaction     │  │ - amount hint score │  │   selection (primary)    │  │
+│  │ - write run/candidate/ │  │ - time proximity    │  │ - OpenAI JSON fallback   │  │
+│  │   match tables         │  │ - unmatched bonus   │  │ - deterministic last     │  │
+│  │                        │  │                     │  │   resort + rationale     │  │
 │  └──────────────┬─────────┘  └─────────────────────┘  └──────────────────────────┘  │
 │                 │                                                                   │
 │                 ▼                                                                   │

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from sqlalchemy import text
 
@@ -8,6 +9,8 @@ from .mailcart_client import MailcartClient
 from .repository import MatchRepository
 from .scoring import rank_candidates
 from .settings import Settings
+
+LOGGER = logging.getLogger(__name__)
 
 
 class MatchService:
@@ -27,7 +30,7 @@ class MatchService:
                 session=session,
                 transaction_id=transaction_id,
                 trigger_source=trigger_source,
-                model_name=self._settings.openai_model,
+                model_name=self._ai_ranker.planned_model_name(),
                 prompt_version=PROMPT_VERSION,
             )
             try:
@@ -35,23 +38,27 @@ class MatchService:
                 candidates = []
                 try:
                     candidates = self._mailcart_client.search_candidates(query=query, limit=75)
-                except Exception:
+                except Exception as exc:
+                    LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", query, transaction_id, exc)
                     candidates = []
                 if not candidates:
                     broad_query = self._build_broad_query(txn.description, txn.counterparty_name)
                     try:
                         candidates = self._mailcart_client.search_candidates(query=broad_query, limit=75)
-                    except Exception:
+                    except Exception as exc:
+                        LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", broad_query, transaction_id, exc)
                         candidates = []
                 if not candidates and "doordash" in (txn.description or "").lower():
                     try:
                         candidates = self._mailcart_client.search_candidates(query="doordash", limit=75)
-                    except Exception:
+                    except Exception as exc:
+                        LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", "doordash", transaction_id, exc)
                         candidates = []
                 if not candidates:
                     try:
                         candidates = self._mailcart_client.search_candidates(query="", limit=75)
-                    except Exception:
+                    except Exception as exc:
+                        LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", "", transaction_id, exc)
                         candidates = []
                 active_ids = set(
                     row["email_message_id"]
@@ -70,6 +77,7 @@ class MatchService:
                 )
                 ranked = rank_candidates(txn, candidates, already_matched_ids=active_ids)
                 ai_selection = self._ai_ranker.select(txn, ranked)
+                self._repository.update_run_model_name(session=session, run_id=run_id, model_name=ai_selection.model_name)
                 self._repository.insert_candidates(
                     session=session,
                     match_run_id=run_id,
@@ -96,6 +104,19 @@ class MatchService:
             "ai_confidence": ai_selection.confidence,
             "uncertain": ai_selection.uncertain,
         }
+
+    #R010: Discover pending transactions and run each through match_transaction with the caller-specified trigger source.
+    def match_pending_transactions(self, limit: int = 100, lookback_days: int = 14, trigger_source: str = "auto") -> list[dict]:
+        with self._repository.session() as session:
+            transaction_ids = self._repository.list_pending_transaction_ids(
+                session=session,
+                limit=limit,
+                lookback_days=lookback_days,
+            )
+        results: list[dict] = []
+        for transaction_id in transaction_ids:
+            results.append(self.match_transaction(transaction_id=transaction_id, trigger_source=trigger_source))
+        return results
 
     #R005: Build search queries from normalized, non-numeric tokens with deterministic truncation.
     def _build_query(self, description: str, counterparty_name: str) -> str:

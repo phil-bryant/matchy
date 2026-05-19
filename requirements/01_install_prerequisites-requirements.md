@@ -31,7 +31,7 @@ Tests:
 - R020-T01: Run installer twice and verify the second run performs no unnecessary installs.
 
 R025  Statement: Print final readiness guidance for local development.
-Design: End with success output that references Matchy numbered commands (`./02_create_venv.sh`, `./03_load_requirements.sh`, `./04_run_unit_tests.sh`, `./05_run_security_checks.sh`, `./06_run_av_checks.sh`, `./07_run_matchy_api.py`).
+Design: End with success output that references Matchy numbered commands (`./02_create_venv.sh`, `./03_load_requirements.sh`, `./05_run_unit_tests.sh`, `./06_run_security_checks.sh`, `./07_run_av_checks.sh`, `./08_run_matchy_api.py`).
 Tests:
 - R025-T01: On successful run, verify final guidance includes those commands.
 
