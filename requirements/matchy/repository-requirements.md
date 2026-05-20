@@ -26,6 +26,11 @@ Tests:
 - R010-T01: Stub SQL execution rows and verify `list_pending_transaction_ids` returns the discovered transaction ids.
 - R010-T02: Verify the SQL predicate includes both the `ai_candidate_uncertain` re-queue clause and the `ai_no_match_found`+`selected_by='ai'` re-queue clause so AI-only verdicts are retried while human-authoritative rows are not.
 
+R030  Statement: Persist Mailcart message metadata on candidate insert for downstream UI rendering.
+Design: When inserting `transaction_email_candidate` rows, copy subject, sender, and preview into `cached_subject`, `cached_sender`, and `cached_preview` so UIs can render candidate rows without another per-message Mailcart fetch.
+Tests:
+- R030-T01: Verify candidate insert SQL includes cached subject/sender/preview columns populated from Mailcart search metadata.
+
 ## Changelog
 
 - 2026-05-18: Added repository requirements for initialization guard and session lifecycle.

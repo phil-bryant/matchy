@@ -2,14 +2,17 @@
 #R005: Python test lane coverage for session commit/rollback behavior.
 #R010: Python test lane coverage for pending transaction discovery.
 #R015: Python test lane coverage for last-run and active-match summaries.
+#R030: Python test lane coverage for cached candidate metadata on insert.
 #R001-T01: Python test lane exists for password requirement.
 #R005-T01: Python test lane exists for session context requirement.
 #R010-T01: Python test lane exists for pending id discovery requirement.
 #R010-T02: Python test lane exists for re-queue SQL predicate requirement.
 #R015-T01: Python test lane exists for last-run summary requirement.
 #R015-T02: Python test lane exists for active-match summary requirement.
+#R030-T01: Python test lane exists for cached candidate metadata requirement.
 
 from decimal import Decimal
+import inspect
 from types import SimpleNamespace
 
 from matchy.repository import MatchRepository
@@ -185,3 +188,11 @@ def test_repository_pending_transaction_query_requeues_unsettled_but_skips_human
     assert "human_confirmed_ai_match" not in sql
     assert "human_overrode_ai_match" not in sql
     assert params == {"lookback_days": 14, "limit": 10}
+
+
+def test_insert_candidates_sql_includes_cached_metadata_columns() -> None:
+    #R030-T01: Candidate insert persists cached Mailcart metadata columns.
+    source = inspect.getsource(MatchRepository.insert_candidates)
+    assert "cached_subject" in source
+    assert "cached_sender" in source
+    assert "cached_snippet" in source

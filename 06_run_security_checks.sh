@@ -150,7 +150,9 @@ def lane_failed(tool_key: str, exit_code: int, findings: int, report_valid: bool
 lane_rows = []
 any_failed = False
 for display_name, tool_key, report_name in LANES:
-    exit_code = lane_exits.get(tool_key, 0)
+    if tool_key not in lane_exits:
+        continue
+    exit_code = lane_exits[tool_key]
     payload = load_json(report_dir / report_name)
     report_valid = payload is not None
     findings = COUNTERS[tool_key](payload) if report_valid else 0
@@ -208,6 +210,7 @@ run_shellcheck_lane() {
     "Flags risky shell patterns, quoting bugs, and execution pitfalls." \
     "https://www.shellcheck.net/"
   echo "Report: ${shellcheck_report_path}"
+  #R040: Print explicit per-lane running indicator.
   echo "▶ Running ShellCheck"
   set +e
   shellcheck -f json "${shell_targets[@]}" > "$shellcheck_report_path"
@@ -248,6 +251,7 @@ run_semgrep_lane() {
     "Uses curated security rules against the repository source tree." \
     "https://semgrep.dev/docs/"
   echo "Report: ${semgrep_report_path}"
+  #R040: Print explicit per-lane running indicator.
   echo "▶ Running Semgrep"
   set +e
   semgrep scan --config auto --json --output "$semgrep_report_path" .
@@ -292,6 +296,7 @@ run_gitleaks_lane() {
     "Detects leaked tokens, keys, and other sensitive data patterns." \
     "https://github.com/gitleaks/gitleaks"
   echo "Report: ${gitleaks_report_path}"
+  #R040: Print explicit per-lane running indicator.
   echo "▶ Running Gitleaks"
   set +e
   gitleaks detect --source . --no-banner --report-format json --report-path "$gitleaks_report_path"
@@ -317,56 +322,72 @@ PY
 #R060: Run detect-secrets with artifact-dir excludes, heartbeat status, and JSON report.
 #R055: Print human-readable detect-secrets findings with source lines after the lane completes.
 run_detect_secrets_lane() {
-  local detect_secrets_report_path="$1"
-  local detect_secrets_exit=0
-  local detect_secrets_pid=""
-  local detect_secrets_elapsed=0
-  local detect_secrets_interval=15
-  local detect_secrets_exclude_files
-  detect_secrets_exclude_files='(^|/)(\.git|\.security-reports|\.cursor|\.pytest_cache|\.ruff_cache|__pycache__|matchy-venv|\.venv|build|dist)(/|$)'
+  local ds_report_path="$1"
+  local ds_exit=0
+  local ds_pid=""
+  local ds_elapsed=0
+  local ds_interval="${DETECT_SECRETS_HEARTBEAT_SECONDS:-15}"
+  local ds_exclude_files
+  ds_exclude_files='(^|/)(\.git|\.security-reports|\.parallel-checks-reports|\.cursor|\.pytest_cache|\.ruff_cache|__pycache__|matchy-venv|\.venv|build|dist|mutants)(/|$)'
   print_tool_header \
     "detect-secrets" \
     "Scans repository files for high-entropy and known secret formats." \
     "Helps catch accidentally committed credentials before release." \
     "https://github.com/Yelp/detect-secrets"
-  echo "Report: ${detect_secrets_report_path}"
+  echo "Report: ${ds_report_path}"
+  #R040: Print explicit per-lane running indicator.
   echo "▶ Running detect-secrets"
-  echo "  (scan can take several minutes; intermediate status every 15s — JSON written only when complete)"
-  detect_secrets_process_alive() {
-    local pid="$1"
-    local alive=false
-    if [[ -n "$pid" ]] && ps -p "$pid" -o pid= | grep -q .; then
-      alive=true
-    fi
-    if [ "$alive" = true ]; then
-      return 0
-    fi
-    return 1
-  }
-  cleanup_detect_secrets_lane() {
-    if detect_secrets_process_alive "$detect_secrets_pid"; then
-      kill "$detect_secrets_pid" || true
-      wait "$detect_secrets_pid" || true
-    fi
-  }
-  trap cleanup_detect_secrets_lane EXIT INT TERM
-  set +e
-  detect-secrets scan --all-files --exclude-files "$detect_secrets_exclude_files" > "$detect_secrets_report_path" &
-  detect_secrets_pid=$!
-  while detect_secrets_process_alive "$detect_secrets_pid"; do
-    sleep "$detect_secrets_interval"
-    if detect_secrets_process_alive "$detect_secrets_pid"; then
-      detect_secrets_elapsed=$((detect_secrets_elapsed + detect_secrets_interval))
-      echo "… detect-secrets still running (${detect_secrets_elapsed}s elapsed)"
-    fi
-  done
-  wait "$detect_secrets_pid"
-  detect_secrets_exit=$?
-  detect_secrets_pid=""
-  set -e
-  trap - EXIT INT TERM
-  record_lane_exit detect-secrets "$detect_secrets_exit"
-  python3 - <<'PY' "$detect_secrets_report_path"
+  if [[ "${DETECT_SECRETS_USE_BACKGROUND_WAIT:-true}" == "true" ]]; then
+    echo "  (scan can take several minutes; intermediate status every ${ds_interval}s — JSON written only when complete)"
+    ds_process_alive() {
+      local pid="$1"
+      local alive=false
+      if [[ -n "$pid" ]] && ps -p "$pid" -o pid= | grep -q .; then
+        alive=true
+      fi
+      if [ "$alive" = true ]; then
+        return 0
+      fi
+      return 1
+    }
+    cleanup_ds_lane() {
+      if ds_process_alive "$ds_pid"; then
+        kill "$ds_pid" || true
+        wait "$ds_pid" || true
+      fi
+    }
+    trap cleanup_ds_lane EXIT INT TERM
+    set +e
+    detect-secrets scan --all-files --exclude-files "$ds_exclude_files" > "$ds_report_path" &
+    ds_pid=$!
+    ds_waiting=true
+    while [[ "$ds_waiting" == "true" ]]; do
+      if ds_process_alive "$ds_pid"; then
+        sleep "$ds_interval"
+        if ds_process_alive "$ds_pid"; then
+          ds_elapsed=$((ds_elapsed + ds_interval))
+          echo "… detect-secrets still running (${ds_elapsed}s elapsed)"
+        else
+          ds_waiting=false
+        fi
+      else
+        ds_waiting=false
+      fi
+    done
+    wait "$ds_pid"
+    ds_exit=$?
+    ds_pid=""
+    set -e
+    trap - EXIT INT TERM
+  else
+    echo "  (foreground scan; JSON written when complete)"
+    set +e
+    detect-secrets scan --all-files --exclude-files "$ds_exclude_files" > "$ds_report_path"
+    ds_exit=$?
+    set -e
+  fi
+  record_lane_exit detect-secrets "$ds_exit"
+  python3 - <<'PY' "$ds_report_path"
 import json
 import sys
 from pathlib import Path
@@ -381,15 +402,15 @@ if isinstance(results, dict):
             for finding in file_findings:
                 if isinstance(finding, dict):
                     line_number = int(finding.get("line_number", 0))
-                    secret_type = str(finding.get("type", "unknown"))
-                    entries.append((str(file_path), line_number, secret_type))
+                    finding_type = str(finding.get("type", "unknown"))
+                    entries.append((str(file_path), line_number, finding_type))
 entries.sort(key=lambda item: (item[0], item[1], item[2]))
 if len(entries) == 0:
     raise SystemExit(0)
 print("⚠️  detect-secrets reported findings.")
 print("detect-secrets findings")
-for file_path, line_number, secret_type in entries:
-    print(f"- {file_path}:{line_number} [{secret_type}]")
+for file_path, line_number, finding_type in entries:
+    print(f"- {file_path}:{line_number} [{finding_type}]")
     resolved_path = Path(file_path)
     if not resolved_path.is_absolute():
         resolved_path = Path.cwd() / resolved_path
@@ -413,6 +434,7 @@ run_ruff_lane() {
     "Flags Python code issues with modern static analysis rules." \
     "https://docs.astral.sh/ruff/"
   echo "Report: ${ruff_report_path}"
+  #R040: Print explicit per-lane running indicator.
   echo "▶ Running Ruff"
   set +e
   ruff check --output-format json . > "$ruff_report_path"
@@ -464,6 +486,7 @@ run_bandit_lane() {
     "Identifies security smells in Python source and scripts." \
     "https://bandit.readthedocs.io/"
   echo "Report: ${bandit_report_path}"
+  #R040: Print explicit per-lane running indicator.
   echo "▶ Running Bandit"
   set +e
   bandit -ll -r "${python_targets[@]}" -x "./matchy-venv,./.venv,./build,./dist" -f json -o "$bandit_report_path"
@@ -508,6 +531,7 @@ run_pip_audit_lane() {
     "Checks installed/project requirements against vulnerability advisories." \
     "https://pypi.org/project/pip-audit/"
   echo "Report: ${pip_audit_report_path}"
+  #R040: Print explicit per-lane running indicator.
   echo "▶ Running pip-audit"
   PIP_CACHE_DIR="${REPORT_DIR}/.pip-cache"
   mkdir -p "${PIP_CACHE_DIR}"
@@ -544,23 +568,39 @@ print(f"⚠️  pip-audit reported {vuln_count} vulnerabilit{'y' if vuln_count =
 PY
 }
 
-#R010: Validate required commands before running lanes.
-require_command shellcheck
-require_command semgrep
-require_command gitleaks
-require_command detect-secrets
-require_command ruff
-require_command bandit
-require_command pip-audit
+#R065: Honor SECURITY_RUN_LANES for selective lane execution and gate only ran lanes.
+#R010: Validate required commands and run selected security lanes.
+SECURITY_RUN_LANES="${SECURITY_RUN_LANES:-shellcheck,semgrep,gitleaks,detect-secrets,ruff,bandit,pip-audit}"
+SECURITY_LANES_LIST=()
+IFS=',' read -ra SECURITY_LANES_LIST <<< "${SECURITY_RUN_LANES}"
+
+security_lane_enabled() {
+  local lane="$1"
+  local enabled_lane=""
+  for enabled_lane in "${SECURITY_LANES_LIST[@]}"; do
+    if [[ "$enabled_lane" == "$lane" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+if security_lane_enabled shellcheck; then require_command shellcheck; fi
+if security_lane_enabled semgrep; then require_command semgrep; fi
+if security_lane_enabled gitleaks; then require_command gitleaks; fi
+if security_lane_enabled detect-secrets; then require_command detect-secrets; fi
+if security_lane_enabled ruff; then require_command ruff; fi
+if security_lane_enabled bandit; then require_command bandit; fi
+if security_lane_enabled pip-audit; then require_command pip-audit; fi
 
 : > "${REPORT_DIR}/lane-exits.env"
 
-run_shellcheck_lane "${REPORT_DIR}/shellcheck.json"
-run_semgrep_lane "${REPORT_DIR}/semgrep.json"
-run_gitleaks_lane "${REPORT_DIR}/gitleaks.json"
-run_detect_secrets_lane "${REPORT_DIR}/detect-secrets.json"
-run_ruff_lane "${REPORT_DIR}/ruff.json"
-run_bandit_lane "${REPORT_DIR}/bandit.json"
-run_pip_audit_lane "${REPORT_DIR}/pip-audit.json"
+if security_lane_enabled shellcheck; then run_shellcheck_lane "${REPORT_DIR}/shellcheck.json"; fi
+if security_lane_enabled semgrep; then run_semgrep_lane "${REPORT_DIR}/semgrep.json"; fi
+if security_lane_enabled gitleaks; then run_gitleaks_lane "${REPORT_DIR}/gitleaks.json"; fi
+if security_lane_enabled detect-secrets; then run_detect_secrets_lane "${REPORT_DIR}/detect-secrets.json"; fi
+if security_lane_enabled ruff; then run_ruff_lane "${REPORT_DIR}/ruff.json"; fi
+if security_lane_enabled bandit; then run_bandit_lane "${REPORT_DIR}/bandit.json"; fi
+if security_lane_enabled pip-audit; then run_pip_audit_lane "${REPORT_DIR}/pip-audit.json"; fi
 
 emit_lane_results_and_gate

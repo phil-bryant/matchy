@@ -116,9 +116,6 @@ run_clamscan_once() {
     --infected \
     --exclude-dir='^\.git$' \
     --exclude-dir='^\.security-reports$' \
-    --exclude-dir='^node_modules$' \
-    --exclude-dir='^\.venv$' \
-    --exclude-dir='^venv$' \
     --exclude-dir='^\.pytest_cache$' \
     --exclude-dir='^\.mypy_cache$' \
     --exclude-dir='^\.gomodcache$' \

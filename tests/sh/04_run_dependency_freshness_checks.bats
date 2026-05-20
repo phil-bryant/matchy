@@ -14,6 +14,25 @@ teardown() {
 
 setup_fixture_venv() {
   mkdir -p "${FIXTURE_ROOT}/fixture-venv/bin"
+  cat > "${FIXTURE_ROOT}/fixture-venv/bin/pip" <<'EOF'
+#!/usr/bin/env bash
+target_pip=""
+old_ifs="$IFS"
+IFS=:
+for dir in $PATH; do
+  candidate="${dir}/pip"
+  if [ -z "$target_pip" ] && [ -x "$candidate" ] && [ "$candidate" != "$0" ]; then
+    target_pip="$candidate"
+  fi
+done
+IFS="$old_ifs"
+if [ -z "$target_pip" ]; then
+  echo "pip binary not found on PATH" >&2
+  exit 127
+fi
+exec "$target_pip" "$@"
+EOF
+  chmod +x "${FIXTURE_ROOT}/fixture-venv/bin/pip"
 }
 
 stub_pip_outdated_updates() {

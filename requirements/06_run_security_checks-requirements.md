@@ -15,7 +15,7 @@ Tests:
 - R005-T01: Run script and verify report directory is created.
 
 R010  Statement: Fail clearly when an enabled lane is missing required tooling.
-Design: Validate required commands with a dedicated checker and return actionable tool-specific error output for `shellcheck`, `semgrep`, `gitleaks`, `detect-secrets`, `ruff`, `bandit`, and `pip-audit`.
+Design: Validate required commands with a dedicated checker and return actionable tool-specific error output for `shellcheck`, `semgrep`, `gitleaks`, `detect-secrets`, `ruff`, `bandit`, and `pip-audit`. Only require and run tools listed in `${SECURITY_RUN_LANES}` (comma-separated; default all seven lanes).
 Tests:
 - R010-T01: Remove each required tool from `PATH` and verify explicit missing-command failure output.
 
@@ -69,13 +69,20 @@ Tests:
 - R055-T03: Stub Bandit with one finding and verify output includes `Bandit findings`.
 
 R060  Statement: Run detect-secrets with artifact excludes, heartbeat status, and blocking completion.
-Design: Execute `detect-secrets scan --all-files --exclude-files` with excludes for `.git`, `.security-reports`, `.cursor`, `.pytest_cache`, `.ruff_cache`, `__pycache__`, `matchy-venv`, `.venv`, `build`, and `dist`. Run the scan in the background, use `ps`-based liveness for heartbeat polling (not `kill -0` on exited PIDs), print elapsed-time heartbeat lines every 15 seconds while it runs, block until the scan process exits, then print every finding with its matched source line sorted by file and line.
+Design: Execute `detect-secrets scan --all-files --exclude-files` with excludes for `.git`, `.security-reports`, `.parallel-checks-reports`, `.cursor`, `.pytest_cache`, `.ruff_cache`, `__pycache__`, `matchy-venv`, `.venv`, `build`, `dist`, and `mutants`. When `${DETECT_SECRETS_USE_BACKGROUND_WAIT:-true}` is `true`, run the scan in the background, use `ps`-based liveness for heartbeat polling (not `kill -0` on exited PIDs), print elapsed-time heartbeat lines every `${DETECT_SECRETS_HEARTBEAT_SECONDS:-15}` seconds while it runs, and block until the scan process exits. When `DETECT_SECRETS_USE_BACKGROUND_WAIT=false`, run the scan in the foreground without heartbeat polling. After either mode completes, print every finding with its matched source line sorted by file and line.
 Tests:
-- R060-T01: Stub a long-running detect-secrets execution and verify a heartbeat line appears before the next tool header.
+- R060-T01: Stub a long-running detect-secrets execution with background wait enabled and verify a heartbeat line appears before the next tool header.
 - R060-T02: Stub detect-secrets findings output and verify each finding prints its source line before the next tool header.
+
+R065  Statement: Allow selective lane execution for faster local and CI subsets.
+Design: Honor `SECURITY_RUN_LANES` as a comma-separated subset of `shellcheck`, `semgrep`, `gitleaks`, `detect-secrets`, `ruff`, `bandit`, and `pip-audit`. Skip `require_command`, lane runners, and per-lane pass/fail lines for lanes not listed. Gate evaluation (`emit_lane_results_and_gate`) considers only lanes recorded in `lane-exits.env`.
+Tests:
+- R065-T01: Run with `SECURITY_RUN_LANES=pip-audit` and verify only pip-audit executes.
 
 ## Changelog
 
+- 2026-05-20: Split bats into `06_run_security_checks_{core,findings,detect_secrets}.bats`; add `DETECT_SECRETS_USE_BACKGROUND_WAIT` for foreground test runs.
+- 2026-05-20: Add `SECURITY_RUN_LANES` subset execution and configurable `DETECT_SECRETS_HEARTBEAT_SECONDS`.
 - 2026-05-20: Renamed repository test directory from `testing/` to `tests/`.
 - 2026-05-19: Expand detect-secrets excludes for IDE/cache dirs; Bandit gates MEDIUM+ (`-ll`); heartbeat uses `ps` liveness.
 - 2026-05-19: Require per-lane console findings output and detect-secrets heartbeat/exclude behavior.

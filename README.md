@@ -19,14 +19,26 @@ Matchy starts from Teller transactions and finds candidate Outlook emails, then 
 
 ## Test
 
-Run unit tests (pytest for application modules, then Bats for numbered shell scripts):
+Run unit tests (pytest for application modules, then Bats for numbered shell scripts in parallel by file; set `BATS_JOBS` or `BATS_USE_NATIVE_JOBS=true` to tune concurrency):
 
 ```bash
 ./02_create_venv.sh
 activate
 ./03_load_requirements.sh
 ./05_run_unit_tests.sh
+./11_run_fuzz.sh
+./10_run_mutation_tests.sh   # mutmut on scoring_core + models; 90% score gate
 ```
+
+`11` runs Hypothesis property tests on scoring invariants (semantic bucket/normalization checks plus bounded invariants). `10` runs real mutmut mutation testing against `tests/py/test_scoring_core.py` (direct scoring contracts), `test_scoring.py`, and `test_models.py` with Hypothesis disabled for speed. The default mutation score gate is **90%**. On macOS, `10` uses a subprocess pytest driver (`tools/mutmut_darwin.py`) because stock mutmut forks after threaded pytest and every mutant SIGSEGVs. On Linux, `10` uses `mutmut run` directly. Override with `MUTATION_USE_SUBPROCESS=false` (mac) or `true` (linux) if needed.
+
+Run all seven CI gate scripts in parallel (completion-order PASS/FAIL lines on the terminal; full output per script in `.parallel-checks-reports/<script-stem>.log`):
+
+```bash
+./12_run_all_checks_parallel.sh
+```
+
+Excluded from the parallel batch: setup scripts (`01`–`03`) and integration entrypoints (`08_run_matchy_api.py`, `09_run_matchy_driver.py`).
 
 ## Endpoint
 

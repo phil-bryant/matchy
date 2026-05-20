@@ -36,6 +36,8 @@ ensure_formula ruff
 ensure_formula bandit
 ensure_formula pip-audit
 ensure_formula bats-core bats
+#R065: GNU parallel unlocks bats -j native parallelism in 05_run_unit_tests.sh.
+ensure_formula parallel
 
 #R030: Treat 1psa as optional advisory, not a hard requirement.
 if ! command -v 1psa >/dev/null 2>&1; then

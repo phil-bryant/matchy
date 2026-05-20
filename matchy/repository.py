@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import asdict
 from datetime import datetime, timezone
 from decimal import Decimal
 

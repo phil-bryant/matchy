@@ -1,4 +1,18 @@
-import pytest
+import multiprocessing as mp
+
+_orig_set_start_method = mp.set_start_method
+
+
+def _safe_set_start_method(method, force=False):
+    try:
+        return _orig_set_start_method(method, force=force)
+    except RuntimeError:
+        return None
+
+
+mp.set_start_method = _safe_set_start_method
+
+import pytest  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

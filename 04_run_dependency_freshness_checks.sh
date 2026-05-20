@@ -6,45 +6,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 #R001: Resolve repository root from script location so report and module paths are deterministic.
 cd "$SCRIPT_DIR"
 
-# Validate project virtual environment is present and active before running checks.
+#R005: Require project virtual environment pip before dependency checks.
 CURRENT_DIRECTORY_NAME=$(basename "$(pwd)")
 VENV_DIR="${CURRENT_DIRECTORY_NAME}-venv"
-if [ ! -d "$VENV_DIR" ]; then
-  echo "❌ ERROR: Virtual environment not found!"
+VENV_PIP="${SCRIPT_DIR}/${VENV_DIR}/bin/pip"
+if [ ! -x "$VENV_PIP" ]; then
+  echo "❌ ERROR: Virtual environment pip not found at ${VENV_PIP}"
   echo ""
   echo "Please run the virtual environment setup first:"
   echo "  ./02_create_venv.sh"
-  echo ""
-  echo "This will create the required virtual environment: $VENV_DIR"
-  exit 1
-fi
-if [ -z "${VIRTUAL_ENV:-}" ]; then
-  echo "❌ ERROR: No virtual environment is currently active!"
-  echo ""
-  echo "Please activate the virtual environment first:"
-  echo "  activate"
-  echo ""
-  echo "Then run this script again."
-  exit 1
-fi
-EXPECTED_VENV_PATH=$(cd "$VENV_DIR" && pwd -P)
-CURRENT_VENV_PATH="$VIRTUAL_ENV"
-if [ -d "$VIRTUAL_ENV" ]; then
-  CURRENT_VENV_PATH=$(cd "$VIRTUAL_ENV" && pwd -P)
-fi
-if [ "$CURRENT_VENV_PATH" != "$EXPECTED_VENV_PATH" ]; then
-  echo "⚠️  WARNING: You are using a different virtual environment!"
-  echo "Expected: $EXPECTED_VENV_PATH"
-  echo "Current:  $CURRENT_VENV_PATH"
-  echo ""
-  echo "Please deactivate and reactivate the correct virtual environment:"
-  echo "  deactivate"
-  echo "  activate"
+  echo "  ./03_load_requirements.sh"
   exit 1
 fi
 
 REPORT_DIR="${DEPENDENCY_REPORT_DIR:-./.security-reports}"
-PIP_BIN="${DEPENDENCY_CHECK_PIP_BIN:-pip}"
+PIP_BIN="${DEPENDENCY_CHECK_PIP_BIN:-$VENV_PIP}"
 FAIL_ON_MAJOR="${DEPENDENCY_FAIL_ON_MAJOR:-false}"
 FAIL_ON_ANY="${DEPENDENCY_FAIL_ON_UPDATES:-true}"
 TEXT_REPORT="${REPORT_DIR}/dependency-freshness.txt"

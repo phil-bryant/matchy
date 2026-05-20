@@ -941,7 +941,7 @@ excluded_real = ""
 if excluded_path:
     excluded_real = str(Path(excluded_path).resolve())
 allowed_exts = {".sh", ".py", ".go", ".swift", ".sql", ".c", ".cc", ".cpp", ".cxx", ".m", ".mm", ".h", ".hpp"}
-excluded_dirs = {".git", ".cursor", "requirements", "tests", "Tests", "bin", "backups", ".security-reports", ".gocache", ".gomodcache", ".build", "venv", ".venv", "matchy-venv"}
+excluded_dirs = {".git", ".cursor", "requirements", "tests", "Tests", "bin", "backups", ".security-reports", ".gocache", ".gomodcache", ".build", "venv", ".venv", "matchy-venv", "mutants", "tools"}
 excluded_relative_paths = {"storage/schema.sql"}
 excluded_relative_prefixes = ("storage/sql/",)
 files = set()

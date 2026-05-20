@@ -18,3 +18,22 @@ dependencies = [
 
 [tool.setuptools]
 packages = ["matchy"]
+
+[tool.mutmut]
+paths_to_mutate = ["matchy/"]
+only_mutate = ["matchy/scoring_core.py", "matchy/models.py"]
+tests_dir = [
+  "tests/py/test_scoring_core.py",
+  "tests/py/test_scoring.py",
+  "tests/py/test_models.py",
+]
+pytest_add_cli_args = ["-p", "no:hypothesis"]
+do_not_mutate = [
+  "matchy/scoring.py",
+  "matchy/api.py",
+  "matchy/repository.py",
+  "matchy/mailcart_client.py",
+  "matchy/ai_ranker.py",
+  "matchy/service.py",
+  "matchy/settings.py",
+]
