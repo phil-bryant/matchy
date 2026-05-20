@@ -19,7 +19,7 @@
 
 make_traceability_fixture() {
   local fixture_root="$1" mode="$2"
-  mkdir -p "${fixture_root}/requirements" "${fixture_root}/testing/sh"
+  mkdir -p "${fixture_root}/requirements" "${fixture_root}/tests/sh"
   cat > "${fixture_root}/requirements/fixture-requirements.md" <<'EOF'
 # Fixture Requirements
 
@@ -58,7 +58,7 @@ echo "first"
 echo "second"
 EOF
   fi
-  cat > "${fixture_root}/testing/sh/fixture.bats" <<'EOF'
+  cat > "${fixture_root}/tests/sh/fixture.bats" <<'EOF'
 #!/usr/bin/env bats
 
 @test "fixture requirement tags" {
@@ -74,7 +74,7 @@ EOF
 
 make_go_module_traceability_fixture() {
   local fixture_root="$1"
-  mkdir -p "${fixture_root}/requirements" "${fixture_root}/testing/sh"
+  mkdir -p "${fixture_root}/requirements" "${fixture_root}/tests/sh"
   cat > "${fixture_root}/requirements/fixture-requirements.md" <<'EOF'
 # Fixture Requirements
 
@@ -91,7 +91,7 @@ EOF
 # #R001: First behavior.
 echo "fixture"
 EOF
-  cat > "${fixture_root}/testing/sh/fixture.bats" <<'EOF'
+  cat > "${fixture_root}/tests/sh/fixture.bats" <<'EOF'
 #!/usr/bin/env bats
 
 @test "fixture requirement tags" {
@@ -164,7 +164,7 @@ EOF
 
 make_python_lane_traceability_fixture() {
   local fixture_root="$1"
-  mkdir -p "${fixture_root}/requirements" "${fixture_root}/testing/sh"
+  mkdir -p "${fixture_root}/requirements" "${fixture_root}/tests/sh"
   cat > "${fixture_root}/requirements/python-requirements.md" <<'EOF'
 # Python Lane Fixture Requirements
 
@@ -180,7 +180,7 @@ EOF
 # #R001: Python fixture behavior implementation.
 print("fixture")
 EOF
-  cat > "${fixture_root}/testing/sh/python-lane.bats" <<'EOF'
+  cat > "${fixture_root}/tests/sh/python-lane.bats" <<'EOF'
 #!/usr/bin/env bats
 @test "python lane placeholder" {
   #R001-T01: Python fixture behavior trace.
@@ -193,7 +193,7 @@ EOF
 make_numbered_traceability_mismatch_fixture() {
   local fixture_root="$1"
   local HASH="#"
-  mkdir -p "${fixture_root}/requirements" "${fixture_root}/testing/sh"
+  mkdir -p "${fixture_root}/requirements" "${fixture_root}/tests/sh"
   cat > "${fixture_root}/requirements/fixture-requirements.md" <<'EOF'
 # Numbered Traceability Fixture Requirements
 
@@ -211,7 +211,7 @@ EOF
 # #R001: Numbered traceability fixture implementation.
 echo "fixture"
 EOF
-  cat > "${fixture_root}/testing/sh/fixture.bats" <<EOF
+  cat > "${fixture_root}/tests/sh/fixture.bats" <<EOF
 #!/usr/bin/env bats
 
 @test "fixture numbered traceability tags" {
@@ -236,7 +236,7 @@ EOF
   #R040-T01: Numbered script requirements coverage checks.
   #R045-T01: Numbered requirements scope alignment checks.
   #R050-T01: Requirement-to-test discovery coverage.
-  #R050-T04: Missing testing/py lane for python source triggers explicit failure.
+  #R050-T04: Missing tests/py lane for python source triggers explicit failure.
   #R055-T01: Discovered-test #R tag extraction coverage.
   #R060-T01: Missing test-traceability ID failure coverage.
   #R065-T01: Anti-cheat header-bundle and scoped comment enforcement coverage.
@@ -408,8 +408,8 @@ EOF
   [[ "$output" == *"missing tagged tests for requirement IDs"* ]]
 }
 
-@test "Fails when python source lacks required testing/py lane file" {
-  #R050-T04: Missing testing/py lane for python source triggers explicit failure.
+@test "Fails when python source lacks required tests/py lane file" {
+  #R050-T04: Missing tests/py lane for python source triggers explicit failure.
   #R050
   local fixture_root
   fixture_root="$(mktemp -d)"
@@ -418,7 +418,7 @@ EOF
   run /bin/bash -c "cd '${fixture_root}' && /bin/bash './verify_requirements_traceability.sh'"
   [ "$status" -ne 0 ]
   [[ "$output" == *"FAIL (python-test-lane)"* ]]
-  [[ "$output" == *"fixture.py -> expected testing/py/test_fixture.py"* ]]
+  [[ "$output" == *"fixture.py -> expected tests/py/test_fixture.py"* ]]
 }
 
 @test "Passes when Go source requirements discover sibling tagged _test.go files" {
@@ -478,7 +478,7 @@ EOF
   local fixture_root
   fixture_root="$(mktemp -d)"
   local HASH="#"
-  mkdir -p "${fixture_root}/requirements" "${fixture_root}/testing/sh"
+  mkdir -p "${fixture_root}/requirements" "${fixture_root}/tests/sh"
   cat > "${fixture_root}/requirements/phase-requirements.md" <<'EOF'
 # Phase Requirements
 
@@ -490,7 +490,7 @@ R001  Statement: Placeholder requirement while implementation is pending.
 Tests:
 - R001-T01: Placeholder numbered test entry while implementation is pending.
 EOF
-  cat > "${fixture_root}/testing/sh/phase.bats" <<EOF
+  cat > "${fixture_root}/tests/sh/phase.bats" <<EOF
 #!/usr/bin/env bats
 @test "placeholder" {
   ${HASH}R001-T99: Intentionally mismatched but should be skipped for requirements-only docs.

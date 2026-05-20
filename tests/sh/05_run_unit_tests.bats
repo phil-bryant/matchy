@@ -6,8 +6,8 @@ load "helpers/common.bash"
 make_venv_python_stub() {
   local pytest_exit_code="${1:-0}"
   local bats_exit_code="${2:-0}"
-  mkdir -p "${FIXTURE_ROOT}/matchy-venv/bin" "${FIXTURE_ROOT}/testing/py" "${FIXTURE_ROOT}/testing/sh"
-  cat > "${FIXTURE_ROOT}/testing/py/sample_test.py" <<'EOF'
+  mkdir -p "${FIXTURE_ROOT}/matchy-venv/bin" "${FIXTURE_ROOT}/tests/py" "${FIXTURE_ROOT}/tests/sh"
+  cat > "${FIXTURE_ROOT}/tests/py/sample_test.py" <<'EOF'
 def test_ok():
     assert True
 EOF
@@ -81,7 +81,7 @@ EOF
   #R001: Script runs in strict mode.
   #R005: Bats is required on PATH.
   #R010: Repo root is resolved from script path.
-  #R015: Shell test discovery uses numbered testing/sh lanes.
+  #R015: Shell test discovery uses numbered tests/sh lanes.
   #R020: Missing shell tests fail clearly.
   #R025: Bats non-zero fails lane.
   #R030: Success prints single PASS line.
@@ -93,25 +93,25 @@ EOF
 
 @test "fails when no shell tests are discovered" {
   make_venv_python_stub 0 0
-  rm -f "${FIXTURE_ROOT}/testing/sh/"*.bats
+  rm -f "${FIXTURE_ROOT}/tests/sh/"*.bats
   run bash "${FIXTURE_ROOT}/05_run_unit_tests.sh"
   [ "$status" -ne 0 ]
   [[ "$output" == *"No shell unit tests found"* ]]
 }
 
 @test "runs pytest then bats and succeeds" {
-  #R040-T01: Verify pytest runs against testing/py before Bats shell tests.
+  #R040-T01: Verify pytest runs against tests/py before Bats shell tests.
   #R015-T02: Verify numbered shell test discovery proceeds after pytest.
-  cat > "${FIXTURE_ROOT}/testing/sh/05_run_unit_tests.bats" <<'EOF'
+  cat > "${FIXTURE_ROOT}/tests/sh/05_run_unit_tests.bats" <<'EOF'
 #!/usr/bin/env bats
 @test "ok" {
   :
 }
 EOF
-  chmod +x "${FIXTURE_ROOT}/testing/sh/05_run_unit_tests.bats"
+  chmod +x "${FIXTURE_ROOT}/tests/sh/05_run_unit_tests.bats"
   run bash "${FIXTURE_ROOT}/05_run_unit_tests.sh"
   [ "$status" -eq 0 ]
-  grep -F "testing/py" "${CALLS_LOG}"
+  grep -F "tests/py" "${CALLS_LOG}"
   grep -F "bats " "${CALLS_LOG}"
   [[ "$output" == *"Test Runner: pytest"* ]]
   [[ "$output" == *"Test Runner: Bats"* ]]

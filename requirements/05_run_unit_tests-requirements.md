@@ -19,8 +19,8 @@ Design: Derive repository root from the script directory and run tests from that
 Tests:
 - R010-T01: Invoke script from a different current working directory and verify tests still run against the repository root.
 
-R015  Statement: Discover Matchy shell automation tests from numbered `testing/sh` lanes.
-Design: Discover `.bats` files from `testing/sh/` when the basename starts with `NN_` or equals `.gitignore.bats`.
+R015  Statement: Discover Matchy shell automation tests from numbered `tests/sh` lanes.
+Design: Discover `.bats` files from `tests/sh/` when the basename starts with `NN_` or equals `.gitignore.bats`.
 Tests:
 - R015-T01: Run with no discovered shell test files and verify explicit non-zero failure output.
 - R015-T02: Run with one or more discovered shell test files and verify Bats invocation proceeds after pytest.
@@ -47,9 +47,9 @@ Tests:
 - R035-T02: Run with venv python but without pytest and verify explicit non-zero failure output.
 
 R040  Statement: Run pytest against the Python application test lane before shell tests.
-Design: Invoke `"${REPO_ROOT}/matchy-venv/bin/python" -m pytest "${REPO_ROOT}/testing/py"` with `PYTHONPATH` set to the repository root.
+Design: Invoke `"${REPO_ROOT}/matchy-venv/bin/python" -m pytest "${REPO_ROOT}/tests/py"` with `PYTHONPATH` set to the repository root.
 Tests:
-- R040-T01: Verify pytest runs against `testing/py` before Bats shell tests execute.
+- R040-T01: Verify pytest runs against `tests/py` before Bats shell tests execute.
 
 R045  Statement: Fail clearly when pytest execution fails.
 Design: If pytest returns non-zero, print failure output and exit non-zero before shell tests run.
@@ -58,5 +58,6 @@ Tests:
 
 ## Changelog
 
-- 2026-05-19: Added pytest stage for `testing/py` and limited Bats discovery to numbered shell automation specs.
-- 2026-05-12: Reswizzled from copied Swift+Tests contract to Matchy Bats-based `testing/` lanes.
+- 2026-05-20: Renamed repository test directory from `testing/` to `tests/`.
+- 2026-05-19: Added pytest stage for `tests/py` and limited Bats discovery to numbered shell automation specs.
+- 2026-05-12: Reswizzled from copied Swift+Tests contract to Matchy Bats-based `tests/` lanes.

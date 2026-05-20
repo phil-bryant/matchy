@@ -60,12 +60,12 @@ Tests:
 - R045-T02: Point it back to matching `NN_` source and verify alignment pass output.
 
 R050  Statement: Discover candidate test files for each requirements document.
-Design: Infer test files from requirements path and scoped source conventions, including `testing/sh`, `testing/py`, and top-level `Makefile` mapping to `testing/sh/Makefile.bats`, while canonicalizing symlinked test paths. For Python sources, enforce presence of `testing/py/test_<source-stem>.py` and fail with explicit missing-lane output when absent.
+Design: Infer test files from requirements path and scoped source conventions, including `tests/sh`, `tests/py`, and top-level `Makefile` mapping to `tests/sh/Makefile.bats`, while canonicalizing symlinked test paths. For Python sources, enforce presence of `tests/py/test_<source-stem>.py` and fail with explicit missing-lane output when absent.
 Tests:
-- R050-T01: Verify shell-script requirements discover matching `testing/sh/*.bats` candidates.
-- R050-T02: Verify top-level `Makefile` requirements discover `testing/sh/Makefile.bats`.
-- R050-T03: Verify python requirements discover `testing/py/test_*.py` candidates.
-- R050-T04: Verify python requirements fail with explicit missing-lane output when `testing/py/test_<stem>.py` is absent.
+- R050-T01: Verify shell-script requirements discover matching `tests/sh/*.bats` candidates.
+- R050-T02: Verify top-level `Makefile` requirements discover `tests/sh/Makefile.bats`.
+- R050-T03: Verify python requirements discover `tests/py/test_*.py` candidates.
+- R050-T04: Verify python requirements fail with explicit missing-lane output when `tests/py/test_<stem>.py` is absent.
 
 R055  Statement: Parse `#R` tags from discovered test files.
 Design: Reuse `#R###(-###)*` extraction to build deduplicated requirement-coverage ID sets from discovered tests.
@@ -120,6 +120,7 @@ Tests:
 
 ## Changelog
 
+- 2026-05-20: Renamed repository test directory from `testing/` to `tests/`.
 - 2026-05-16: Strengthened R090 to require 1:1 numbered traceability between requirements `Rxxx-T##` bullets and discovered test `#Rxxx-T##` tags, including malformed-bullet rejection.
 
 - 2026-05-09: Added Go package test discovery requirement for per-file Go traceability docs.

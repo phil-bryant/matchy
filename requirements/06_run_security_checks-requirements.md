@@ -20,7 +20,7 @@ Tests:
 - R010-T01: Remove each required tool from `PATH` and verify explicit missing-command failure output.
 
 R015  Statement: Run ShellCheck lane and persist JSON output.
-Design: Run `shellcheck -f json` across discovered shell targets (`*.sh`, `testing/*.bats`, `testing/sh/*.bats`) and write `shellcheck.json`.
+Design: Run `shellcheck -f json` across discovered shell targets (`*.sh`, `tests/*.bats`, `tests/sh/*.bats`) and write `shellcheck.json`.
 Tests:
 - R015-T01: Stub ShellCheck and verify `shellcheck.json` is written.
 
@@ -76,6 +76,7 @@ Tests:
 
 ## Changelog
 
+- 2026-05-20: Renamed repository test directory from `testing/` to `tests/`.
 - 2026-05-19: Expand detect-secrets excludes for IDE/cache dirs; Bandit gates MEDIUM+ (`-ll`); heartbeat uses `ps` liveness.
 - 2026-05-19: Require per-lane console findings output and detect-secrets heartbeat/exclude behavior.
 - 2026-05-19: Require per-lane pass/fail output and overall gate based on findings instead of unconditional success messaging.

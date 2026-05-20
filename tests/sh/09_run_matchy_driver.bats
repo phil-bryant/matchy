@@ -7,53 +7,35 @@ setup() {
   setup_shell_test
   create_repo_fixture
   copy_script_to_fixture "09_run_matchy_driver.py"
-  mkdir -p "${FIXTURE_ROOT}/urllib"
-  cat > "${FIXTURE_ROOT}/urllib/__init__.py" <<'EOF'
-# fixture urllib package marker
-EOF
-  cat > "${FIXTURE_ROOT}/urllib/error.py" <<'EOF'
-class HTTPError(Exception):
-    def __init__(self, code=500):
-        self.code = code
-
-class URLError(Exception):
-    def __init__(self, reason="network"):
-        self.reason = reason
-EOF
-  cat > "${FIXTURE_ROOT}/urllib/request.py" <<'EOF'
-import json
+  cat > "${FIXTURE_ROOT}/requests.py" <<'EOF'
+import json as json_mod
 import os
 
 _CALLS_FILE = os.environ.get("MATCHY_TEST_CALLS_FILE", "")
 
-class Request:
-    def __init__(self, url, data=None, headers=None, method="GET"):
-        self.full_url = url
-        self.data = data
-        self.headers = headers or {}
-        self.method = method
+class HTTPError(Exception):
+    def __init__(self, response=None):
+        self.response = response
+
+class RequestException(Exception):
+    pass
 
 class _Response:
     def __init__(self, body):
         self._body = body
-    def __enter__(self):
-        return self
-    def __exit__(self, exc_type, exc, tb):
-        return False
-    def read(self):
-        return self._body.encode("utf-8")
+        self.status_code = 200
+    def raise_for_status(self):
+        pass
+    def json(self):
+        return json_mod.loads(self._body)
 
-def urlopen(request, timeout=0):
-    record = {
-        "url": request.full_url,
-        "method": request.method,
-        "timeout": timeout,
-        "payload": json.loads((request.data or b"{}").decode("utf-8")),
-    }
+def post(url, json=None, timeout=0):
+    payload = json or {}
+    record = {"url": url, "method": "POST", "timeout": timeout, "payload": payload}
     if _CALLS_FILE:
         with open(_CALLS_FILE, "a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record) + "\n")
-    return _Response(json.dumps({"results": [{"selected_message_ids": ["m1", "m2"]}]}))
+            handle.write(json_mod.dumps(record) + "\n")
+    return _Response(json_mod.dumps({"results": [{"selected_message_ids": ["m1", "m2"]}]}))
 EOF
 }
 

@@ -239,8 +239,8 @@ requirements_base = os.path.basename(requirements_file)
 requirements_stem = requirements_base
 if requirements_stem.endswith("-requirements.md"):
     requirements_stem = requirements_stem[:-len("-requirements.md")]
-add_path(f"testing/sh/{requirements_stem}.bats", "default")
-add_path(f"testing/py/test_{requirements_stem}.py", "default")
+add_path(f"tests/sh/{requirements_stem}.bats", "default")
+add_path(f"tests/py/test_{requirements_stem}.py", "default")
 
 for source_file in source_files:
     if os.path.isabs(source_file):
@@ -253,15 +253,15 @@ for source_file in source_files:
     ext = ext.lower()
     source_norm = source_file.replace("\\", "/")
     if ext == ".sh":
-        add_path(f"testing/sh/{stem}.bats", "default")
+        add_path(f"tests/sh/{stem}.bats", "default")
     if base == "Makefile":
-        add_path("testing/sh/Makefile.bats", "default")
+        add_path("tests/sh/Makefile.bats", "default")
     if ext == ".py":
-        add_path(f"testing/py/test_{stem}.py", "default")
+        add_path(f"tests/py/test_{stem}.py", "default")
         if source_norm.startswith(tuple(f"{n:02d}_" for n in range(100))):
-            add_path(f"testing/sh/{stem}.bats", "default")
+            add_path(f"tests/sh/{stem}.bats", "default")
     if ext == ".sql":
-        add_path(f"testing/sh/{stem}.bats", "default")
+        add_path(f"tests/sh/{stem}.bats", "default")
     if ext == ".swift":
         collect_swift_lane("Tests", "default", stem=stem)
         # Also search for SwiftPM package-relative Tests/ directory.
@@ -279,12 +279,12 @@ for source_file in source_files:
         collect_go_package_tests(source_file)
 
 if requirements_file.startswith("requirements/") and os.path.basename(requirements_file)[:2].isdigit():
-    tests_sh_root = os.path.join(repo_root, "testing/sh")
+    tests_sh_root = os.path.join(repo_root, "tests/sh")
     if os.path.isdir(tests_sh_root):
         prefix = os.path.basename(requirements_file)[:2] + "_"
         for filename in sorted(os.listdir(tests_sh_root)):
             if filename.startswith(prefix) and filename.endswith(".bats"):
-                add_path(os.path.join("testing/sh", filename), "default")
+                add_path(os.path.join("tests/sh", filename), "default")
 
 with open(default_tests_file, "w", encoding="utf-8") as handle:
     for item in sorted(default_results):
@@ -558,7 +558,7 @@ verify_python_test_lane_coverage() {
     local requirements_file="$1" source_list_file="$2"
     local missing_python_tests_file
     missing_python_tests_file="$(mktemp)"
-    #R050: Enforce Python source coverage with testing/py test files.
+    #R050: Enforce Python source coverage with tests/py test files.
     python3 - "$source_list_file" "$missing_python_tests_file" <<'PY'
 import os
 import sys
@@ -577,7 +577,7 @@ if source_list_file.is_file():
         stem = source_path.stem
         if source_path.suffix.lower() != ".py":
             continue
-        expected = repo_root / "testing" / "py" / f"test_{stem}.py"
+        expected = repo_root / "tests" / "py" / f"test_{stem}.py"
         if not expected.is_file():
             missing.append((source_path.as_posix(), expected.relative_to(repo_root).as_posix()))
 with missing_file.open("w", encoding="utf-8") as handle:
@@ -941,7 +941,7 @@ excluded_real = ""
 if excluded_path:
     excluded_real = str(Path(excluded_path).resolve())
 allowed_exts = {".sh", ".py", ".go", ".swift", ".sql", ".c", ".cc", ".cpp", ".cxx", ".m", ".mm", ".h", ".hpp"}
-excluded_dirs = {".git", ".cursor", "requirements", "tests", "testing", "Tests", "bin", "backups", ".security-reports", ".gocache", ".gomodcache", ".build", "venv", ".venv", "matchy-venv"}
+excluded_dirs = {".git", ".cursor", "requirements", "tests", "Tests", "bin", "backups", ".security-reports", ".gocache", ".gomodcache", ".build", "venv", ".venv", "matchy-venv"}
 excluded_relative_paths = {"storage/schema.sql"}
 excluded_relative_prefixes = ("storage/sql/",)
 files = set()
@@ -1015,7 +1015,7 @@ import os
 
 output_path = Path(sys.argv[1])
 repo_root = Path.cwd().resolve()
-excluded_dirs = {".git", ".cursor", "requirements", "tests", "testing", "bin", "backups", ".security-reports", ".gocache", ".gomodcache", "venv", ".venv", "matchy-venv"}
+excluded_dirs = {".git", ".cursor", "requirements", "tests", "bin", "backups", ".security-reports", ".gocache", ".gomodcache", "venv", ".venv", "matchy-venv"}
 missing = []
 
 for root, dirs, files in os.walk(repo_root):

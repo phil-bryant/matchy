@@ -7,7 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
 PYTHON_BIN="${REPO_ROOT}/matchy-venv/bin/python"
-PYTEST_DIR="${REPO_ROOT}/testing/py"
+PYTEST_DIR="${REPO_ROOT}/tests/py"
 
 print_runner_header() {
   local runner_name="$1"
@@ -41,7 +41,7 @@ fi
 print_runner_header \
   "pytest" \
   "Python native unit test runner for Matchy application modules." \
-  "Executes testing/py test files before shell automation checks." \
+  "Executes tests/py test files before shell automation checks." \
   "https://docs.pytest.org/"
 echo ""
 echo "▶ Running Python unit tests..."
@@ -59,10 +59,10 @@ if ! command -v bats >/dev/null 2>&1; then
   exit 1
 fi
 
-#R015: Discover shell automation tests from numbered testing/sh lanes.
+#R015: Discover shell automation tests from numbered tests/sh lanes.
 shopt -s nullglob
 BATS_TEST_FILES=()
-for candidate in "${REPO_ROOT}"/testing/sh/*.bats; do
+for candidate in "${REPO_ROOT}"/tests/sh/*.bats; do
   base="$(basename "$candidate")"
   if [[ "$base" =~ ^[0-9]{2}_ ]] || [[ "$base" == ".gitignore.bats" ]]; then
     BATS_TEST_FILES+=("$candidate")
@@ -72,7 +72,7 @@ shopt -u nullglob
 
 #R020: Fail clearly when no shell tests are discovered.
 if [ "${#BATS_TEST_FILES[@]}" -eq 0 ]; then
-  echo "No shell unit tests found under ${REPO_ROOT}/testing/sh."
+  echo "No shell unit tests found under ${REPO_ROOT}/tests/sh."
   exit 1
 fi
 
@@ -80,7 +80,7 @@ fi
 print_runner_header \
   "Bats" \
   "Shell script test framework for repository automation scripts." \
-  "Runs numbered testing/sh Bats specs to verify script behavior and contracts." \
+  "Runs numbered tests/sh Bats specs to verify script behavior and contracts." \
   "https://bats-core.readthedocs.io/"
 echo ""
 echo "▶ Running Bats shell tests..."

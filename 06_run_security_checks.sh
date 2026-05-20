@@ -197,7 +197,7 @@ run_shellcheck_lane() {
   local shellcheck_exit=0
   local shell_targets=()
   shopt -s nullglob
-  shell_targets=( ./*.sh ./testing/*.bats ./testing/sh/*.bats )
+  shell_targets=( ./*.sh ./tests/*.bats ./tests/sh/*.bats )
   shopt -u nullglob
   if [ "${#shell_targets[@]}" -eq 0 ]; then
     shell_targets=( ./06_run_security_checks.sh )
