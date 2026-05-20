@@ -7,3 +7,4 @@ psycopg2-binary
 requests==2.34.2
 sqlalchemy
 uvicorn==0.47.0
+pytest

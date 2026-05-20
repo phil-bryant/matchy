@@ -17,6 +17,17 @@ Matchy starts from Teller transactions and finds candidate Outlook emails, then 
 3. Start API:
    - `./08_run_matchy_api.py`
 
+## Test
+
+Run unit tests (pytest for application modules, then Bats for numbered shell scripts):
+
+```bash
+./02_create_venv.sh
+activate
+./03_load_requirements.sh
+./05_run_unit_tests.sh
+```
+
 ## Endpoint
 
 - `POST /v1/matchy/runs`
