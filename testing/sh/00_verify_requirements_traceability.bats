@@ -66,7 +66,7 @@ EOF
   #R005-T01: Second behavior test trace.
   #R001: First behavior test trace.
   #R005: Second behavior test trace.
-  [ 1 -eq 1 ]
+  :
 }
 EOF
   chmod +x "${fixture_root}/fixture.sh"
@@ -97,7 +97,7 @@ EOF
 @test "fixture requirement tags" {
   #R001-T01: First behavior test trace.
   #R001: First behavior test trace.
-  [ 1 -eq 1 ]
+  :
 }
 EOF
   cat > "${fixture_root}/go.mod" <<'EOF'
@@ -185,7 +185,7 @@ EOF
 @test "python lane placeholder" {
   #R001-T01: Python fixture behavior trace.
   #R001: Python fixture behavior trace.
-  [ 1 -eq 1 ]
+  :
 }
 EOF
 }
@@ -218,7 +218,7 @@ EOF
   #R001-T01: Numbered traceability fixture baseline.
   ${HASH}R001-T03: Numbered traceability fixture extra tag not declared in requirements.
   #R001: Numbered traceability fixture coverage.
-  [ 1 -eq 1 ]
+  :
 }
 EOF
   chmod +x "${fixture_root}/fixture.sh"
@@ -268,7 +268,7 @@ EOF
   #R080: Go source scoped requirements discover sibling _test.go files.
   #R085: Repository software files without requirements coverage are auto-detected.
   #R090: Numbered test tag enforcement coverage.
-  [ 1 -eq 1 ]
+  :
 }
 
 @test "Fails when header-bundled tags are used near file top" {
@@ -494,7 +494,7 @@ EOF
 #!/usr/bin/env bats
 @test "placeholder" {
   ${HASH}R001-T99: Intentionally mismatched but should be skipped for requirements-only docs.
-  [ 1 -eq 1 ]
+  :
 }
 EOF
   cp "${BATS_TEST_DIRNAME}/../../00_verify_requirements_traceability.sh" "${fixture_root}/verify_requirements_traceability.sh"

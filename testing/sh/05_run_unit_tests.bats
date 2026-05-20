@@ -104,7 +104,9 @@ EOF
   #R015-T02: Verify numbered shell test discovery proceeds after pytest.
   cat > "${FIXTURE_ROOT}/testing/sh/05_run_unit_tests.bats" <<'EOF'
 #!/usr/bin/env bats
-@test "ok" { [ 1 -eq 1 ]; }
+@test "ok" {
+  :
+}
 EOF
   chmod +x "${FIXTURE_ROOT}/testing/sh/05_run_unit_tests.bats"
   run bash "${FIXTURE_ROOT}/05_run_unit_tests.sh"

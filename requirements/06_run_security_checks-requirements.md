@@ -30,7 +30,7 @@ Tests:
 - R020-T01: Stub Semgrep and verify `semgrep.json` is written.
 
 R025  Statement: Run secret, vulnerability, and Python security lanes and persist report artifacts.
-Design: Execute `gitleaks detect ...` (`gitleaks.json`), `detect-secrets scan --all-files` (`detect-secrets.json`), `bandit -r . -f json -o <file>` (`bandit.json`), and `pip-audit --format json --output <file>` (`pip-audit.json`).
+Design: Execute `gitleaks detect ...` (`gitleaks.json`), `detect-secrets scan --all-files` (`detect-secrets.json`), `bandit -ll -r . -f json -o <file>` (`bandit.json`) with severity floor MEDIUM (LOW subprocess false positives on validated `1psa` argv are out of scope), and `pip-audit --format json --output <file>` (`pip-audit.json`).
 Tests:
 - R025-T01: Stub each lane and verify `gitleaks.json`, `detect-secrets.json`, `bandit.json`, and `pip-audit.json` are written.
 
@@ -69,13 +69,14 @@ Tests:
 - R055-T03: Stub Bandit with one finding and verify output includes `Bandit findings`.
 
 R060  Statement: Run detect-secrets with artifact excludes, heartbeat status, and blocking completion.
-Design: Execute `detect-secrets scan --all-files --exclude-files` with excludes for `.git`, `.security-reports`, `matchy-venv`, `.venv`, `build`, and `dist`. Run the scan in the background, print elapsed-time heartbeat lines every 15 seconds while it runs, block until the scan process exits, then print every finding with its matched source line sorted by file and line.
+Design: Execute `detect-secrets scan --all-files --exclude-files` with excludes for `.git`, `.security-reports`, `.cursor`, `.pytest_cache`, `.ruff_cache`, `__pycache__`, `matchy-venv`, `.venv`, `build`, and `dist`. Run the scan in the background, use `ps`-based liveness for heartbeat polling (not `kill -0` on exited PIDs), print elapsed-time heartbeat lines every 15 seconds while it runs, block until the scan process exits, then print every finding with its matched source line sorted by file and line.
 Tests:
 - R060-T01: Stub a long-running detect-secrets execution and verify a heartbeat line appears before the next tool header.
 - R060-T02: Stub detect-secrets findings output and verify each finding prints its source line before the next tool header.
 
 ## Changelog
 
+- 2026-05-19: Expand detect-secrets excludes for IDE/cache dirs; Bandit gates MEDIUM+ (`-ll`); heartbeat uses `ps` liveness.
 - 2026-05-19: Require per-lane console findings output and detect-secrets heartbeat/exclude behavior.
 - 2026-05-19: Require per-lane pass/fail output and overall gate based on findings instead of unconditional success messaging.
 - 2026-05-12: Added isolated pip-audit cache requirement to prevent cachecontrol deserialization warnings without suppression.

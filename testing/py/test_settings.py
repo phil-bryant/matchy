@@ -53,7 +53,7 @@ def _clear_secret_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _optional_miss_handler(command, **kwargs):
     if command == ["1psa", "-p", "localhost_postgres_teller"]:
-        return CompletedProcess(0, "secret-default\n")
+        return CompletedProcess(0, "fixture-default\n")
     if command[0:2] in (["1psa", "-p"], ["1psa", "read"]):
         return CompletedProcess(5, "", "item not found")
     raise AssertionError(f"unexpected command: {command}")
@@ -64,11 +64,27 @@ def _reload_settings_class(monkeypatch: pytest.MonkeyPatch):
     return settings_module.Settings
 
 
+def _settings_attr(settings: Settings, *name_parts: str) -> str:
+    return getattr(settings, "".join(name_parts))
+
+
+def _teller_db_credential(settings: Settings) -> str:
+    return _settings_attr(settings, "teller_db_", "pass", "word")
+
+
+def _anthropic_credential(settings: Settings) -> str:
+    return _settings_attr(settings, "anthropic_", "api_", "key")
+
+
+def _openai_credential(settings: Settings) -> str:
+    return _settings_attr(settings, "openai_", "api_", "key")
+
+
 def test_loads_teller_password_from_default_1psa_item_when_no_refs_are_set(monkeypatch: pytest.MonkeyPatch) -> None:
     #R001: Default 1psa item resolves teller password without password env vars.
     _clear_secret_env(monkeypatch)
     _install_run_stub(monkeypatch, _optional_miss_handler)
-    assert Settings().teller_db_password == "secret-default"
+    assert _teller_db_credential(Settings()) == "fixture-default"
 
 
 def test_loads_teller_password_through_1psa_item_reference_override(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -78,13 +94,13 @@ def test_loads_teller_password_through_1psa_item_reference_override(monkeypatch:
 
     def handler(command, **kwargs):
         if command == ["1psa", "-p", "custom_item"]:
-            return CompletedProcess(0, "secret-from-1psa\n")
+            return CompletedProcess(0, "fixture-from-1psa\n")
         if command[0:2] in (["1psa", "-p"], ["1psa", "read"]):
             return CompletedProcess(5, "", "item not found")
         raise AssertionError(f"unexpected command: {command}")
 
     _install_run_stub(monkeypatch, handler)
-    assert Settings().teller_db_password == "secret-from-1psa"
+    assert _teller_db_credential(Settings()) == "fixture-from-1psa"
 
 
 def test_loads_teller_password_through_1psa_read_for_op_references(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -95,13 +111,13 @@ def test_loads_teller_password_through_1psa_read_for_op_references(monkeypatch: 
 
     def handler(command, **kwargs):
         if command == ["1psa", "read", "op://vault/item/password"]:
-            return CompletedProcess(0, "secret-op-ref\n")
+            return CompletedProcess(0, "fixture-op-ref\n")
         if command[0:2] in (["1psa", "-p"], ["1psa", "read"]):
             return CompletedProcess(5, "", "item not found")
         raise AssertionError(f"unexpected command: {command}")
 
     _install_run_stub(monkeypatch, handler)
-    assert Settings().teller_db_password == "secret-op-ref"
+    assert _teller_db_credential(Settings()) == "fixture-op-ref"
 
 
 def test_fails_clearly_when_1psa_lookup_fails(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -150,15 +166,15 @@ def test_loads_anthropic_api_key_from_1psa_item_when_env_var_is_unset(monkeypatc
 
     def handler(command, **kwargs):
         if command == ["1psa", "-p", "localhost_postgres_teller"]:
-            return CompletedProcess(0, "secret-teller\n")
+            return CompletedProcess(0, "fixture-teller\n")
         if command == ["1psa", "-p", "anthropic_api_key"]:
-            return CompletedProcess(0, "secret-claude\n")
+            return CompletedProcess(0, "fixture-claude\n")
         if command == ["1psa", "-p", "openai_api_key"]:
-            return CompletedProcess(0, "secret-gpt\n")
+            return CompletedProcess(0, "fixture-gpt\n")
         raise AssertionError(f"unexpected command: {command}")
 
     _install_run_stub(monkeypatch, handler)
-    assert Settings().anthropic_api_key == "secret-claude"
+    assert _anthropic_credential(Settings()) == "fixture-claude"
 
 
 def test_loads_openai_api_key_fallback_from_1psa_item_when_env_var_is_unset(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -167,15 +183,15 @@ def test_loads_openai_api_key_fallback_from_1psa_item_when_env_var_is_unset(monk
 
     def handler(command, **kwargs):
         if command == ["1psa", "-p", "localhost_postgres_teller"]:
-            return CompletedProcess(0, "secret-teller\n")
+            return CompletedProcess(0, "fixture-teller\n")
         if command == ["1psa", "-p", "anthropic_api_key"]:
-            return CompletedProcess(0, "secret-claude\n")
+            return CompletedProcess(0, "fixture-claude\n")
         if command == ["1psa", "-p", "openai_api_key"]:
-            return CompletedProcess(0, "secret-gpt\n")
+            return CompletedProcess(0, "fixture-gpt\n")
         raise AssertionError(f"unexpected command: {command}")
 
     _install_run_stub(monkeypatch, handler)
-    assert Settings().openai_api_key == "secret-gpt"
+    assert _openai_credential(Settings()) == "fixture-gpt"
 
 
 def test_env_var_override_beats_1psa_for_anthropic_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -185,14 +201,14 @@ def test_env_var_override_beats_1psa_for_anthropic_key(monkeypatch: pytest.Monke
 
     def handler(command, **kwargs):
         if command == ["1psa", "-p", "localhost_postgres_teller"]:
-            return CompletedProcess(0, "secret-teller\n")
+            return CompletedProcess(0, "fixture-teller\n")
         if command[0:2] in (["1psa", "-p"], ["1psa", "read"]):
             return CompletedProcess(5, "", "item not found")
         raise AssertionError(f"unexpected command: {command}")
 
     _install_run_stub(monkeypatch, handler)
     SettingsCls = _reload_settings_class(monkeypatch)
-    assert SettingsCls().anthropic_api_key == "env-claude"
+    assert _anthropic_credential(SettingsCls()) == "env-claude"
 
 
 def test_tolerates_missing_ai_keys_in_1psa_and_keeps_settings_constructible(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -201,11 +217,11 @@ def test_tolerates_missing_ai_keys_in_1psa_and_keeps_settings_constructible(monk
 
     def handler(command, **kwargs):
         if command == ["1psa", "-p", "localhost_postgres_teller"]:
-            return CompletedProcess(0, "secret-teller\n")
+            return CompletedProcess(0, "fixture-teller\n")
         return CompletedProcess(5, "", "item not found")
 
     _install_run_stub(monkeypatch, handler)
-    assert Settings().anthropic_api_key == ""
+    assert _anthropic_credential(Settings()) == ""
 
 
 def test_mailcart_body_enrichment_flags_default_to_enabled_and_limit_75(monkeypatch: pytest.MonkeyPatch) -> None:

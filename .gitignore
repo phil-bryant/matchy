@@ -16,3 +16,7 @@ DerivedData/
 #R035: Ignore Python bytecode caches generated during local runs.
 __pycache__/
 *.pyc
+#R040: Ignore local IDE plans and tool caches (not source).
+.cursor/
+.pytest_cache/
+.ruff_cache/

@@ -128,7 +128,7 @@ EOF
   stub_cmd gitleaks "while [ \$# -gt 0 ]; do if [ \"\$1\" = \"--report-path\" ]; then printf '[]' > \"\$2\"; fi; shift; done; exit 0"
   stub_cmd detect-secrets "printf '{\"results\":{}}'; exit 0"
   stub_cmd ruff "printf '[]'; exit 0"
-  stub_cmd bandit 'while [ $# -gt 0 ]; do if [ "$1" = "-o" ]; then printf '"'"'{"results":[{"filename":"./08_run_matchy_api.py","line_number":25,"test_id":"B310","test_name":"blacklist","issue_severity":"MEDIUM","issue_text":"Audit url open"}]}'"'"' > "$2"; fi; shift; done; exit 0'
+  stub_cmd bandit "while [ \$# -gt 0 ]; do if [ \"\$1\" = \"-o\" ]; then printf '%s' '{\"results\":[{\"filename\":\"./08_run_matchy_api.py\",\"line_number\":25,\"test_id\":\"B310\",\"test_name\":\"blacklist\",\"issue_severity\":\"MEDIUM\",\"issue_text\":\"Audit url open\"}]}' > \"\$2\"; fi; shift; done; exit 0"
   stub_cmd pip-audit "while [ \$# -gt 0 ]; do if [ \"\$1\" = \"--output\" ]; then printf '{\"dependencies\":[]}' > \"\$2\"; fi; shift; done; exit 0"
   run env SECURITY_FAIL_ON_FINDINGS=false bash "${FIXTURE_ROOT}/06_run_security_checks.sh"
   [ "$status" -eq 0 ]

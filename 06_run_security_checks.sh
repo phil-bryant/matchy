@@ -323,7 +323,7 @@ run_detect_secrets_lane() {
   local detect_secrets_elapsed=0
   local detect_secrets_interval=15
   local detect_secrets_exclude_files
-  detect_secrets_exclude_files='(^|/)(\.git|\.security-reports|matchy-venv|\.venv|build|dist)(/|$)'
+  detect_secrets_exclude_files='(^|/)(\.git|\.security-reports|\.cursor|\.pytest_cache|\.ruff_cache|__pycache__|matchy-venv|\.venv|build|dist)(/|$)'
   print_tool_header \
     "detect-secrets" \
     "Scans repository files for high-entropy and known secret formats." \
@@ -332,8 +332,19 @@ run_detect_secrets_lane() {
   echo "Report: ${detect_secrets_report_path}"
   echo "▶ Running detect-secrets"
   echo "  (scan can take several minutes; intermediate status every 15s — JSON written only when complete)"
+  detect_secrets_process_alive() {
+    local pid="$1"
+    local alive=false
+    if [[ -n "$pid" ]] && ps -p "$pid" -o pid= | grep -q .; then
+      alive=true
+    fi
+    if [ "$alive" = true ]; then
+      return 0
+    fi
+    return 1
+  }
   cleanup_detect_secrets_lane() {
-    if [[ -n "$detect_secrets_pid" ]] && kill -0 "$detect_secrets_pid"; then
+    if detect_secrets_process_alive "$detect_secrets_pid"; then
       kill "$detect_secrets_pid" || true
       wait "$detect_secrets_pid" || true
     fi
@@ -342,15 +353,16 @@ run_detect_secrets_lane() {
   set +e
   detect-secrets scan --all-files --exclude-files "$detect_secrets_exclude_files" > "$detect_secrets_report_path" &
   detect_secrets_pid=$!
-  while kill -0 "$detect_secrets_pid"; do
+  while detect_secrets_process_alive "$detect_secrets_pid"; do
     sleep "$detect_secrets_interval"
-    if kill -0 "$detect_secrets_pid"; then
+    if detect_secrets_process_alive "$detect_secrets_pid"; then
       detect_secrets_elapsed=$((detect_secrets_elapsed + detect_secrets_interval))
       echo "… detect-secrets still running (${detect_secrets_elapsed}s elapsed)"
     fi
   done
   wait "$detect_secrets_pid"
   detect_secrets_exit=$?
+  detect_secrets_pid=""
   set -e
   trap - EXIT INT TERM
   record_lane_exit detect-secrets "$detect_secrets_exit"
@@ -454,7 +466,7 @@ run_bandit_lane() {
   echo "Report: ${bandit_report_path}"
   echo "▶ Running Bandit"
   set +e
-  bandit -r "${python_targets[@]}" -x "./matchy-venv,./.venv,./build,./dist" -f json -o "$bandit_report_path"
+  bandit -ll -r "${python_targets[@]}" -x "./matchy-venv,./.venv,./build,./dist" -f json -o "$bandit_report_path"
   bandit_exit=$?
   set -e
   record_lane_exit bandit "$bandit_exit"

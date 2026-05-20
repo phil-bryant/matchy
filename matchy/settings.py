@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from dataclasses import dataclass
+
+_ONEPSA_ITEM_REF_PATTERN = re.compile(r"[A-Za-z0-9._-]+")
+_ONEPSA_OP_REF_PATTERN = re.compile(r"^op://[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 
 
 @dataclass(frozen=True)
@@ -60,12 +64,25 @@ class Settings:
             resolved = self._load_optional_secret_from_1psa(item_name.strip())
         return resolved
 
+    def _validate_1psa_secret_ref(self, secret_ref: str) -> str:
+        candidate = secret_ref.strip()
+        if not candidate:
+            raise ValueError("1psa secret reference must not be empty")
+        if candidate.startswith("op://"):
+            if not _ONEPSA_OP_REF_PATTERN.fullmatch(candidate):
+                raise ValueError(f"invalid op:// 1psa reference: {candidate!r}")
+            return candidate
+        if not _ONEPSA_ITEM_REF_PATTERN.fullmatch(candidate):
+            raise ValueError(f"invalid 1psa item reference: {candidate!r}")
+        return candidate
+
     def _load_secret_from_1psa(self, secret_ref: str) -> str:
         #R010: Raise clear runtime failures when 1psa cannot return a usable secret.
         output = ""
-        command = ["1psa", "-p", secret_ref]
-        if secret_ref.startswith("op://"):
-            command = ["1psa", "read", secret_ref]
+        validated_ref = self._validate_1psa_secret_ref(secret_ref)
+        command = ["1psa", "-p", validated_ref]
+        if validated_ref.startswith("op://"):
+            command = ["1psa", "read", validated_ref]
         try:
             completed = subprocess.run(
                 command,
@@ -90,9 +107,10 @@ class Settings:
     def _load_optional_secret_from_1psa(self, secret_ref: str) -> str:
         #R015: Optional 1psa secrets resolve to empty string when 1psa is missing, errors, or returns nothing.
         output = ""
-        command = ["1psa", "-p", secret_ref]
-        if secret_ref.startswith("op://"):
-            command = ["1psa", "read", secret_ref]
+        validated_ref = self._validate_1psa_secret_ref(secret_ref)
+        command = ["1psa", "-p", validated_ref]
+        if validated_ref.startswith("op://"):
+            command = ["1psa", "read", validated_ref]
         try:
             completed = subprocess.run(command, check=False, capture_output=True, text=True)
             if completed.returncode == 0:

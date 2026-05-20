@@ -47,7 +47,7 @@ echo ""
 echo "▶ Running Python unit tests..."
 if ! (
   cd "$REPO_ROOT"
-  PYTHONPATH="$REPO_ROOT" TELLER_DB_PASSWORD="pw" "$PYTHON_BIN" -m pytest "$PYTEST_DIR"
+  PYTHONPATH="$REPO_ROOT" "$PYTHON_BIN" -m pytest "$PYTEST_DIR"
 ); then
   echo "Python unit tests failed."
   exit 1
