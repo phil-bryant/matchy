@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import asdict
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -199,8 +200,13 @@ class MatchRepository:
             "ai_confidence": float(confidence) if confidence is not None else None,
         }
 
+    #R030: Persist subject/sender/preview into cached_* columns at candidate-insert time so
+    #R030: downstream UIs (Teller's Match & Classify candidates pane) can render without paying
+    #R030: another per-message Mailcart round-trip per row. Matchy already pulls this metadata
+    #R030: from Mailcart (search response + body enrichment) so persisting it is free at this point.
     def insert_candidates(self, session, match_run_id: int, transaction_id: str, candidates: list[RankedCandidate], ai_selected_ids: set[str]) -> None:
         for ranked in candidates:
+            preview = ranked.candidate.preview or ranked.candidate.body_text[:240] if ranked.candidate.body_text else ranked.candidate.preview
             session.execute(
                 text(
                     """
@@ -212,7 +218,11 @@ class MatchRepository:
                         score,
                         reason_json,
                         is_unmatched_email_priority,
-                        is_selected_by_ai
+                        is_selected_by_ai,
+                        cached_subject,
+                        cached_sender,
+                        cached_snippet,
+                        cached_fetched_at
                     ) VALUES (
                         :match_run_id,
                         :transaction_id,
@@ -221,7 +231,12 @@ class MatchRepository:
                         :score,
                         CAST(:reason_json AS jsonb),
                         :is_unmatched_email_priority,
-                        :is_selected_by_ai
+                        :is_selected_by_ai,
+                        :cached_subject,
+                        :cached_sender,
+                        :cached_snippet,
+                        CASE WHEN :cached_subject IS NULL AND :cached_sender IS NULL AND :cached_snippet IS NULL
+                             THEN NULL ELSE CURRENT_TIMESTAMP END
                     )
                     """
                 ),
@@ -234,6 +249,9 @@ class MatchRepository:
                     "reason_json": __import__("json").dumps(ranked.reasons),
                     "is_unmatched_email_priority": ranked.reasons.get("unmatched_email_priority", False),
                     "is_selected_by_ai": ranked.candidate.message_id in ai_selected_ids,
+                    "cached_subject": (ranked.candidate.subject or None),
+                    "cached_sender": (ranked.candidate.sender or None),
+                    "cached_snippet": (preview or None),
                 },
             )
 
