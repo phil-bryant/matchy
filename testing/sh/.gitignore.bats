@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Numbered traceability tags: #R001-T01 #R005-T01 #R010-T01 #R015-T01 #R020-T01 #R025-T01
+# Numbered traceability tags: #R001-T01 #R005-T01 #R010-T01 #R015-T01 #R020-T01 #R025-T01 #R030-T01 #R030-T02 #R035-T01 #R035-T02
 
 @test ".build artifacts are ignored and hidden from git status" {
   #R001: Build output must be ignored recursively.
@@ -44,4 +44,23 @@
   #R015: Cleanup should happen via cached removals, not local deletion.
   run git check-ignore -q "Package.swift"
   [ "$status" -ne 0 ]
+}
+
+@test "project virtual environment remains ignored" {
+  #R030: Venv directory must be excluded from version control.
+  repo_basename="$(basename "$PWD")"
+  venv_probe="${repo_basename}-venv/lib/traceability-ignore-probe-$$.tmp"
+  run git check-ignore -v "$venv_probe"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *".gitignore"* ]]
+  [[ "$output" == *"*-venv/"* ]]
+}
+
+@test "python bytecode caches remain ignored" {
+  #R035: __pycache__ directories and .pyc files must be excluded from version control.
+  pyc_probe="matchy/__pycache__/module.cpython-312.pyc"
+  run git check-ignore -v "$pyc_probe"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *".gitignore"* ]]
+  [[ "$output" == *"__pycache__/"* ]] || [[ "$output" == *"*.pyc"* ]]
 }

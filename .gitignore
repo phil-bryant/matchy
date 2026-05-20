@@ -7,10 +7,12 @@ DerivedData/
 #R010: Keep source and package metadata trackable (no ignore rule for source or Package.swift).
 #R015: Ignore policy supports cached removals for already-tracked artifacts.
 #R020: Ensure ignored build outputs remain untracked in git index.
-#R025: Ignore security report artifacts and generated caches.
+#R025: Ignore security report artifacts.
 .security-reports/
-#R025: Ignore Python bytecode caches generated during local runs.
-__pycache__/
-*.pyc
 #R025: Ignore local recovery stash for safe artifact moves.
 .trash/
+#R030: Ignore project virtual environment (see 02_create_venv.sh: <cwd-basename>-venv).
+*-venv/
+#R035: Ignore Python bytecode caches generated during local runs.
+__pycache__/
+*.pyc
