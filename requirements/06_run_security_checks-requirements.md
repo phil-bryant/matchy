@@ -34,10 +34,16 @@ Design: Execute `gitleaks detect ...` (`gitleaks.json`), `detect-secrets scan --
 Tests:
 - R025-T01: Stub each lane and verify `gitleaks.json`, `detect-secrets.json`, `bandit.json`, and `pip-audit.json` are written.
 
-R030  Statement: Emit deterministic completion output.
-Design: Print a final success line containing the report directory path.
+R030  Statement: Emit per-lane and overall pass/fail output that reflects real findings.
+Design: After all lanes complete, print one `✅ PASS:` or `❌ FAIL:` line per tool based on report findings and lane exit codes, write `security-summary.json`, then print a final overall `✅ Security checks PASSED` or `❌ Security checks FAILED` line containing the report directory path. Exit non-zero when any lane fails.
 Tests:
-- R030-T01: Run script and verify output includes `Security checks completed. Reports:`.
+- R030-T01: Run script with clean stubbed tools and verify output includes `✅ PASS:` lines and `✅ Security checks PASSED. Reports:`.
+- R030-T02: Run script with a stubbed lane that reports findings and verify output includes `❌ FAIL:` for that lane and `❌ Security checks FAILED. Reports:` with non-zero exit status.
+
+R050  Statement: Gate overall status on findings and execution errors.
+Design: Honor `SECURITY_FAIL_ON_FINDINGS` (default `true`). Count findings from each lane JSON artifact and treat execution errors (invalid/missing reports or tool exit codes above tool-specific thresholds) as lane failures.
+Tests:
+- R050-T01: Stub ShellCheck to exit 1 with a non-empty JSON report and verify the script exits non-zero.
 
 R035  Statement: Print standardized per-lane security tool headers.
 Design: Each enabled lane prints a manifold-style header block including tool name, short explainer lines, and URL.
@@ -55,8 +61,23 @@ Tests:
 - R045-T01: Stub `pip-audit` to record `PIP_CACHE_DIR` and verify it points to `${REPORT_DIR}/.pip-cache`.
 - R045-T02: Verify the cache directory is created and pip-audit output remains visible (no `/dev/null` suppression for the lane).
 
+R055  Statement: Print human-readable findings to the console after each lane completes.
+Design: Parse each lane JSON artifact and print operator-facing finding lines before the next tool header. ShellCheck, Semgrep, Ruff, and Bandit emit structured finding lists; detect-secrets emits findings with source lines; Gitleaks and pip-audit emit concise warning lines when native CLI output is insufficient. Emit nothing extra when a lane report contains zero findings.
+Tests:
+- R055-T01: Stub ShellCheck with one finding and verify output includes `ShellCheck findings` and file/line detail before the next `Security Tool:` header.
+- R055-T02: Stub Ruff with one finding and verify output includes `Ruff findings`.
+- R055-T03: Stub Bandit with one finding and verify output includes `Bandit findings`.
+
+R060  Statement: Run detect-secrets with artifact excludes, heartbeat status, and blocking completion.
+Design: Execute `detect-secrets scan --all-files --exclude-files` with excludes for `.git`, `.security-reports`, `matchy-venv`, `.venv`, `build`, and `dist`. Run the scan in the background, print elapsed-time heartbeat lines every 15 seconds while it runs, block until the scan process exits, then print every finding with its matched source line sorted by file and line.
+Tests:
+- R060-T01: Stub a long-running detect-secrets execution and verify a heartbeat line appears before the next tool header.
+- R060-T02: Stub detect-secrets findings output and verify each finding prints its source line before the next tool header.
+
 ## Changelog
 
+- 2026-05-19: Require per-lane console findings output and detect-secrets heartbeat/exclude behavior.
+- 2026-05-19: Require per-lane pass/fail output and overall gate based on findings instead of unconditional success messaging.
 - 2026-05-12: Added isolated pip-audit cache requirement to prevent cachecontrol deserialization warnings without suppression.
 - 2026-05-12: Expanded Matchy security lanes to include detect-secrets, ruff, bandit, and pip-audit.
 - 2026-05-12: Added requirements for standardized tool headers and running indicators.
