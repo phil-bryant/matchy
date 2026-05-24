@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Numbered traceability tags: #R001-T01 #R005-T01
+# Numbered traceability tags: #R001-T01 #R005-T01 #R010-T01 #R010-T02
 
 load "helpers/common.bash"
 
@@ -29,4 +29,13 @@ teardown() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"host=127.0.0.1"* ]]
   [[ "$output" == *"port=8790"* ]]
+  #R010: Profiling is opt-in and must stay quiet by default.
+  [[ "$output" != *"[matchy-startup +"* ]]
+}
+
+@test "run script emits startup profiling logs only with --profile" {
+  #R010: --profile enables startup timing logs for launcher startup phases.
+  run env MATCHY_PORT_GUARD="false" PYTHONPATH="${FIXTURE_ROOT}" python3 "${FIXTURE_ROOT}/08_run_matchy_api.py" --profile
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[matchy-startup +"* ]]
 }

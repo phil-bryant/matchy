@@ -37,6 +37,11 @@ Tests:
 - R015-T01: Stub a `MailcartClient` whose `get_message` returns a body for one id and a 404 for another; verify the enriched candidate carries the new `body_text` while the un-enriched candidate retains its original preview-only `body_text`.
 - R015-T02: Disable `mailcart_body_enrichment_enabled` via settings and verify candidates pass through unchanged (no `get_message` calls).
 
+R030  Statement: Pending batch matching should process transactions concurrently with deterministic output order.
+Design: `match_pending_transactions` uses a bounded worker pool (`MATCHY_PENDING_MAX_WORKERS`, default `4`) to run per-transaction matches concurrently while preserving result row order and per-transaction failure tolerance.
+Tests:
+- R030-T01: Stub pending id discovery and verify `match_pending_transactions` invokes all discovered ids and returns deterministic ordered rows.
+
 ## Changelog
 
 - 2026-05-18: Added service requirements coverage for missing transaction and query construction behavior.
@@ -44,3 +49,4 @@ Tests:
 - 2026-05-19: Added R015 candidate-body enrichment so scoring can disambiguate same-day same-merchant transactions whose fare appears only in the email body (Lyft, Uber, food delivery, etc.).
 - 2026-05-19: Added R020 Postgres-backed cache so matchy skips redundant AI evaluations when the candidate id set and model+prompt are unchanged since the previous run, keeping the auto-driver's per-loop cost bounded to a single Mailcart search.
 - 2026-05-19: Added R025 per-transaction error tolerance in `match_pending_transactions` so a single 429/blip does not abort the whole batch.
+- 2026-05-24: Added R030 concurrent pending-batch processing with configurable worker pool and deterministic result ordering.

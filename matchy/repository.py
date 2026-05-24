@@ -116,18 +116,30 @@ class MatchRepository:
         rows = session.execute(
             text(
                 """
+                WITH latest_runs AS (
+                    SELECT DISTINCT ON (temr.transaction_id)
+                           temr.transaction_id,
+                           temr.created_at,
+                           temr.completed_at
+                      FROM teller.transaction_email_match_run temr
+                     ORDER BY temr.transaction_id, temr.match_run_id DESC
+                )
                 SELECT tt.transaction_id
                   FROM teller.transaction tt
              LEFT JOIN teller.transaction_email_match tem
                     ON tem.transaction_id = tt.transaction_id
                    AND tem.active = TRUE
+             LEFT JOIN latest_runs lr
+                    ON lr.transaction_id = tt.transaction_id
                  WHERE tt.date >= CURRENT_DATE - (:lookback_days * INTERVAL '1 day')
                    AND (
                        tem.match_id IS NULL
                        OR tem.state::text = 'ai_candidate_uncertain'
                        OR (tem.state::text = 'ai_no_match_found' AND tem.selected_by::text = 'ai')
                    )
-                 ORDER BY tt.date DESC, tt.transaction_id ASC
+                 ORDER BY COALESCE(lr.completed_at, lr.created_at, to_timestamp(0)) ASC,
+                          tt.date DESC,
+                          tt.transaction_id ASC
                  LIMIT :limit
                 """
             ),
@@ -282,6 +294,7 @@ class MatchRepository:
         selected = []
         now = datetime.now(tz=timezone.utc)
         selected_ids = set(ai_selection.selected_message_ids)
+        conflict_detected = False
         session.execute(
             text(
                 """
@@ -341,6 +354,8 @@ class MatchRepository:
                 continue
             if self.has_active_match(session, ranked.candidate.message_id):
                 state = "ai_candidate_uncertain"
+                conflict_detected = True
+                continue
             session.execute(
                 text(
                     """
@@ -381,6 +396,46 @@ class MatchRepository:
                 },
             )
             selected.append(ranked.candidate.message_id)
+
+        if conflict_detected and not selected:
+            session.execute(
+                text(
+                    """
+                    INSERT INTO teller.transaction_email_match (
+                        transaction_id,
+                        email_message_id,
+                        state,
+                        ai_confidence,
+                        explanation_json,
+                        selected_by,
+                        selected_at,
+                        active
+                    ) VALUES (
+                        :transaction_id,
+                        NULL,
+                        'ai_candidate_uncertain',
+                        :ai_confidence,
+                        CAST(:explanation_json AS jsonb),
+                        'ai',
+                        :selected_at,
+                        TRUE
+                    )
+                    """
+                ),
+                {
+                    "transaction_id": transaction_id,
+                    "ai_confidence": ai_selection.confidence,
+                    "explanation_json": __import__("json").dumps(
+                        {
+                            "rationale": ai_selection.rationale,
+                            "run_id": run_id,
+                            "reason": "selected_email_already_has_active_match",
+                        }
+                    ),
+                    "selected_at": now,
+                },
+            )
+            state = "ai_candidate_uncertain"
 
         self._update_run_status(session, run_id, "needs_review" if state == "ai_candidate_uncertain" else "succeeded")
         return selected

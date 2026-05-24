@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Numbered traceability tags: #R001-T01 #R005-T01
+# Numbered traceability tags: #R001-T01 #R005-T01 #R010-T01 #R010-T02 #R010-T03
 
 load "helpers/common.bash"
 
@@ -10,6 +10,7 @@ setup() {
   cat > "${FIXTURE_ROOT}/requests.py" <<'EOF'
 import json as json_mod
 import os
+import time
 
 _CALLS_FILE = os.environ.get("MATCHY_TEST_CALLS_FILE", "")
 
@@ -30,6 +31,9 @@ class _Response:
         return json_mod.loads(self._body)
 
 def post(url, json=None, timeout=0):
+    sleep_seconds = float(os.environ.get("MATCHY_TEST_POST_SLEEP_SECONDS", "0").strip() or "0")
+    if sleep_seconds > 0:
+        time.sleep(sleep_seconds)
     payload = json or {}
     record = {"url": url, "method": "POST", "timeout": timeout, "payload": payload}
     if _CALLS_FILE:
@@ -53,6 +57,8 @@ teardown() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"driver_run=1 status=ok"* ]]
   [[ "$output" == *"batch_size=1 selected_messages=2"* ]]
+  #R010: Profiling logs are off unless --profile is passed.
+  [[ "$output" != *"[matchy-driver-startup +"* ]]
   [ -f "${MATCHY_TEST_CALLS_FILE}" ]
   local calls_text
   calls_text="$(cat "${MATCHY_TEST_CALLS_FILE}")"
@@ -62,4 +68,20 @@ teardown() {
   [[ "$calls_text" == *"\"limit\": 9"* ]]
   [[ "$calls_text" == *"\"lookback_days\": 3"* ]]
   [[ "$calls_text" == *"\"trigger_source\": \"auto\""* ]]
+}
+
+@test "driver --profile emits startup timing logs" {
+  #R010: --profile enables startup timing logs for driver initialization phases.
+  run env PYTHONPATH="${FIXTURE_ROOT}" MATCHY_DRIVER_ONCE="true" python3 "${FIXTURE_ROOT}/09_run_matchy_driver.py" --profile
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[matchy-driver-startup +"* ]]
+  [[ "$output" == *"driver_run=1 status=ok"* ]]
+}
+
+@test "driver --profile emits waiting heartbeat while request is in flight" {
+  #R010: --profile surfaces in-flight wait heartbeats during long pending-run HTTP calls.
+  run env PYTHONPATH="${FIXTURE_ROOT}" MATCHY_DRIVER_ONCE="true" MATCHY_TEST_POST_SLEEP_SECONDS="6" python3 "${FIXTURE_ROOT}/09_run_matchy_driver.py" --profile
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"run-waiting"* ]]
+  [[ "$output" == *"driver_run=1 status=ok"* ]]
 }

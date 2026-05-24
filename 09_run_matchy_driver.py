@@ -1,18 +1,28 @@
 #!/usr/bin/env python3
 #R001: Provide executable entrypoint that drives pending transaction match runs.
+import argparse
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import os
 import time
+from time import perf_counter
 from urllib.parse import urlparse
 
 import requests
 
 DEFAULT_API_BASE_URL = "http://127.0.0.1:8790"
-DEFAULT_LIMIT = 100
+DEFAULT_LIMIT = 10
 DEFAULT_LOOKBACK_DAYS = 14
 DEFAULT_INTERVAL_SECONDS = 30
 DEFAULT_TIMEOUT_SECONDS = 180
 DEFAULT_TRIGGER_SOURCE = "auto"
 _ALLOWED_API_HOSTS = frozenset({"127.0.0.1", "localhost"})
+
+
+def _startup_log(start_time_seconds: float, phase: str, details: str = "", profile_enabled: bool = False) -> None:
+    if profile_enabled:
+        elapsed_seconds = perf_counter() - start_time_seconds
+        suffix = f" | {details}" if details else ""
+        print(f"[matchy-driver-startup +{elapsed_seconds:7.3f}s] {phase}{suffix}", flush=True)
 
 
 def _env_int(name: str, default_value: int, min_value: int) -> int:
@@ -63,6 +73,51 @@ def _post_pending_run(api_base_url: str, limit: int, lookback_days: int, trigger
     return response_payload
 
 
+def _post_pending_run_with_profile_heartbeat(
+    api_base_url: str,
+    limit: int,
+    lookback_days: int,
+    trigger_source: str,
+    timeout_seconds: int,
+    startup_started_at: float,
+    run_counter: int,
+    profile_enabled: bool,
+) -> dict:
+    response_payload: dict = {"results": []}
+    heartbeat_seconds = 5
+    elapsed_wait_seconds = 0
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_post_pending_run, api_base_url, limit, lookback_days, trigger_source, timeout_seconds)
+        finished = False
+        while not finished:
+            try:
+                response_payload = future.result(timeout=heartbeat_seconds)
+                finished = True
+            except TimeoutError:
+                elapsed_wait_seconds += heartbeat_seconds
+                _startup_log(
+                    startup_started_at,
+                    "run-waiting",
+                    f"run={run_counter} elapsed_wait_seconds={elapsed_wait_seconds} timeout_seconds={timeout_seconds}",
+                    profile_enabled=profile_enabled,
+                )
+    return response_payload
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run Matchy pending-transaction driver")
+    parser.add_argument("--profile", action="store_true", default=False)
+    parser.add_argument("--api-base-url", default=os.environ.get("MATCHY_API_BASE_URL", DEFAULT_API_BASE_URL))
+    parser.add_argument("--limit", type=int, default=_env_int("MATCHY_DRIVER_LIMIT", DEFAULT_LIMIT, 1))
+    parser.add_argument("--lookback-days", type=int, default=_env_int("MATCHY_DRIVER_LOOKBACK_DAYS", DEFAULT_LOOKBACK_DAYS, 1))
+    parser.add_argument("--interval-seconds", type=int, default=_env_int("MATCHY_DRIVER_INTERVAL_SECONDS", DEFAULT_INTERVAL_SECONDS, 1))
+    parser.add_argument("--timeout-seconds", type=int, default=_env_int("MATCHY_DRIVER_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS, 1))
+    parser.add_argument("--max-runs", type=int, default=_env_int("MATCHY_DRIVER_MAX_RUNS", 0, 0))
+    parser.add_argument("--trigger-source", default=os.environ.get("MATCHY_DRIVER_TRIGGER_SOURCE", DEFAULT_TRIGGER_SOURCE).strip() or DEFAULT_TRIGGER_SOURCE)
+    parser.add_argument("--once", action="store_true", default=_env_bool("MATCHY_DRIVER_ONCE", False))
+    return parser.parse_args()
+
+
 def _count_selected_messages(results: list[dict]) -> int:
     total = 0
     for row in results:
@@ -74,28 +129,48 @@ def _count_selected_messages(results: list[dict]) -> int:
 
 #R005: Loop on an interval and call pending-run endpoint with deterministic defaults or env overrides.
 def _run_driver_loop() -> int:
-    api_base_url = _validated_api_base_url(os.environ.get("MATCHY_API_BASE_URL", DEFAULT_API_BASE_URL))
-    limit = _env_int("MATCHY_DRIVER_LIMIT", DEFAULT_LIMIT, 1)
-    lookback_days = _env_int("MATCHY_DRIVER_LOOKBACK_DAYS", DEFAULT_LOOKBACK_DAYS, 1)
-    interval_seconds = _env_int("MATCHY_DRIVER_INTERVAL_SECONDS", DEFAULT_INTERVAL_SECONDS, 1)
-    timeout_seconds = _env_int("MATCHY_DRIVER_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS, 1)
-    max_runs = _env_int("MATCHY_DRIVER_MAX_RUNS", 0, 0)
-    trigger_source = os.environ.get("MATCHY_DRIVER_TRIGGER_SOURCE", DEFAULT_TRIGGER_SOURCE).strip() or DEFAULT_TRIGGER_SOURCE
-    run_once = _env_bool("MATCHY_DRIVER_ONCE", False)
+    startup_started_at = perf_counter()
+    args = _parse_args()
+    _startup_log(startup_started_at, "args-parsed", profile_enabled=args.profile)
+    api_base_url = _validated_api_base_url(args.api_base_url)
+    _startup_log(startup_started_at, "api-base-url-validated", f"api_base_url={api_base_url}", profile_enabled=args.profile)
+    limit = args.limit
+    lookback_days = args.lookback_days
+    interval_seconds = args.interval_seconds
+    timeout_seconds = args.timeout_seconds
+    max_runs = args.max_runs
+    trigger_source = args.trigger_source
+    run_once = args.once
+    _startup_log(
+        startup_started_at,
+        "driver-configured",
+        f"once={str(run_once).lower()} max_runs={max_runs} interval_seconds={interval_seconds}",
+        profile_enabled=args.profile,
+    )
     run_counter = 0
     keep_running = True
     while keep_running:
         run_counter += 1
+        run_started_at = perf_counter()
         status_text = "ok"
         results: list[dict] = []
         failure_text = ""
+        _startup_log(
+            startup_started_at,
+            "run-start",
+            f"run={run_counter} timeout_seconds={timeout_seconds} limit={limit} lookback_days={lookback_days}",
+            profile_enabled=args.profile,
+        )
         try:
-            payload = _post_pending_run(
+            payload = _post_pending_run_with_profile_heartbeat(
                 api_base_url=api_base_url,
                 limit=limit,
                 lookback_days=lookback_days,
                 trigger_source=trigger_source,
                 timeout_seconds=timeout_seconds,
+                startup_started_at=startup_started_at,
+                run_counter=run_counter,
+                profile_enabled=args.profile,
             )
             rows = payload.get("results", [])
             if isinstance(rows, list):
@@ -109,6 +184,12 @@ def _run_driver_loop() -> int:
         except Exception as exc:
             status_text = "error"
             failure_text = str(exc)
+        _startup_log(
+            startup_started_at,
+            "run-complete",
+            f"run={run_counter} status={status_text} phase_elapsed={perf_counter() - run_started_at:7.3f}s",
+            profile_enabled=args.profile,
+        )
         selected_count = _count_selected_messages(results)
         print(
             f"driver_run={run_counter} status={status_text} batch_size={len(results)} selected_messages={selected_count} "
@@ -119,6 +200,12 @@ def _run_driver_loop() -> int:
         if done_for_once or done_for_max_runs:
             keep_running = False
         if keep_running:
+            _startup_log(
+                startup_started_at,
+                "sleeping-before-next-run",
+                f"run={run_counter} interval_seconds={interval_seconds}",
+                profile_enabled=args.profile,
+            )
             time.sleep(interval_seconds)
     return 0
 

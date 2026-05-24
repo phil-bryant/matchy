@@ -4,6 +4,7 @@
 #R015: Python test lane coverage for body enrichment behavior.
 #R020: Python test lane coverage for cache hit/miss paths.
 #R025: Python test lane coverage for batch failure tolerance.
+#R030: Python test lane coverage for concurrent pending batch behavior.
 #R001-T01: Python test lane exists for unknown transaction requirement.
 #R005-T01: Python test lane exists for query builder requirement.
 #R010-T01: Python test lane exists for pending matcher requirement.
@@ -13,6 +14,7 @@
 #R020-T02: Python test lane exists for cache miss requirement.
 #R020-T03: Python test lane exists for failed-run cache exclusion requirement.
 #R025-T01: Python test lane exists for batch failure tolerance requirement.
+#R030-T01: Python test lane exists for concurrent pending matcher requirement.
 
 import logging
 from datetime import datetime, timezone
@@ -65,7 +67,7 @@ def test_service_enriches_candidate_bodies_with_full_mailcart_message_body_befor
         def __init__(self):
             self.calls = []
 
-        def get_message(self, message_id):
+        def get_message(self, message_id, timeout_seconds=None):
             self.calls.append(message_id)
             if message_id == "msg_ok":
                 return {"text_body": "Total fare $35.99 thank you", "subject": "Receipt", "sender": "x@y"}
@@ -91,13 +93,45 @@ def test_service_enriches_candidate_bodies_with_full_mailcart_message_body_befor
     assert service._mailcart_client.calls == ["msg_ok", "msg_missing", "msg_html"]
 
 
+def test_service_enrichment_fetches_duplicate_message_ids_only_once() -> None:
+    #R015: Duplicate candidate message_ids should not trigger duplicate get_message fetches.
+    class FakeClient:
+        def __init__(self):
+            self.calls = []
+
+        def get_message(self, message_id, timeout_seconds=None):
+            self.calls.append(message_id)
+            return {"text_body": f"body-{message_id}"}
+
+    dt = datetime(2026, 5, 5, tzinfo=timezone.utc)
+    cands = [
+        EmailCandidate(message_id="dup", subject="s", preview="p", received_at=dt, sender="x@y", body_text="preview"),
+        EmailCandidate(message_id="dup", subject="s", preview="p", received_at=dt, sender="x@y", body_text="preview"),
+        EmailCandidate(message_id="uniq", subject="s", preview="p", received_at=dt, sender="x@y", body_text="preview"),
+    ]
+    service = object.__new__(MatchService)
+    service._settings = SimpleNamespace(
+        mailcart_body_enrichment_enabled=True,
+        mailcart_body_enrichment_limit=75,
+        mailcart_body_enrichment_timeout_seconds=10,
+        mailcart_body_enrichment_max_workers=4,
+        mailcart_get_message_timeout_seconds=2,
+    )
+    service._mailcart_client = FakeClient()
+    out = service._enrich_candidate_bodies(cands, transaction_id="txn_test")
+    assert out[0].body_text == "body-dup"
+    assert out[1].body_text == "body-dup"
+    assert out[2].body_text == "body-uniq"
+    assert service._mailcart_client.calls == ["dup", "uniq"]
+
+
 def test_service_skips_body_enrichment_when_feature_flag_is_disabled() -> None:
     #R015: Enrichment is gated by mailcart_body_enrichment_enabled.
     class FakeClient:
         def __init__(self):
             self.calls = []
 
-        def get_message(self, message_id):
+        def get_message(self, message_id, timeout_seconds=None):
             self.calls.append(message_id)
             return {"text_body": "should-not-appear"}
 
@@ -155,7 +189,7 @@ def test_service_short_circuits_ai_call_when_candidate_set_is_unchanged_since_la
             self.search_calls += 1
             return self._results.pop(0) if self._results else []
 
-        def get_message(self, mid):
+        def get_message(self, mid, timeout_seconds=None):
             raise AssertionError("should not be called on cache hit")
 
     class FakeRanker:
@@ -274,7 +308,7 @@ def test_service_runs_full_ai_pipeline_when_candidate_set_changes_since_last_run
         def search_candidates(self, query, limit=75):
             return self._results.pop(0) if self._results else []
 
-        def get_message(self, mid):
+        def get_message(self, mid, timeout_seconds=None):
             return {"text_body": "$35.99 fare"}
 
     class FakeRanker:
@@ -384,7 +418,7 @@ def test_service_refuses_to_cache_hit_when_last_run_was_failed() -> None:
         def search_candidates(self, query, limit=75):
             return self._results.pop(0) if self._results else []
 
-        def get_message(self, mid):
+        def get_message(self, mid, timeout_seconds=None):
             return {}
 
     class FakeRanker:
@@ -489,4 +523,4 @@ def test_service_pending_matcher_loads_pending_ids_then_runs_each_transaction() 
     service.match_transaction = fake_match_transaction
     rows = service.match_pending_transactions(limit=9, lookback_days=2, trigger_source="auto")
     assert len(rows) == 2
-    assert calls == [("txn_1", "auto"), ("txn_2", "auto")]
+    assert sorted(calls) == [("txn_1", "auto"), ("txn_2", "auto")]

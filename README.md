@@ -7,7 +7,10 @@ Matchy starts from Teller transactions and finds candidate Outlook emails, then 
 1. Install dependencies:
    - `python3 -m pip install -e .`
 2. Set required environment variables:
-   - Teller DB password is resolved via `1psa` (default item: `localhost_postgres_teller`; optional override: `TELLER_DB_PASSWORD_1PSA_REF`)
+   - Teller DB config resolves in strict order: `1psa` first, `~/.env` fallback, otherwise startup error.
+   - Default 1psa item: `localhost_postgres_teller` (override: `TELLER_DB_PASSWORD_1PSA_REF`).
+   - 1psa item must provide: `username`, `password`, `host`, `port`, `database`.
+   - `~/.env` fallback supports the same keys (`username`, `password`, `host`, `port`, `database`) or mapped keys (`TELLER_DB_USER`, `TELLER_DB_PASSWORD`, `TELLER_DB_HOST`, `TELLER_DB_PORT`, `TELLER_DB_NAME`).
    - `MAILCART_SERVICE_BASE_URL`
    - `MAILCART_SERVICE_TOKEN` (optional if Mailcart is running without auth)
    - AI keys for the match ranker are resolved via `1psa` with Anthropic primary and OpenAI fallback:
@@ -16,6 +19,11 @@ Matchy starts from Teller transactions and finds candidate Outlook emails, then 
      - If neither is available, Matchy falls back to deterministic scoring only.
 3. Start API:
    - `./08_run_matchy_api.py`
+   - `./08_run_matchy_api.py --profile` (enable startup timing/profiling logs)
+   - Options are available as CLI args (for example `--mailcart-body-enrichment-limit`, `--mailcart-body-enrichment-timeout-seconds`, `--mailcart-get-message-timeout-seconds`, `--pending-max-workers`) so local runs do not require env-var-only control.
+4. Run driver:
+   - `./09_run_matchy_driver.py --once`
+   - `./09_run_matchy_driver.py --profile` (startup + in-flight request heartbeat logs every 5s while waiting)
 
 ## Test
 
@@ -50,6 +58,7 @@ Excluded from the parallel batch: setup scripts (`01`–`03`) and integration en
     - `{"limit": 100, "lookback_days": 14, "trigger_source": "auto"}`
   - Purpose:
     - Driver-friendly endpoint that discovers active-unmatched transactions and runs matching in batch.
+  - Driver default batch size is `10` per run (`./09_run_matchy_driver.py`), with CLI arg overrides (`--limit`, `--timeout-seconds`, `--once`, etc.).
 
 ## GLOBAL ARCHITECTURE: TELLER → MATCHY ← MAILCART
 ```text

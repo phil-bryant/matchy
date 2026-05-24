@@ -12,9 +12,11 @@
 #R030-T01: Python test lane exists for cached candidate metadata requirement.
 
 from decimal import Decimal
+from datetime import datetime, timezone
 import inspect
 from types import SimpleNamespace
 
+from matchy.models import AiSelection, EmailCandidate, RankedCandidate
 from matchy.repository import MatchRepository
 
 
@@ -185,6 +187,8 @@ def test_repository_pending_transaction_query_requeues_unsettled_but_skips_human
     assert "ai_no_match_found" in sql
     assert "selected_by::text = 'ai'" in sql
     assert "tem.match_id IS NULL" in sql
+    assert "latest_runs" in sql
+    assert "COALESCE(lr.completed_at, lr.created_at" in sql
     assert "human_confirmed_ai_match" not in sql
     assert "human_overrode_ai_match" not in sql
     assert params == {"lookback_days": 14, "limit": 10}
@@ -196,3 +200,52 @@ def test_insert_candidates_sql_includes_cached_metadata_columns() -> None:
     assert "cached_subject" in source
     assert "cached_sender" in source
     assert "cached_snippet" in source
+
+
+def test_persist_ai_result_avoids_duplicate_active_email_match_insert_and_marks_needs_review() -> None:
+    #R015: If selected email already has an active match elsewhere, persist a NULL-email uncertain row.
+    class CapturingSession:
+        def __init__(self):
+            self.calls = []
+
+        def execute(self, statement, params=None):
+            self.calls.append((str(statement), dict(params or {})))
+            return SimpleNamespace()
+
+    candidate = EmailCandidate(
+        message_id="msg_dup",
+        subject="s",
+        preview="p",
+        received_at=datetime(2026, 5, 24, tzinfo=timezone.utc),
+        sender="x@y",
+        body_text="body",
+    )
+    ranked = RankedCandidate(candidate=candidate, score=0.9, reasons={"reason": "r"})
+    selection = AiSelection(
+        selected_message_ids=["msg_dup"],
+        confidence=0.95,
+        uncertain=False,
+        rationale="pick best",
+        backend="anthropic",
+        model_name="claude-sonnet-4-5",
+    )
+    repo = object.__new__(MatchRepository)
+    repo.has_active_match = lambda session, email_message_id: True
+    session = CapturingSession()
+    selected = repo.persist_ai_result(
+        session=session,
+        transaction_id="txn_1",
+        run_id=123,
+        ranked_candidates=[ranked],
+        ai_selection=selection,
+        auto_confirm_threshold=0.9,
+    )
+    assert selected == []
+    status_calls = [params for sql, params in session.calls if "UPDATE teller.transaction_email_match_run" in sql]
+    assert status_calls and status_calls[-1]["status"] == "needs_review"
+    uncertain_rows = [
+        params
+        for sql, params in session.calls
+        if "INSERT INTO teller.transaction_email_match" in sql and "'ai_candidate_uncertain'" in sql and "email_message_id" not in params
+    ]
+    assert uncertain_rows and uncertain_rows[-1]["transaction_id"] == "txn_1"

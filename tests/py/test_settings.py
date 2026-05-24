@@ -1,14 +1,15 @@
-#R001: Python test lane coverage for default 1psa teller password resolution.
+#R001: Python test lane coverage for default 1psa teller DB config resolution.
 #R005: Python test lane coverage for 1psa reference overrides.
-#R010: Python test lane coverage for 1psa failure handling.
+#R010: Python test lane coverage for 1psa and ~/.env fallback failure handling.
 #R015: Python test lane coverage for AI key resolution.
 #R030: Python test lane coverage for mailcart body enrichment defaults.
 #R035: Python test lane coverage for anthropic model defaults.
-#R001-T01: Python test lane exists for default teller password requirement.
+#R001-T01: Python test lane exists for default teller DB config requirement.
 #R005-T01: Python test lane exists for item-name override requirement.
 #R005-T02: Python test lane exists for op:// reference requirement.
-#R010-T01: Python test lane exists for 1psa lookup failure requirement.
-#R010-T02: Python test lane exists for OP auth failure requirement.
+#R010-T01: Python test lane exists for ~/.env fallback requirement.
+#R010-T02: Python test lane exists for full resolution failure requirement.
+#R010-T03: Python test lane exists for invalid port validation requirement.
 #R015-T01: Python test lane exists for Anthropic 1psa resolution requirement.
 #R015-T02: Python test lane exists for OpenAI 1psa resolution requirement.
 #R015-T03: Python test lane exists for env override requirement.
@@ -22,6 +23,7 @@ from __future__ import annotations
 
 import importlib
 import subprocess
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -46,15 +48,36 @@ def _install_run_stub(monkeypatch: pytest.MonkeyPatch, handler) -> None:
 
 def _clear_secret_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("TELLER_DB_PASSWORD", raising=False)
+    monkeypatch.delenv("TELLER_DB_HOST", raising=False)
+    monkeypatch.delenv("TELLER_DB_PORT", raising=False)
+    monkeypatch.delenv("TELLER_DB_NAME", raising=False)
+    monkeypatch.delenv("TELLER_DB_USER", raising=False)
     monkeypatch.delenv("TELLER_DB_PASSWORD_1PSA_REF", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
 
 def _optional_miss_handler(command, **kwargs):
-    if command == ["1psa", "-p", "localhost_postgres_teller"]:
-        return CompletedProcess(0, "fixture-default\n")
-    if command[0:2] in (["1psa", "-p"], ["1psa", "read"]):
+    requested_ref = _requested_secret_ref(command)
+    if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
+        if requested_ref in (
+            "localhost_postgres_teller/username",
+            "localhost_postgres_teller/password",
+            "localhost_postgres_teller/host",
+            "localhost_postgres_teller/port",
+            "localhost_postgres_teller/database",
+        ):
+            field = requested_ref.split("/")[-1]
+            if field == "username":
+                return CompletedProcess(0, "teller\n")
+            if field == "password":
+                return CompletedProcess(0, "fixture-default\n")
+            if field == "host":
+                return CompletedProcess(0, "localhost\n")
+            if field == "port":
+                return CompletedProcess(0, "5432\n")
+            if field == "database":
+                return CompletedProcess(0, "teller\n")
         return CompletedProcess(5, "", "item not found")
     raise AssertionError(f"unexpected command: {command}")
 
@@ -66,6 +89,148 @@ def _reload_settings_class(monkeypatch: pytest.MonkeyPatch):
 
 def _settings_attr(settings: Settings, *name_parts: str) -> str:
     return getattr(settings, "".join(name_parts))
+
+
+def _requested_secret_ref(command: list[str]) -> str:
+    requested = ""
+    if command[0:2] in (["1psa", "-p"], ["1psa", "read"]):
+        requested = command[-1]
+    if command[0:2] == ["1psa", "-f"]:
+        requested = f"{command[2]}/{command[3]}"
+    return requested
+
+
+def _db_config(settings: Settings) -> tuple[str, str, str, int, str]:
+    return (
+        settings.teller_db_user,
+        settings.teller_db_password,
+        settings.teller_db_host,
+        settings.teller_db_port,
+        settings.teller_db_name,
+    )
+
+
+def test_loads_teller_db_config_from_default_1psa_item_when_no_refs_are_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    #R001: Default 1psa item resolves full teller DB config without DB env vars.
+    _clear_secret_env(monkeypatch)
+    _install_run_stub(monkeypatch, _optional_miss_handler)
+    assert _db_config(Settings()) == ("teller", "fixture-default", "localhost", 5432, "teller")
+
+
+def test_loads_teller_db_config_through_1psa_item_reference_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    #R005: Item-name override resolves full DB config through 1psa -p item/field.
+    _clear_secret_env(monkeypatch)
+    monkeypatch.setenv("TELLER_DB_PASSWORD_1PSA_REF", "custom_item")
+
+    def handler(command, **kwargs):
+        field_ref = _requested_secret_ref(command)
+        if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
+            if field_ref == "custom_item/username":
+                return CompletedProcess(0, "custom-user\n")
+            if field_ref == "custom_item/password":
+                return CompletedProcess(0, "custom-password\n")
+            if field_ref == "custom_item/host":
+                return CompletedProcess(0, "127.0.0.1\n")
+            if field_ref == "custom_item/port":
+                return CompletedProcess(0, "15432\n")
+            if field_ref == "custom_item/database":
+                return CompletedProcess(0, "custom-db\n")
+            return CompletedProcess(5, "", "item not found")
+        raise AssertionError(f"unexpected command: {command}")
+
+    _install_run_stub(monkeypatch, handler)
+    assert _db_config(Settings()) == ("custom-user", "custom-password", "127.0.0.1", 15432, "custom-db")
+
+
+def test_loads_teller_db_config_through_1psa_read_for_op_references(monkeypatch: pytest.MonkeyPatch) -> None:
+    #R005: op:// references resolve full DB config through 1psa read.
+    _clear_secret_env(monkeypatch)
+    monkeypatch.setenv("OP_SERVICE_ACCOUNT_TOKEN", "token-ok")
+    monkeypatch.setenv("TELLER_DB_PASSWORD_1PSA_REF", "op://vault/item/password")
+
+    def handler(command, **kwargs):
+        if command[0:2] == ["1psa", "read"]:
+            field_ref = _requested_secret_ref(command)
+            if field_ref == "op://vault/item/username":
+                return CompletedProcess(0, "op-user\n")
+            if field_ref == "op://vault/item/password":
+                return CompletedProcess(0, "op-password\n")
+            if field_ref == "op://vault/item/host":
+                return CompletedProcess(0, "localhost\n")
+            if field_ref == "op://vault/item/port":
+                return CompletedProcess(0, "5432\n")
+            if field_ref == "op://vault/item/database":
+                return CompletedProcess(0, "op-db\n")
+            return CompletedProcess(5, "", "item not found")
+        if command[0:2] in (["1psa", "-p"], ["1psa", "read"]):
+            return CompletedProcess(5, "", "item not found")
+        raise AssertionError(f"unexpected command: {command}")
+
+    _install_run_stub(monkeypatch, handler)
+    assert _db_config(Settings()) == ("op-user", "op-password", "localhost", 5432, "op-db")
+
+
+def test_falls_back_to_home_env_when_1psa_cannot_resolve_db_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    #R010: ~/.env is the single fallback when 1psa cannot provide complete DB config.
+    _clear_secret_env(monkeypatch)
+    fake_home = tmp_path / "home"
+    fake_home.mkdir(parents=True, exist_ok=True)
+    (fake_home / ".env").write_text(
+        "username=env-user\npassword=env-password\nhost=localhost\nport=5434\ndatabase=env-db\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+    def handler(command, **kwargs):
+        if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
+            return CompletedProcess(5, "", "not found")
+        raise AssertionError(f"unexpected command: {command}")
+
+    _install_run_stub(monkeypatch, handler)
+    assert _db_config(Settings()) == ("env-user", "env-password", "localhost", 5434, "env-db")
+
+
+def test_fails_clearly_when_1psa_and_home_env_both_fail(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    #R010: Settings raises a clear runtime error when both resolution sources fail.
+    _clear_secret_env(monkeypatch)
+    fake_home = tmp_path / "home"
+    fake_home.mkdir(parents=True, exist_ok=True)
+    (fake_home / ".env").write_text("username=incomplete\n", encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+    def handler(command, **kwargs):
+        if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
+            return CompletedProcess(5, "", "not found")
+        raise AssertionError(f"unexpected command: {command}")
+
+    _install_run_stub(monkeypatch, handler)
+    with pytest.raises(RuntimeError, match="Unable to resolve Teller DB config"):
+        Settings()
+
+
+def test_fails_clearly_when_resolved_db_port_is_not_an_integer(monkeypatch: pytest.MonkeyPatch) -> None:
+    #R010: Invalid DB port values are rejected even when other fields are present.
+    _clear_secret_env(monkeypatch)
+
+    def handler(command, **kwargs):
+        if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
+            field_ref = _requested_secret_ref(command)
+            if field_ref == "localhost_postgres_teller/username":
+                return CompletedProcess(0, "teller\n")
+            if field_ref == "localhost_postgres_teller/password":
+                return CompletedProcess(0, "pw\n")
+            if field_ref == "localhost_postgres_teller/host":
+                return CompletedProcess(0, "localhost\n")
+            if field_ref == "localhost_postgres_teller/port":
+                return CompletedProcess(0, "not-a-port\n")
+            if field_ref == "localhost_postgres_teller/database":
+                return CompletedProcess(0, "teller\n")
+            return CompletedProcess(5, "", "item not found")
+        raise AssertionError(f"unexpected command: {command}")
+
+    _install_run_stub(monkeypatch, handler)
+    with pytest.raises(RuntimeError, match="port is not a valid integer"):
+        Settings()
 
 
 def _teller_db_credential(settings: Settings) -> str:
@@ -80,97 +245,28 @@ def _openai_credential(settings: Settings) -> str:
     return _settings_attr(settings, "openai_", "api_", "key")
 
 
-def test_loads_teller_password_from_default_1psa_item_when_no_refs_are_set(monkeypatch: pytest.MonkeyPatch) -> None:
-    #R001: Default 1psa item resolves teller password without password env vars.
-    _clear_secret_env(monkeypatch)
-    _install_run_stub(monkeypatch, _optional_miss_handler)
-    assert _teller_db_credential(Settings()) == "fixture-default"
-
-
-def test_loads_teller_password_through_1psa_item_reference_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    #R005: Item-name override is resolved through 1psa -p.
-    _clear_secret_env(monkeypatch)
-    monkeypatch.setenv("TELLER_DB_PASSWORD_1PSA_REF", "custom_item")
-
-    def handler(command, **kwargs):
-        if command == ["1psa", "-p", "custom_item"]:
-            return CompletedProcess(0, "fixture-from-1psa\n")
-        if command[0:2] in (["1psa", "-p"], ["1psa", "read"]):
-            return CompletedProcess(5, "", "item not found")
-        raise AssertionError(f"unexpected command: {command}")
-
-    _install_run_stub(monkeypatch, handler)
-    assert _teller_db_credential(Settings()) == "fixture-from-1psa"
-
-
-def test_loads_teller_password_through_1psa_read_for_op_references(monkeypatch: pytest.MonkeyPatch) -> None:
-    #R005: op:// references are resolved through 1psa read.
-    _clear_secret_env(monkeypatch)
-    monkeypatch.setenv("OP_SERVICE_ACCOUNT_TOKEN", "token-ok")
-    monkeypatch.setenv("TELLER_DB_PASSWORD_1PSA_REF", "op://vault/item/password")
-
-    def handler(command, **kwargs):
-        if command == ["1psa", "read", "op://vault/item/password"]:
-            return CompletedProcess(0, "fixture-op-ref\n")
-        if command[0:2] in (["1psa", "-p"], ["1psa", "read"]):
-            return CompletedProcess(5, "", "item not found")
-        raise AssertionError(f"unexpected command: {command}")
-
-    _install_run_stub(monkeypatch, handler)
-    assert _teller_db_credential(Settings()) == "fixture-op-ref"
-
-
-def test_fails_clearly_when_1psa_lookup_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    #R010: 1psa lookup failures produce explicit runtime errors.
-    _clear_secret_env(monkeypatch)
-    monkeypatch.setenv("OP_SERVICE_ACCOUNT_TOKEN", "token-ok")
-    monkeypatch.setenv("TELLER_DB_PASSWORD_1PSA_REF", "op://vault/item/password")
-
-    def handler(command, **kwargs):
-        if command == ["1psa", "read", "op://vault/item/password"]:
-            raise subprocess.CalledProcessError(9, command, stderr="boom")
-        if command[0:2] in (["1psa", "-p"], ["1psa", "read"]):
-            return CompletedProcess(5, "", "item not found")
-        raise AssertionError(f"unexpected command: {command}")
-
-    _install_run_stub(monkeypatch, handler)
-    with pytest.raises(RuntimeError, match="1psa failed to resolve TELLER_DB_PASSWORD_1PSA_REF"):
-        Settings()
-
-
-def test_fails_clearly_when_op_token_is_invalid_for_1psa_auth(monkeypatch: pytest.MonkeyPatch) -> None:
-    #R010: Invalid OP service-account token returns targeted auth guidance.
-    _clear_secret_env(monkeypatch)
-    monkeypatch.setenv("OP_SERVICE_ACCOUNT_TOKEN", "token-bad")
-    monkeypatch.setenv("TELLER_DB_PASSWORD_1PSA_REF", "localhost_postgres_teller")
-
-    def handler(command, **kwargs):
-        if command == ["1psa", "-p", "localhost_postgres_teller"]:
-            raise subprocess.CalledProcessError(
-                1,
-                command,
-                stderr='Failed to create client: Post "https://my.1password.com/api/v3/auth/start?": Forbidden',
-            )
-        if command[0:2] in (["1psa", "-p"], ["1psa", "read"]):
-            return CompletedProcess(5, "", "item not found")
-        raise AssertionError(f"unexpected command: {command}")
-
-    _install_run_stub(monkeypatch, handler)
-    with pytest.raises(RuntimeError, match="1psa authentication failed for OP_SERVICE_ACCOUNT_TOKEN"):
-        Settings()
-
-
 def test_loads_anthropic_api_key_from_1psa_item_when_env_var_is_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     #R015: Anthropic key resolves from default 1psa item when ANTHROPIC_API_KEY env var is unset.
     _clear_secret_env(monkeypatch)
 
     def handler(command, **kwargs):
-        if command == ["1psa", "-p", "localhost_postgres_teller"]:
-            return CompletedProcess(0, "fixture-teller\n")
-        if command == ["1psa", "-p", "anthropic_api_key"]:
-            return CompletedProcess(0, "fixture-claude\n")
-        if command == ["1psa", "-p", "openai_api_key"]:
-            return CompletedProcess(0, "fixture-gpt\n")
+        if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
+            field_ref = _requested_secret_ref(command)
+            if field_ref == "localhost_postgres_teller/username":
+                return CompletedProcess(0, "teller\n")
+            if field_ref == "localhost_postgres_teller/password":
+                return CompletedProcess(0, "fixture-teller\n")
+            if field_ref == "localhost_postgres_teller/host":
+                return CompletedProcess(0, "localhost\n")
+            if field_ref == "localhost_postgres_teller/port":
+                return CompletedProcess(0, "5432\n")
+            if field_ref == "localhost_postgres_teller/database":
+                return CompletedProcess(0, "teller\n")
+            if field_ref == "anthropic_api_key":
+                return CompletedProcess(0, "fixture-claude\n")
+            if field_ref == "openai_api_key":
+                return CompletedProcess(0, "fixture-gpt\n")
+            return CompletedProcess(5, "", "item not found")
         raise AssertionError(f"unexpected command: {command}")
 
     _install_run_stub(monkeypatch, handler)
@@ -182,12 +278,23 @@ def test_loads_openai_api_key_fallback_from_1psa_item_when_env_var_is_unset(monk
     _clear_secret_env(monkeypatch)
 
     def handler(command, **kwargs):
-        if command == ["1psa", "-p", "localhost_postgres_teller"]:
-            return CompletedProcess(0, "fixture-teller\n")
-        if command == ["1psa", "-p", "anthropic_api_key"]:
-            return CompletedProcess(0, "fixture-claude\n")
-        if command == ["1psa", "-p", "openai_api_key"]:
-            return CompletedProcess(0, "fixture-gpt\n")
+        if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
+            field_ref = _requested_secret_ref(command)
+            if field_ref == "localhost_postgres_teller/username":
+                return CompletedProcess(0, "teller\n")
+            if field_ref == "localhost_postgres_teller/password":
+                return CompletedProcess(0, "fixture-teller\n")
+            if field_ref == "localhost_postgres_teller/host":
+                return CompletedProcess(0, "localhost\n")
+            if field_ref == "localhost_postgres_teller/port":
+                return CompletedProcess(0, "5432\n")
+            if field_ref == "localhost_postgres_teller/database":
+                return CompletedProcess(0, "teller\n")
+            if field_ref == "anthropic_api_key":
+                return CompletedProcess(0, "fixture-claude\n")
+            if field_ref == "openai_api_key":
+                return CompletedProcess(0, "fixture-gpt\n")
+            return CompletedProcess(5, "", "item not found")
         raise AssertionError(f"unexpected command: {command}")
 
     _install_run_stub(monkeypatch, handler)
@@ -200,9 +307,18 @@ def test_env_var_override_beats_1psa_for_anthropic_key(monkeypatch: pytest.Monke
     monkeypatch.setenv("ANTHROPIC_API_KEY", "env-claude")
 
     def handler(command, **kwargs):
-        if command == ["1psa", "-p", "localhost_postgres_teller"]:
-            return CompletedProcess(0, "fixture-teller\n")
-        if command[0:2] in (["1psa", "-p"], ["1psa", "read"]):
+        if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
+            field_ref = _requested_secret_ref(command)
+            if field_ref == "localhost_postgres_teller/username":
+                return CompletedProcess(0, "teller\n")
+            if field_ref == "localhost_postgres_teller/password":
+                return CompletedProcess(0, "fixture-teller\n")
+            if field_ref == "localhost_postgres_teller/host":
+                return CompletedProcess(0, "localhost\n")
+            if field_ref == "localhost_postgres_teller/port":
+                return CompletedProcess(0, "5432\n")
+            if field_ref == "localhost_postgres_teller/database":
+                return CompletedProcess(0, "teller\n")
             return CompletedProcess(5, "", "item not found")
         raise AssertionError(f"unexpected command: {command}")
 
@@ -216,9 +332,20 @@ def test_tolerates_missing_ai_keys_in_1psa_and_keeps_settings_constructible(monk
     _clear_secret_env(monkeypatch)
 
     def handler(command, **kwargs):
-        if command == ["1psa", "-p", "localhost_postgres_teller"]:
-            return CompletedProcess(0, "fixture-teller\n")
-        return CompletedProcess(5, "", "item not found")
+        if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
+            field_ref = _requested_secret_ref(command)
+            if field_ref == "localhost_postgres_teller/username":
+                return CompletedProcess(0, "teller\n")
+            if field_ref == "localhost_postgres_teller/password":
+                return CompletedProcess(0, "fixture-teller\n")
+            if field_ref == "localhost_postgres_teller/host":
+                return CompletedProcess(0, "localhost\n")
+            if field_ref == "localhost_postgres_teller/port":
+                return CompletedProcess(0, "5432\n")
+            if field_ref == "localhost_postgres_teller/database":
+                return CompletedProcess(0, "teller\n")
+            return CompletedProcess(5, "", "item not found")
+        raise AssertionError(f"unexpected command: {command}")
 
     _install_run_stub(monkeypatch, handler)
     assert _anthropic_credential(Settings()) == ""

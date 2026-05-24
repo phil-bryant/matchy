@@ -4,22 +4,23 @@
 
 Applies to `matchy/settings.py`.
 
-R001  Statement: Resolve Teller DB password from 1psa by default.
-Design: `Settings` uses `1psa -p localhost_postgres_teller` when no explicit 1psa reference override is provided.
+R001  Statement: Resolve full Teller DB connection config from 1psa by default.
+Design: `Settings` resolves `username`, `password`, `host`, `port`, and `database` from the default 1psa item `localhost_postgres_teller` (or item override), using item fields instead of hardcoded DB defaults.
 Tests:
-- R001-T01: Run with no Teller password env vars and verify `Settings().teller_db_password` resolves from default 1psa item.
+- R001-T01: Run with no Teller DB env vars and verify `Settings()` resolves host/user/password/port/database from the default 1psa item fields.
 
-R005  Statement: Resolve Teller DB password from configurable 1psa references.
-Design: Resolve with `1psa`: use `1psa read <ref>` for `op://...` references and `1psa -p <item>` for item-name references.
+R005  Statement: Resolve Teller DB config from configurable 1psa references.
+Design: Resolve with `1psa`: for item refs, read `item/username`, `item/password`, `item/host`, `item/port`, and `item/database`; for `op://...` references, switch to `1psa read` against the same field names on the referenced item.
 Tests:
-- R005-T01: Stub `1psa -p` to return a secret for item-name override references and verify `Settings().teller_db_password` uses that secret.
-- R005-T02: Stub `1psa read` to return a secret for `op://...` references and verify `Settings().teller_db_password` uses that secret.
+- R005-T01: Stub `1psa -p` to return all DB fields for an item-name override and verify `Settings()` uses that complete config.
+- R005-T02: Stub `1psa read` to return all DB fields for an `op://...` override and verify `Settings()` uses that complete config.
 
-R010  Statement: Fail clearly when 1psa lookup cannot produce a usable password.
-Design: Raise runtime errors when `1psa` is unavailable, returns non-zero, or returns an empty secret for the configured reference; include explicit service-account guidance when an invalid `OP_SERVICE_ACCOUNT_TOKEN` causes auth failure.
+R010  Statement: Use a single fallback (`~/.env`) and fail clearly when Teller DB config remains unresolved.
+Design: If 1psa cannot produce a complete DB config, `Settings` loads `~/.env` as the only fallback source for `username`, `password`, `host`, `port`, and `database` (or mapped `TELLER_DB_*` keys); if both sources fail or produce invalid/incomplete config, raise a clear runtime error.
 Tests:
-- R010-T01: Stub `1psa` to fail and verify `Settings()` exits with non-zero and emits a clear error message.
-- R010-T02: Stub `1psa` to emit a service-account auth-failure pattern with `OP_SERVICE_ACCOUNT_TOKEN` set and verify `Settings()` raises the targeted auth guidance error.
+- R010-T01: Stub 1psa DB lookups to fail and verify `Settings()` resolves DB config from `~/.env`.
+- R010-T02: Stub 1psa DB lookups to fail and provide incomplete `~/.env`; verify `Settings()` raises a clear resolution failure error.
+- R010-T03: Stub DB fields with a non-integer `port`; verify `Settings()` rejects the config with an explicit validation error.
 
 R015  Statement: Resolve AI API keys from 1psa with Anthropic primary and OpenAI fallback.
 Design: `Settings` resolves `anthropic_api_key` from 1psa item `anthropic_api_key` (override `MATCHY_ANTHROPIC_API_KEY_1PSA_ITEM`) and `openai_api_key` from 1psa item `openai_api_key` (override `MATCHY_OPENAI_API_KEY_1PSA_ITEM`); env vars `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` take precedence; missing 1psa items or `1psa` failures resolve to empty strings so the deterministic fallback can run.
@@ -53,3 +54,4 @@ Tests:
 - 2026-05-18: Reformatted Tests bullets with `Rxxx-Tyy:` prefixes per new traceability check.
 - 2026-05-19: Added R030 Mailcart body-enrichment feature flags (`mailcart_body_enrichment_enabled`, `mailcart_body_enrichment_limit`).
 - 2026-05-19: Added R035 pinning the default Anthropic model to `claude-sonnet-4-5` since the `-latest` alias was deprecated and now 404s.
+- 2026-05-24: Switched Teller DB resolution to 1psa-first full field config with `~/.env` fallback and explicit hard failure on unresolved config.

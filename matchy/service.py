@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError, as_completed
+from contextlib import nullcontext
 import hashlib
 import logging
+import os
 import re
+from time import monotonic, perf_counter
 from sqlalchemy import text
 
 from .ai_ranker import AiRanker, PROMPT_VERSION
@@ -20,12 +24,28 @@ LOGGER = logging.getLogger(__name__)
 _CACHE_HIT_STATUSES = frozenset({"succeeded", "needs_review", "no_candidates"})
 
 
+def _runtime_profile_enabled() -> bool:
+    enabled = os.environ.get("MATCHY_RUNTIME_PROFILE", "false").strip().lower() == "true"
+    return enabled
+
+
+def _runtime_profile_log(phase: str, details: str = "") -> None:
+    if _runtime_profile_enabled():
+        suffix = f" | {details}" if details else ""
+        print(f"[matchy-runtime] {phase}{suffix}", flush=True)
+
+
 class MatchService:
     def __init__(self, settings: Settings):
         self._settings = settings
         self._repository = MatchRepository(settings)
         self._mailcart_client = MailcartClient(settings)
         self._ai_ranker = AiRanker(settings)
+        cooldown_seconds = int(getattr(settings, "mailcart_failure_cooldown_seconds", 15) or 15)
+        if cooldown_seconds < 0:
+            cooldown_seconds = 0
+        self._mailcart_failure_cooldown_seconds = cooldown_seconds
+        self._mailcart_unavailable_until_monotonic = 0.0
 
     #R001: Raise a ValueError when a requested transaction cannot be loaded.
     #R020: Run the Mailcart search up-front and skip the AI call when nothing meaningful has changed
@@ -57,40 +77,42 @@ class MatchService:
                 prompt_version=PROMPT_VERSION,
             )
             try:
-                candidates = self._enrich_candidate_bodies(candidates, transaction_id=transaction_id)
-                active_ids = set(
-                    row["email_message_id"]
-                    for row in session.execute(
-                        text(
-                            """
-                            SELECT email_message_id
-                              FROM teller.transaction_email_match
-                             WHERE active = TRUE
-                               AND email_message_id IS NOT NULL
-                               AND transaction_id <> :transaction_id
-                            """
-                        ),
-                        {"transaction_id": transaction_id},
-                    ).mappings().all()
-                )
-                ranked = rank_candidates(txn, candidates, already_matched_ids=active_ids)
-                ai_selection = self._ai_ranker.select(txn, ranked)
-                self._repository.update_run_model_name(session=session, run_id=run_id, model_name=ai_selection.model_name)
-                self._repository.insert_candidates(
-                    session=session,
-                    match_run_id=run_id,
-                    transaction_id=transaction_id,
-                    candidates=ranked,
-                    ai_selected_ids=set(ai_selection.selected_message_ids),
-                )
-                selected_ids = self._repository.persist_ai_result(
-                    session=session,
-                    transaction_id=transaction_id,
-                    run_id=run_id,
-                    ranked_candidates=ranked,
-                    ai_selection=ai_selection,
-                    auto_confirm_threshold=self._settings.auto_confirm_threshold,
-                )
+                transaction_scope = session.begin_nested() if hasattr(session, "begin_nested") else nullcontext()
+                with transaction_scope:
+                    candidates = self._enrich_candidate_bodies(candidates, transaction_id=transaction_id)
+                    active_ids = set(
+                        row["email_message_id"]
+                        for row in session.execute(
+                            text(
+                                """
+                                SELECT email_message_id
+                                  FROM teller.transaction_email_match
+                                 WHERE active = TRUE
+                                   AND email_message_id IS NOT NULL
+                                   AND transaction_id <> :transaction_id
+                                """
+                            ),
+                            {"transaction_id": transaction_id},
+                        ).mappings().all()
+                    )
+                    ranked = rank_candidates(txn, candidates, already_matched_ids=active_ids)
+                    ai_selection = self._ai_ranker.select(txn, ranked)
+                    self._repository.update_run_model_name(session=session, run_id=run_id, model_name=ai_selection.model_name)
+                    self._repository.insert_candidates(
+                        session=session,
+                        match_run_id=run_id,
+                        transaction_id=transaction_id,
+                        candidates=ranked,
+                        ai_selected_ids=set(ai_selection.selected_message_ids),
+                    )
+                    selected_ids = self._repository.persist_ai_result(
+                        session=session,
+                        transaction_id=transaction_id,
+                        run_id=run_id,
+                        ranked_candidates=ranked,
+                        ai_selection=ai_selection,
+                        auto_confirm_threshold=self._settings.auto_confirm_threshold,
+                    )
             except Exception as exc:
                 self._repository.mark_run_failed(session, run_id, str(exc))
                 raise
@@ -108,12 +130,21 @@ class MatchService:
     #R020: without yet creating a match_run row. Mailcart search errors are swallowed so a transient
     #R020: Mailcart blip still allows the cache check to decide whether the last run's verdict stands.
     def _search_candidates(self, txn, transaction_id: str) -> list[EmailCandidate]:
+        now = monotonic()
+        if now < self._mailcart_unavailable_until_monotonic:
+            remaining_seconds = self._mailcart_unavailable_until_monotonic - now
+            _runtime_profile_log(
+                "mailcart-search-skipped-cooldown",
+                f"transaction_id={transaction_id} remaining_seconds={remaining_seconds:0.1f}",
+            )
+            return []
         query = self._build_query(txn.description, txn.counterparty_name)
         candidates: list[EmailCandidate] = []
         try:
             candidates = self._mailcart_client.search_candidates(query=query, limit=75)
         except Exception as exc:
             LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", query, transaction_id, exc)
+            self._mark_mailcart_temporarily_unavailable(transaction_id=transaction_id)
             candidates = []
         if not candidates:
             broad_query = self._build_broad_query(txn.description, txn.counterparty_name)
@@ -121,20 +152,33 @@ class MatchService:
                 candidates = self._mailcart_client.search_candidates(query=broad_query, limit=75)
             except Exception as exc:
                 LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", broad_query, transaction_id, exc)
+                self._mark_mailcart_temporarily_unavailable(transaction_id=transaction_id)
                 candidates = []
         if not candidates and "doordash" in (txn.description or "").lower():
             try:
                 candidates = self._mailcart_client.search_candidates(query="doordash", limit=75)
             except Exception as exc:
                 LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", "doordash", transaction_id, exc)
+                self._mark_mailcart_temporarily_unavailable(transaction_id=transaction_id)
                 candidates = []
         if not candidates:
             try:
                 candidates = self._mailcart_client.search_candidates(query="", limit=75)
             except Exception as exc:
                 LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", "", transaction_id, exc)
+                self._mark_mailcart_temporarily_unavailable(transaction_id=transaction_id)
                 candidates = []
         return candidates
+
+    def _mark_mailcart_temporarily_unavailable(self, transaction_id: str) -> None:
+        cooldown_seconds = self._mailcart_failure_cooldown_seconds
+        if cooldown_seconds > 0:
+            next_available = monotonic() + cooldown_seconds
+            self._mailcart_unavailable_until_monotonic = next_available
+            _runtime_profile_log(
+                "mailcart-search-cooldown-started",
+                f"transaction_id={transaction_id} cooldown_seconds={cooldown_seconds}",
+            )
 
     #R020: Decide whether the previous AI verdict still applies. Returns a cached response dict (the
     #R020: same shape as a fresh evaluation, with `skipped=True`) when all of these hold:
@@ -205,31 +249,77 @@ class MatchService:
     #R025: the rest of the batch — each error is captured into the result row, mark_run_failed has
     #R025: already recorded the failure in the DB, and the next driver loop will retry that transaction.
     def match_pending_transactions(self, limit: int = 100, lookback_days: int = 14, trigger_source: str = "auto") -> list[dict]:
+        batch_started_at = perf_counter()
         with self._repository.session() as session:
             transaction_ids = self._repository.list_pending_transaction_ids(
                 session=session,
                 limit=limit,
                 lookback_days=lookback_days,
             )
-        results: list[dict] = []
-        for transaction_id in transaction_ids:
-            try:
-                results.append(self.match_transaction(transaction_id=transaction_id, trigger_source=trigger_source))
-            except Exception as exc:
-                LOGGER.warning(
-                    "matchy batch entry failed transaction_id=%s error=%s",
-                    transaction_id, exc,
-                )
-                results.append({
-                    "transaction_id": transaction_id,
-                    "run_id": None,
-                    "selected_message_ids": [],
-                    "candidate_count": 0,
-                    "ai_confidence": 0.0,
-                    "uncertain": True,
-                    "skipped": False,
-                    "error": str(exc),
-                })
+        max_workers_raw = os.environ.get("MATCHY_PENDING_MAX_WORKERS", "4").strip()
+        max_workers = 4
+        try:
+            parsed_workers = int(max_workers_raw)
+            if parsed_workers >= 1:
+                max_workers = parsed_workers
+        except ValueError:
+            max_workers = 4
+        if transaction_ids:
+            max_workers = min(max_workers, len(transaction_ids))
+        if max_workers < 1:
+            max_workers = 1
+        _runtime_profile_log(
+            "pending-batch-start",
+            (
+                f"count={len(transaction_ids)} limit={limit} lookback_days={lookback_days} "
+                f"trigger_source={trigger_source} workers={max_workers}"
+            ),
+        )
+        results: list[dict] = [{} for _ in transaction_ids]
+        if transaction_ids:
+            run_started_by_index: dict[int, float] = {}
+            future_to_index: dict[Future, int] = {}
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                index = 0
+                while index < len(transaction_ids):
+                    transaction_id = transaction_ids[index]
+                    run_started_by_index[index] = perf_counter()
+                    future = executor.submit(self.match_transaction, transaction_id=transaction_id, trigger_source=trigger_source)
+                    future_to_index[future] = index
+                    index += 1
+                for future in as_completed(future_to_index):
+                    index = future_to_index[future]
+                    transaction_id = transaction_ids[index]
+                    run_elapsed_seconds = perf_counter() - run_started_by_index[index]
+                    try:
+                        results[index] = future.result()
+                        _runtime_profile_log(
+                            "pending-txn-complete",
+                            f"transaction_id={transaction_id} status=ok elapsed={run_elapsed_seconds:0.3f}s",
+                        )
+                    except Exception as exc:
+                        LOGGER.warning(
+                            "matchy batch entry failed transaction_id=%s error=%s",
+                            transaction_id, exc,
+                        )
+                        _runtime_profile_log(
+                            "pending-txn-complete",
+                            f"transaction_id={transaction_id} status=error elapsed={run_elapsed_seconds:0.3f}s",
+                        )
+                        results[index] = {
+                            "transaction_id": transaction_id,
+                            "run_id": None,
+                            "selected_message_ids": [],
+                            "candidate_count": 0,
+                            "ai_confidence": 0.0,
+                            "uncertain": True,
+                            "skipped": False,
+                            "error": str(exc),
+                        }
+        _runtime_profile_log(
+            "pending-batch-complete",
+            f"count={len(transaction_ids)} elapsed={perf_counter() - batch_started_at:0.3f}s",
+        )
         return results
 
     #R015: Replace each candidate's body_text with the full email body fetched from Mailcart so that
@@ -246,20 +336,63 @@ class MatchService:
         if not callable(get_message):
             return candidates
         limit = int(getattr(self._settings, "mailcart_body_enrichment_limit", 75) or 75)
-        enriched: list[EmailCandidate] = []
-        for index, candidate in enumerate(candidates):
-            if index >= limit:
-                enriched.extend(candidates[index:])
-                break
+        timeout_seconds = int(getattr(self._settings, "mailcart_body_enrichment_timeout_seconds", 25) or 25)
+        max_workers = int(getattr(self._settings, "mailcart_body_enrichment_max_workers", 8) or 8)
+        per_message_timeout = int(getattr(self._settings, "mailcart_get_message_timeout_seconds", 6) or 6)
+        if max_workers < 1:
+            max_workers = 1
+        if timeout_seconds < 1:
+            timeout_seconds = 1
+        if per_message_timeout < 1:
+            per_message_timeout = 1
+        enrich_count = min(len(candidates), limit)
+        if enrich_count < 1:
+            return candidates
+        payloads: dict[int, dict] = {}
+        futures: dict[Future, int] = {}
+        message_id_to_first_index: dict[str, int] = {}
+        for index in range(enrich_count):
+            message_id = str(candidates[index].message_id)
+            if message_id not in message_id_to_first_index:
+                message_id_to_first_index[message_id] = index
+        message_payload_by_id: dict[str, dict] = {}
+        unique_fetch_count = len(message_id_to_first_index)
+        future_to_message_id: dict[Future, str] = {}
+        with ThreadPoolExecutor(max_workers=min(max_workers, unique_fetch_count)) as executor:
+            for message_id in message_id_to_first_index:
+                future = executor.submit(get_message, message_id, per_message_timeout)
+                future_to_message_id[future] = message_id
+            unresolved_count = 0
             try:
-                payload = get_message(candidate.message_id) or {}
-            except Exception as exc:
+                for future in as_completed(future_to_message_id, timeout=timeout_seconds):
+                    message_id = future_to_message_id[future]
+                    try:
+                        payload = future.result() or {}
+                        message_payload_by_id[message_id] = payload
+                    except Exception as exc:
+                        LOGGER.warning(
+                            "mailcart get_message failed message_id=%s transaction_id=%s error=%s",
+                            message_id, transaction_id, exc,
+                        )
+            except TimeoutError:
+                unresolved_count = len([future for future in future_to_message_id if not future.done()])
                 LOGGER.warning(
-                    "mailcart get_message failed message_id=%s transaction_id=%s error=%s",
-                    candidate.message_id, transaction_id, exc,
+                    "mailcart body enrichment timed out transaction_id=%s unresolved_candidates=%s timeout_seconds=%s",
+                    transaction_id,
+                    unresolved_count,
+                    timeout_seconds,
                 )
+        for index in range(enrich_count):
+            message_id = str(candidates[index].message_id)
+            if message_id in message_payload_by_id:
+                payloads[index] = message_payload_by_id[message_id]
+        enriched: list[EmailCandidate] = []
+        for index in range(enrich_count):
+            candidate = candidates[index]
+            if index not in payloads:
                 enriched.append(candidate)
                 continue
+            payload = payloads[index]
             body_text = (
                 str(payload.get("text_body") or "").strip()
                 or str(payload.get("html_body") or "").strip()
@@ -276,6 +409,8 @@ class MatchService:
                 sender=candidate.sender or str(payload.get("sender") or ""),
                 body_text=body_text,
             ))
+        if len(candidates) > enrich_count:
+            enriched.extend(candidates[enrich_count:])
         return enriched
 
     #R005: Build search queries from normalized, non-numeric tokens with deterministic truncation.

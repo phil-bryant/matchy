@@ -14,6 +14,14 @@ Design: Driver posts JSON body with `limit`, `lookback_days`, and `trigger_sourc
 Tests:
 - R005-T01: Stub HTTP client and verify posted URL and payload fields match configured values.
 
+R010  Statement: Driver startup profiling logs are opt-in via CLI flag.
+Design: Startup profiling lines are disabled by default; passing `--profile` enables startup timing output.
+Tests:
+- R010-T01: Run without `--profile` and verify startup profiling lines are absent.
+- R010-T02: Run with `--profile` and verify startup profiling lines are emitted.
+- R010-T03: Run with `--profile` and a delayed pending-run response, then verify in-flight wait heartbeat logs are emitted.
+
 ## Changelog
 
 - 2026-05-18: Added requirements for `09_run_matchy_driver.py` to automate pending transaction matching runs.
+- 2026-05-24: Added opt-in `--profile` requirement for driver startup timing logs.

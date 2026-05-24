@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+from time import perf_counter
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
@@ -7,6 +9,14 @@ from pydantic import BaseModel, Field
 
 from .service import MatchService
 from .settings import Settings
+
+
+def _startup_log(start_time_seconds: float, phase: str, details: str = "") -> None:
+    enabled = os.environ.get("MATCHY_STARTUP_LOG", "false").strip().lower() == "true"
+    if enabled:
+        elapsed_seconds = perf_counter() - start_time_seconds
+        suffix = f" | {details}" if details else ""
+        print(f"[matchy-startup +{elapsed_seconds:7.3f}s] {phase}{suffix}", flush=True)
 
 
 class MatchRunRequest(BaseModel):
@@ -24,8 +34,13 @@ class PendingMatchRunRequest(BaseModel):
 
 
 def create_app() -> FastAPI:
+    startup_started_at = perf_counter()
+    _startup_log(startup_started_at, "create-app-enter")
     app = FastAPI(title="matchy")
+    _startup_log(startup_started_at, "fastapi-instance-created")
+    settings_started_at = perf_counter()
     settings = Settings()
+    _startup_log(startup_started_at, "settings-created", f"phase_elapsed={perf_counter() - settings_started_at:7.3f}s")
     service: MatchService | None = None
 
     def _service() -> MatchService:
@@ -65,5 +80,5 @@ def create_app() -> FastAPI:
             trigger_source=request.trigger_source,
         )
         return MatchRunResponse(results=rows)
-
+    _startup_log(startup_started_at, "create-app-complete")
     return app
