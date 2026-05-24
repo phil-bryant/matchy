@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Numbered traceability tags: #R001-T01 #R005-T01 #R010-T01 #R015-T01 #R020-T01 #R025-T01 #R030-T01 #R030-T02 #R035-T01 #R035-T02 #R040-T01
+# Numbered traceability tags: #R001-T01 #R005-T01 #R010-T01 #R015-T01 #R020-T01 #R025-T01 #R030-T01 #R030-T02 #R035-T01 #R035-T02 #R040-T01 #R045-T01
 
 @test ".build artifacts are ignored and hidden from git status" {
   #R001: Build output must be ignored recursively.
@@ -71,6 +71,16 @@
   [ "$status" -eq 0 ]
   [[ "$output" == *".gitignore"* ]]
   run git check-ignore -v ".pytest_cache/v/cache/nodeids"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *".gitignore"* ]]
+}
+
+@test "macOS ds-store artifacts remain ignored throughout repository" {
+  #R045: .DS_Store files must be excluded at root and nested directories.
+  run git check-ignore -v ".DS_Store"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *".gitignore"* ]]
+  run git check-ignore -v "tests/.DS_Store"
   [ "$status" -eq 0 ]
   [[ "$output" == *".gitignore"* ]]
 }
