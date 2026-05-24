@@ -138,7 +138,9 @@ finish_run_cleanup() {
     return 0
   fi
   cleanup_finished=true
-  finish_progress_line
+  if declare -F finish_progress_line >/dev/null; then
+    finish_progress_line
+  fi
   release_single_run_lock
 }
 
@@ -175,7 +177,9 @@ record_sigterm() {
 trap finish_run_cleanup EXIT
 trap record_sigint INT
 trap record_sigterm TERM
-acquire_single_run_lock
+if ! acquire_single_run_lock; then
+  exit 1
+fi
 
 render_progress() {
   local completed="$1"

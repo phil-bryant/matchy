@@ -108,14 +108,16 @@ EOF
   #R010-T02: Verify mutmut is not invoked when preflight pytest fails.
   make_venv_python_stub 1 pass
   run env MUTATION_SKIP_PREFLIGHT=false bash "${FIXTURE_ROOT}/10_run_mutation_tests.sh"
-  run ! grep -F "mutmut run" "${CALLS_LOG}"
+  run grep -F "mutmut run" "${CALLS_LOG}"
+  [ "$status" -ne 0 ]
 }
 
 @test "skips pytest preflight by default" {
   #R010-T03: Run with default settings and verify pytest is not invoked.
   run bash "${FIXTURE_ROOT}/10_run_mutation_tests.sh"
   [ "$status" -eq 0 ]
-  run ! grep -F "pytest" "${CALLS_LOG}"
+  run grep -F "pytest" "${CALLS_LOG}"
+  [ "$status" -ne 0 ]
   grep -F "mutmut run" "${CALLS_LOG}"
 }
 

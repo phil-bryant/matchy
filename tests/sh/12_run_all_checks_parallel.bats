@@ -275,7 +275,7 @@ teardown() {
 
   run env PARALLEL_CHECKS_REPORT_DIR="${REPORT_DIR}" \
     bash "${FIXTURE_ROOT}/12_run_all_checks_parallel.sh"
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 1 ]
   [[ "$output" == *"already active"* ]]
 
   wait "$first_pid"
