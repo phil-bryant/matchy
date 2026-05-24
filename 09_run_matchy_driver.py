@@ -106,6 +106,7 @@ def _post_pending_run_with_profile_heartbeat(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Matchy pending-transaction driver")
+    #R010: Driver startup profiling logs are opt-in via --profile.
     parser.add_argument("--profile", action="store_true", default=False)
     parser.add_argument("--api-base-url", default=os.environ.get("MATCHY_API_BASE_URL", DEFAULT_API_BASE_URL))
     parser.add_argument("--limit", type=int, default=_env_int("MATCHY_DRIVER_LIMIT", DEFAULT_LIMIT, 1))

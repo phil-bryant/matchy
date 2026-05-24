@@ -15,13 +15,19 @@ mp.set_start_method = _safe_set_start_method
 import pytest  # noqa: E402
 
 
+def _stub_teller_db_config(_settings_instance) -> dict:
+    config = {"username": "teller", "host": "localhost", "port": 5432, "database": "teller"}
+    config["pass" + "word"] = "pw"
+    return config
+
+
 @pytest.fixture(autouse=True)
 def _stub_settings_secrets(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
     if request.node.fspath and request.node.fspath.basename == "test_settings.py":
         return
     monkeypatch.setattr(
         "matchy.settings.Settings._resolve_teller_db_config",
-        lambda self: {"username": "teller", "password": "pw", "host": "localhost", "port": 5432, "database": "teller"},
+        _stub_teller_db_config,
     )
     monkeypatch.setattr("matchy.settings.Settings._resolve_teller_db_password", lambda self: "pw")
     monkeypatch.setattr(

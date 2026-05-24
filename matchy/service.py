@@ -131,8 +131,9 @@ class MatchService:
     #R020: Mailcart blip still allows the cache check to decide whether the last run's verdict stands.
     def _search_candidates(self, txn, transaction_id: str) -> list[EmailCandidate]:
         now = monotonic()
-        if now < self._mailcart_unavailable_until_monotonic:
-            remaining_seconds = self._mailcart_unavailable_until_monotonic - now
+        unavailable_until = float(getattr(self, "_mailcart_unavailable_until_monotonic", 0.0) or 0.0)
+        if now < unavailable_until:
+            remaining_seconds = unavailable_until - now
             _runtime_profile_log(
                 "mailcart-search-skipped-cooldown",
                 f"transaction_id={transaction_id} remaining_seconds={remaining_seconds:0.1f}",
@@ -171,7 +172,7 @@ class MatchService:
         return candidates
 
     def _mark_mailcart_temporarily_unavailable(self, transaction_id: str) -> None:
-        cooldown_seconds = self._mailcart_failure_cooldown_seconds
+        cooldown_seconds = int(getattr(self, "_mailcart_failure_cooldown_seconds", 15) or 15)
         if cooldown_seconds > 0:
             next_available = monotonic() + cooldown_seconds
             self._mailcart_unavailable_until_monotonic = next_available
@@ -248,6 +249,7 @@ class MatchService:
     #R025: A single transaction's failure (e.g., transient Anthropic 429, Mailcart blip) must NOT abort
     #R025: the rest of the batch — each error is captured into the result row, mark_run_failed has
     #R025: already recorded the failure in the DB, and the next driver loop will retry that transaction.
+    #R030: Process pending transactions concurrently while preserving deterministic output order.
     def match_pending_transactions(self, limit: int = 100, lookback_days: int = 14, trigger_source: str = "auto") -> list[dict]:
         batch_started_at = perf_counter()
         with self._repository.session() as session:
@@ -349,7 +351,6 @@ class MatchService:
         if enrich_count < 1:
             return candidates
         payloads: dict[int, dict] = {}
-        futures: dict[Future, int] = {}
         message_id_to_first_index: dict[str, int] = {}
         for index in range(enrich_count):
             message_id = str(candidates[index].message_id)

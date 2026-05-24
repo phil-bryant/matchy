@@ -39,6 +39,11 @@ major_from_version() {
   printf "%s" "$major"
 }
 
+normalize_package_name() {
+  local raw_name="$1"
+  printf '%s' "$raw_name" | tr '[:upper:]' '[:lower:]' | tr '_' '-'
+}
+
 #R005: Use configurable pip binary and fail fast when it is unavailable.
 if ! command -v "$PIP_BIN" >/dev/null 2>&1; then
   echo "❌ pip binary not found on PATH: ${PIP_BIN}"
@@ -47,6 +52,33 @@ fi
 
 mkdir -p "$REPORT_DIR"
 echo "▶ Running Python dependency freshness checks with ${PIP_BIN}"
+
+DIRECT_DEPENDENCIES=$'\n'
+FILTER_DIRECT_DEPENDENCIES=false
+if [ -f "requirements.txt" ]; then
+  while IFS= read -r requirement_line; do
+    trimmed_line="$(printf '%s' "$requirement_line" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+    if [[ -z "$trimmed_line" ]] || [[ "$trimmed_line" == \#* ]]; then
+      continue
+    fi
+    if [[ "$trimmed_line" == -* ]]; then
+      continue
+    fi
+    base_name="$(printf '%s' "$trimmed_line" | sed -E 's/[[:space:]].*$//')"
+    base_name="${base_name%%[*}"
+    base_name="${base_name%%[<>=!~;]*}"
+    if [[ -n "$base_name" ]]; then
+      normalized_name="$(normalize_package_name "$base_name")"
+      case "$DIRECT_DEPENDENCIES" in
+        *$'\n'"$normalized_name"$'\n'*) ;;
+        *)
+          DIRECT_DEPENDENCIES+="${normalized_name}"$'\n'
+          FILTER_DIRECT_DEPENDENCIES=true
+          ;;
+      esac
+    fi
+  done < "requirements.txt"
+fi
 
 #R010: Discover available dependency updates from pip and always emit a text artifact.
 PIP_NO_CACHE_DIR=1 "$PIP_BIN" list --outdated --format=columns 2> "$WARNINGS_FILE" | awk 'NR > 2 && NF >= 3 { print $1, $2, $3 }' > "$UPDATES_FILE"
@@ -67,6 +99,13 @@ json_items=""
 while IFS= read -r line; do
   [[ -n "$line" ]] || continue
   package="$(awk '{print $1}' <<<"$line")"
+  if [[ "$FILTER_DIRECT_DEPENDENCIES" == "true" ]]; then
+    normalized_package="$(normalize_package_name "$package")"
+    case "$DIRECT_DEPENDENCIES" in
+      *$'\n'"$normalized_package"$'\n'*) ;;
+      *) continue ;;
+    esac
+  fi
   current="$(awk '{print $2}' <<<"$line")"
   latest="$(awk '{print $3}' <<<"$line")"
   current_major="$(major_from_version "$current")"

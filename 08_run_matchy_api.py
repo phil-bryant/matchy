@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 #R001: Provide executable entrypoint for Matchy API.
 import argparse
+import http.client
 import os
 import socket
 from time import perf_counter
 
-import requests
 import uvicorn
 
 DEFAULT_HOST = "127.0.0.1"
@@ -25,18 +25,25 @@ def _is_port_in_use(host: str, port: int) -> bool:
 
 def _is_matchy_healthy(host: str, port: int) -> bool:
     healthy = False
-    health_url = f"http://{host}:{port}/health"
+    connection: http.client.HTTPConnection | None = None
     try:
-        response = requests.get(health_url, timeout=1.5)
-        if response.status_code == 200 and '"status":"ok"' in response.text:
+        connection = http.client.HTTPConnection(host=host, port=port, timeout=1.5)
+        connection.request("GET", "/health")
+        response = connection.getresponse()
+        body_text = response.read().decode("utf-8", errors="replace")
+        if response.status == 200 and '"status":"ok"' in body_text:
             healthy = True
-    except requests.RequestException:
+    except (http.client.HTTPException, OSError):
         healthy = False
+    finally:
+        if connection is not None:
+            connection.close()
     return healthy
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Matchy API")
+    #R010: Startup profiling logs are opt-in via --profile.
     parser.add_argument("--host", default=os.environ.get("MATCHY_API_HOST", DEFAULT_HOST))
     parser.add_argument("--port", type=int, default=int(os.environ.get("MATCHY_API_PORT", str(DEFAULT_PORT)) or DEFAULT_PORT))
     parser.add_argument("--profile", action="store_true", default=False)

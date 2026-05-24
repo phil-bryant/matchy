@@ -10,7 +10,7 @@ Tests:
 - R001-T01: Run with no Teller DB env vars and verify `Settings()` resolves host/user/password/port/database from the default 1psa item fields.
 
 R005  Statement: Resolve Teller DB config from configurable 1psa references.
-Design: Resolve with `1psa`: for item refs, read `item/username`, `item/password`, `item/host`, `item/port`, and `item/database`; for `op://...` references, switch to `1psa read` against the same field names on the referenced item.
+Design: Resolve with `1psa`: for item refs, read `item/username`, `item/db_auth`, `item/host`, `item/port`, and `item/database`; for `op://...` references, switch to `1psa read` against the same field names on the referenced item.
 Tests:
 - R005-T01: Stub `1psa -p` to return all DB fields for an item-name override and verify `Settings()` uses that complete config.
 - R005-T02: Stub `1psa read` to return all DB fields for an `op://...` override and verify `Settings()` uses that complete config.

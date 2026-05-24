@@ -109,6 +109,7 @@ class Settings:
         return str(resolved["password"])
 
     def _resolve_db_config_from_1psa(self) -> dict[str, str | int]:
+        #R005: Support configurable 1psa item-name and op:// references for DB field resolution.
         resolved: dict[str, str | int] = {}
         raw_values: dict[str, str] = {}
         secret_ref = os.environ.get("TELLER_DB_PASSWORD_1PSA_REF", "").strip()
