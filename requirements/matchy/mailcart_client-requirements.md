@@ -25,8 +25,14 @@ Design: `MailcartClient` validates `MAILCART_SERVICE_BASE_URL` at initialization
 Tests:
 - R015-T01: Construct `MailcartClient` with an `http://` base URL and verify initialization raises a runtime error that states HTTPS is required.
 
+R045  Statement: Resolve the Mailcart CA bundle explicitly instead of relying on REQUESTS_CA_BUNDLE.
+Design: Determine CA bundle precedence (MATCHY_MAILCART_CA_BUNDLE override, REQUESTS_CA_BUNDLE/SSL_CERT_FILE, local mkcert root, then certifi default) and configure `requests` to use it so mkcert-signed localhost certificates are accepted.
+Tests:
+- R045-T01: Verify CA bundle selection order and that an explicit override takes precedence.
+
 ## Changelog
 
 - 2026-05-18: Added Mailcart client requirements and numbered tests.
 - 2026-05-19: Added R010 single-message fetch so matchy can enrich candidates with full body before scoring.
 - 2026-05-28: Added R015 strict HTTPS-only Mailcart base URL enforcement with fail-fast validation.
+- 2026-05-29: Added R045 explicit CA bundle resolution for mkcert localhost certificates.

@@ -42,6 +42,12 @@ Design: `match_pending_transactions` uses a bounded worker pool (`MATCHY_PENDING
 Tests:
 - R030-T01: Stub pending id discovery and verify `match_pending_transactions` invokes all discovered ids and returns deterministic ordered rows.
 
+R040  Statement: Execute the scoped retrieval fallback chain (terms+date → terms-only → broad-term → empty) without yet creating a match_run row.
+Design: `_search_candidates` intentionally uses scoped Mailcart syntax (`subject:`/`body:` plus optional `from:`/`to:` date bounds) and unions results across terms to improve recall while preserving deterministic ordering. Each mailcart search is a ~15-20s full-mailbox Graph scan; the driver already runs several transactions in parallel, so per-transaction load must be kept to ~one scan. Queries are issued one at a time and stop at the first that returns anything (early-stop). Body matching leads because the merchant name reliably appears in receipt/confirmation bodies. Subject, a window-free retry, and the historical recency fallback only run when earlier queries come back empty. Results are de-duplicated by message_id while preserving order.
+Tests:
+- R040-T01: Verify early-stop behavior returns on first successful tier and subsequent tiers are not invoked.
+- R040-T02: Verify result de-duplication preserves deterministic order.
+
 ## Changelog
 
 - 2026-05-18: Added service requirements coverage for missing transaction and query construction behavior.
@@ -50,3 +56,4 @@ Tests:
 - 2026-05-19: Added R020 Postgres-backed cache so matchy skips redundant AI evaluations when the candidate id set and model+prompt are unchanged since the previous run, keeping the auto-driver's per-loop cost bounded to a single Mailcart search.
 - 2026-05-19: Added R025 per-transaction error tolerance in `match_pending_transactions` so a single 429/blip does not abort the whole batch.
 - 2026-05-24: Added R030 concurrent pending-batch processing with configurable worker pool and deterministic result ordering.
+- 2026-05-29: Added R040 scoped search tiering with early-stop and deterministic de-duplication.

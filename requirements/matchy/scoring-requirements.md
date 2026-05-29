@@ -41,6 +41,8 @@ Tests:
 - R020-T03: Dollar hint match (`tests/py/test_scoring_core.py`).
 - R020-T04: Integer hint match (`tests/py/test_scoring_core.py`).
 - R020-T05: Missing amount text yields zero (`tests/py/test_scoring_core.py`).
+- R020-T06: Thousands separators are parsed and matched at integer-cents precision (`tests/py/test_scoring_core.py`).
+- R020-T07: Integer tokens do not match non-whole amounts when cents differ (`tests/py/test_scoring_core.py`).
 
 R025  Statement: `sender_hint_score` is a binary long-token overlap signal.
 Design: Normalize transaction and sender text, require shared tokens longer than two characters, return `1.0` when overlap exists else `0.0`.
@@ -74,3 +76,4 @@ Tests:
 
 - 2026-05-20: Added scoring_core contract requirements R010–R035 with unit-test traceability.
 - 2026-05-18: Added scoring requirements coverage for normalization and rank ordering.
+- 2026-05-29: Added R020-T06 (thousands separators) and R020-T07 (integer vs non-whole cents) test cases.

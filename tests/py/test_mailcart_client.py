@@ -7,6 +7,7 @@
 #R010-T01: Python test lane exists for get_message payload requirement.
 #R010-T02: Python test lane exists for get_message 404 requirement.
 #R015-T01: Python test lane exists for non-https base URL rejection requirement.
+#R045-T01: Python test lane exists for CA bundle selection precedence.
 
 import matchy.mailcart_client as module
 from types import SimpleNamespace
@@ -177,3 +178,23 @@ def test_mailcart_client_rejects_non_https_base_url() -> None:
         assert "must use https" in str(exc)
     else:
         raise AssertionError("expected RuntimeError for non-https Mailcart base URL")
+
+
+def test_mailcart_client_ca_bundle_precedence(monkeypatch) -> None:
+    #R045-T01: _resolve_ca_bundle prefers explicit MATCHY_MAILCART_CA_BUNDLE, then REQUESTS_CA_BUNDLE/SSL_CERT_FILE, then mkcert fallback.
+    from matchy.mailcart_client import MailcartClient
+    import os as _os
+    real_exists = _os.path.exists
+    monkeypatch.setattr(_os.path, "exists", lambda p: True if p in {"/explicit.pem", "/req.pem", "/ssl.pem"} else real_exists(p))
+    # Explicit override wins
+    s1 = SimpleNamespace(mailcart_ca_bundle="/explicit.pem", teller_db_password="pw")
+    assert MailcartClient._resolve_ca_bundle(s1) == "/explicit.pem"
+    # REQUESTS_CA_BUNDLE next
+    monkeypatch.setenv("REQUESTS_CA_BUNDLE", "/req.pem")
+    s2 = SimpleNamespace(mailcart_ca_bundle="", teller_db_password="pw")
+    assert MailcartClient._resolve_ca_bundle(s2) == "/req.pem"
+    monkeypatch.delenv("REQUESTS_CA_BUNDLE", raising=False)
+    # SSL_CERT_FILE fallback
+    monkeypatch.setenv("SSL_CERT_FILE", "/ssl.pem")
+    s3 = SimpleNamespace(mailcart_ca_bundle="", teller_db_password="pw")
+    assert MailcartClient._resolve_ca_bundle(s3) == "/ssl.pem"

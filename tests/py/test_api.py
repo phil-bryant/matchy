@@ -21,7 +21,7 @@ def test_api_health_endpoint_returns_status_ok() -> None:
 def test_api_run_endpoint_maps_unknown_transaction_to_http_404() -> None:
     #R005: ValueError from service is converted into HTTP 404.
     class StubService:
-        def match_transaction(self, transaction_id, trigger_source="manual"):
+        def match_transaction(self, transaction_id, trigger_source="manual", force_rematch=False):
             raise ValueError("Unknown transaction_id: missing")
 
     old = api.MatchService
@@ -39,7 +39,7 @@ def test_api_run_endpoint_maps_unknown_transaction_to_http_404() -> None:
 def test_api_pending_run_endpoint_delegates_to_service_batch_matcher() -> None:
     #R010: Pending-run endpoint delegates to service batch matching with validated request fields.
     class StubService:
-        def match_pending_transactions(self, limit=100, lookback_days=14, trigger_source="auto"):
+        def match_pending_transactions(self, limit=100, lookback_days=14, trigger_source="auto", force_rematch=False):
             return [{"ok": True, "limit": limit, "lookback_days": lookback_days, "trigger_source": trigger_source}]
 
     old = api.MatchService

@@ -66,6 +66,9 @@ class Settings:
     #R045: Optional explicit CA bundle for verifying Mailcart's TLS certificate. Takes precedence over
     #R045: REQUESTS_CA_BUNDLE/SSL_CERT_FILE and the auto-detected mkcert root CA. Leave empty to let the
     #R045: client auto-resolve the local mkcert development root CA used for the localhost endpoint.
+    #R045: Optional explicit CA bundle for verifying Mailcart's TLS certificate. Takes precedence over
+    #R045: REQUESTS_CA_BUNDLE/SSL_CERT_FILE and the auto-detected mkcert root CA. Leave empty to let the
+    #R045: client auto-resolve the local mkcert development root CA used for the localhost endpoint.
     mailcart_ca_bundle: str = os.environ.get("MATCHY_MAILCART_CA_BUNDLE", "")
     anthropic_api_key_item: str = os.environ.get("MATCHY_ANTHROPIC_API_KEY_1PSA_ITEM", "anthropic_api_key")
     openai_api_key_item: str = os.environ.get("MATCHY_OPENAI_API_KEY_1PSA_ITEM", "openai_api_key")

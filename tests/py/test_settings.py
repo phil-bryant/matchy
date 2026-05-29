@@ -18,6 +18,10 @@
 #R030-T02: Python test lane exists for enrichment override requirement.
 #R035-T01: Python test lane exists for default anthropic model requirement.
 #R035-T02: Python test lane exists for anthropic model override requirement.
+#R040-T01: Python test lane exists for mailcart search timeout default requirement.
+#R040-T02: Python test lane exists for mailcart search timeout override requirement.
+#R045-T01: Python test lane exists for mailcart CA bundle default requirement.
+#R045-T02: Python test lane exists for mailcart CA bundle override requirement.
 
 from __future__ import annotations
 
@@ -385,3 +389,31 @@ def test_mailcart_body_enrichment_flags_honor_env_overrides(monkeypatch: pytest.
     settings = SettingsCls()
     assert settings.mailcart_body_enrichment_enabled is False
     assert settings.mailcart_body_enrichment_limit == 10
+
+
+def test_mailcart_search_timeout_default_and_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    #R040-T01: Default mailcart_search_timeout_seconds is 45 when unset.
+    #R040-T02: MATCHY_MAILCART_SEARCH_TIMEOUT_SECONDS overrides the default.
+    _clear_secret_env(monkeypatch)
+    _install_run_stub(monkeypatch, _optional_miss_handler)
+    SettingsCls = _reload_settings_class(monkeypatch)
+    settings = SettingsCls()
+    assert settings.mailcart_search_timeout_seconds == 45
+    monkeypatch.setenv("MATCHY_MAILCART_SEARCH_TIMEOUT_SECONDS", "30")
+    SettingsCls2 = _reload_settings_class(monkeypatch)
+    settings2 = SettingsCls2()
+    assert settings2.mailcart_search_timeout_seconds == 30
+
+
+def test_mailcart_ca_bundle_default_and_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    #R045-T01: Default mailcart_ca_bundle is empty (auto-resolve) when unset.
+    #R045-T02: MATCHY_MAILCART_CA_BUNDLE exposes the explicit path.
+    _clear_secret_env(monkeypatch)
+    _install_run_stub(monkeypatch, _optional_miss_handler)
+    SettingsCls = _reload_settings_class(monkeypatch)
+    settings = SettingsCls()
+    assert settings.mailcart_ca_bundle == ""
+    monkeypatch.setenv("MATCHY_MAILCART_CA_BUNDLE", "/custom/ca.pem")
+    SettingsCls2 = _reload_settings_class(monkeypatch)
+    settings2 = SettingsCls2()
+    assert settings2.mailcart_ca_bundle == "/custom/ca.pem"

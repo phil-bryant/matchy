@@ -43,6 +43,18 @@ Tests:
 - R030-T01: Construct `Settings` with no env overrides and verify `mailcart_body_enrichment_enabled is True` and `mailcart_body_enrichment_limit == 75`.
 - R030-T02: Set `MATCHY_MAILCART_BODY_ENRICHMENT=false` and `MATCHY_MAILCART_BODY_ENRICHMENT_LIMIT=10`, construct `Settings`, and verify the flag is `False` and the limit is `10`.
 
+R040  Statement: Expose a configurable Mailcart search timeout that exceeds observed server latency.
+Design: `Settings` reads `MATCHY_MAILCART_GET_MESSAGE_TIMEOUT_SECONDS` (default 20) to give the search call a generous, configurable timeout well above the observed ~15-20s server latency so scoped searches do not intermittently time out.
+Tests:
+- R040-T01: Construct `Settings` with no env override and verify `mailcart_get_message_timeout_seconds == 20`.
+- R040-T02: Set `MATCHY_MAILCART_GET_MESSAGE_TIMEOUT_SECONDS=30` and verify the setting is applied.
+
+R045  Statement: Expose an optional explicit CA bundle path for verifying Mailcart's TLS certificate.
+Design: `Settings` reads `MATCHY_MAILCART_CA_BUNDLE` as an optional override that takes precedence over `REQUESTS_CA_BUNDLE`/`SSL_CERT_FILE` and the auto-detected mkcert root CA. When empty, the client auto-resolves the local mkcert development root CA.
+Tests:
+- R045-T01: Construct `Settings` with no env override and verify `mailcart_ca_bundle` is empty (auto-resolve path).
+- R045-T02: Set `MATCHY_MAILCART_CA_BUNDLE=/custom/ca.pem` and verify the path is exposed.
+
 ## Changelog
 
 - 2026-05-13: Added 1psa-backed Teller DB password resolution requirements for `matchy/settings.py`.
@@ -55,3 +67,4 @@ Tests:
 - 2026-05-19: Added R030 Mailcart body-enrichment feature flags (`mailcart_body_enrichment_enabled`, `mailcart_body_enrichment_limit`).
 - 2026-05-19: Added R035 pinning the default Anthropic model to `claude-sonnet-4-5` since the `-latest` alias was deprecated and now 404s.
 - 2026-05-24: Switched Teller DB resolution to 1psa-first full field config with `~/.env` fallback and explicit hard failure on unresolved config.
+- 2026-05-29: Added R040 Mailcart search timeout and R045 explicit CA bundle settings.

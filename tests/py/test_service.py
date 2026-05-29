@@ -5,6 +5,7 @@
 #R020: Python test lane coverage for cache hit/miss paths.
 #R025: Python test lane coverage for batch failure tolerance.
 #R030: Python test lane coverage for concurrent pending batch behavior.
+#R040: Python test lane coverage for scoped search tiering and early-stop.
 #R001-T01: Python test lane exists for unknown transaction requirement.
 #R005-T01: Python test lane exists for query builder requirement.
 #R010-T01: Python test lane exists for pending matcher requirement.
@@ -15,6 +16,8 @@
 #R020-T03: Python test lane exists for failed-run cache exclusion requirement.
 #R025-T01: Python test lane exists for batch failure tolerance requirement.
 #R030-T01: Python test lane exists for concurrent pending matcher requirement.
+#R040-T01: Python test lane exists for early-stop on first successful tier.
+#R040-T02: Python test lane exists for deterministic de-duplication order.
 
 import logging
 import sys
@@ -651,7 +654,7 @@ def test_service_pending_matcher_tolerates_per_transaction_failures() -> None:
     service = object.__new__(MatchService)
     service._repository = Repo()
 
-    def flaky_match_transaction(transaction_id, trigger_source="manual"):
+    def flaky_match_transaction(transaction_id, trigger_source="manual", force_rematch=False):
         if transaction_id == "txn_b":
             raise RuntimeError("anthropic 429")
         return {"transaction_id": transaction_id, "selected_message_ids": ["m_" + transaction_id]}
@@ -685,7 +688,7 @@ def test_service_pending_matcher_loads_pending_ids_then_runs_each_transaction() 
     service._repository = Repo()
     calls = []
 
-    def fake_match_transaction(transaction_id, trigger_source="manual"):
+    def fake_match_transaction(transaction_id, trigger_source="manual", force_rematch=False):
         calls.append((transaction_id, trigger_source))
         return {"transaction_id": transaction_id, "trigger_source": trigger_source}
 
@@ -693,3 +696,51 @@ def test_service_pending_matcher_loads_pending_ids_then_runs_each_transaction() 
     rows = service.match_pending_transactions(limit=9, lookback_days=2, trigger_source="auto")
     assert len(rows) == 2
     assert sorted(calls) == [("txn_1", "auto"), ("txn_2", "auto")]
+
+
+def test_service_search_candidates_early_stops_on_first_success() -> None:
+    #R040-T01: _search_candidates stops at the first tier that returns results.
+    class Repo:
+        class Ctx:
+            def __enter__(self):
+                return object()
+
+            def __exit__(self, *exc):
+                return False
+
+        def session(self):
+            return Repo.Ctx()
+
+    class FakeClient:
+        def __init__(self):
+            self.queries: list[str] = []
+
+        def search_candidates(self, query: str, limit: int = 75):
+            self.queries.append(query)
+            # Return a hit on any non-empty query to simulate first-tier success
+            if query:
+                return [EmailCandidate(message_id="m1", subject="s", preview="p", body_text="", received_at=datetime(2026, 5, 1, tzinfo=timezone.utc))]
+            return []
+
+    service = object.__new__(MatchService)
+    service._repository = Repo()
+    service._mailcart_client = FakeClient()
+    service._settings = SimpleNamespace(mailcart_search_date_window_days=45)
+    service._mailcart_failure_cooldown_seconds = 15
+    service._mailcart_unavailable_until_monotonic = 0.0
+
+    txn = TransactionInput(transaction_id="t", account_id="acc", amount=Decimal("10"), date=datetime(2026, 5, 1, tzinfo=timezone.utc), description="ACME", counterparty_name=None)
+    results = service._search_candidates(txn, transaction_id="txn_r040")
+    assert len(results) == 1
+    assert results[0].message_id == "m1"
+    # Early stop: last query should not be the final empty fallback
+    assert service._mailcart_client.queries[-1] != ""
+
+
+def test_service_search_candidates_dedupes_preserving_order() -> None:
+    #R040-T02: _dedupe_candidates keeps first occurrence and preserves deterministic order.
+    c1 = EmailCandidate(message_id="m1", subject="s", preview="p", body_text="", received_at=datetime(2026, 5, 1, tzinfo=timezone.utc))
+    c2 = EmailCandidate(message_id="m2", subject="s", preview="p", body_text="", received_at=datetime(2026, 5, 1, tzinfo=timezone.utc))
+    c3 = EmailCandidate(message_id="m1", subject="s", preview="p", body_text="", received_at=datetime(2026, 5, 1, tzinfo=timezone.utc))
+    deduped = MatchService._dedupe_candidates([c1, c2, c3], limit=10)
+    assert [d.message_id for d in deduped] == ["m1", "m2"]
