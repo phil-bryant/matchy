@@ -19,7 +19,7 @@ mutants/
 __pycache__/
 *.pyc
 #R040: Ignore local IDE plans and tool caches (not source).
-.cursor/
+.cursor/rules/
 .pytest_cache/
 .ruff_cache/
 #R045: Ignore Finder metadata files at repository root and nested paths.

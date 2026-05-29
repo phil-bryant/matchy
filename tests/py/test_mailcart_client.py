@@ -1,12 +1,15 @@
 #R001: Python test lane coverage for mailcart authorization headers.
 #R005: Python test lane coverage for search response filtering.
 #R010: Python test lane coverage for get_message behavior.
+#R015: Python test lane coverage for https-only base URL enforcement.
 #R001-T01: Python test lane exists for authorization header requirement.
 #R005-T01: Python test lane exists for search filtering requirement.
 #R010-T01: Python test lane exists for get_message payload requirement.
 #R010-T02: Python test lane exists for get_message 404 requirement.
+#R015-T01: Python test lane exists for non-https base URL rejection requirement.
 
 import matchy.mailcart_client as module
+from types import SimpleNamespace
 from matchy.mailcart_client import MailcartClient
 from matchy.settings import Settings
 
@@ -59,7 +62,7 @@ def test_mailcart_client_get_message_returns_payload_dict_and_handles_404() -> N
 
     calls = []
 
-    def fake_get(url, headers=None, timeout=None, params=None):
+    def fake_get(url, headers=None, timeout=None, params=None, verify=None):
         calls.append(url)
         if url.endswith("/v1/messages/msg_ok"):
             return Response(200, {"message_id": "msg_ok", "subject": "S", "sender": "x@y", "text_body": "hello"})
@@ -100,7 +103,7 @@ def test_mailcart_client_get_message_retries_once_for_502_then_succeeds() -> Non
 
     calls = []
 
-    def fake_get(url, headers=None, timeout=None, params=None):
+    def fake_get(url, headers=None, timeout=None, params=None, verify=None):
         calls.append((url, timeout))
         if len(calls) == 1:
             return Response(502, {})
@@ -118,3 +121,59 @@ def test_mailcart_client_get_message_retries_once_for_502_then_succeeds() -> Non
     finally:
         module.requests.get = original_get
         module.time.sleep = original_sleep
+
+
+def test_mailcart_client_resolves_explicit_ca_bundle_override(tmp_path, monkeypatch) -> None:
+    #R045: An explicit MATCHY_MAILCART_CA_BUNDLE path is used to verify Mailcart TLS.
+    ca_file = tmp_path / "custom-ca.pem"
+    ca_file.write_text("dummy", encoding="utf-8")
+    monkeypatch.delenv("REQUESTS_CA_BUNDLE", raising=False)
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    client = MailcartClient(Settings(teller_db_password="pw", mailcart_ca_bundle=str(ca_file)))
+    assert client._verify == str(ca_file)
+
+
+def test_mailcart_client_passes_ca_bundle_to_search_request(tmp_path, monkeypatch) -> None:
+    #R045: The resolved CA bundle is forwarded as the requests verify argument.
+    ca_file = tmp_path / "custom-ca.pem"
+    ca_file.write_text("dummy", encoding="utf-8")
+    monkeypatch.delenv("REQUESTS_CA_BUNDLE", raising=False)
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    captured = {}
+
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"messages": []}
+
+    def fake_get(*args, **kwargs):
+        captured["verify"] = kwargs.get("verify")
+        return Response()
+
+    original = module.requests.get
+    module.requests.get = fake_get
+    try:
+        client = MailcartClient(Settings(teller_db_password="pw", mailcart_ca_bundle=str(ca_file)))
+        client.search_candidates("subject:x")
+        assert captured["verify"] == str(ca_file)
+    finally:
+        module.requests.get = original
+
+
+def test_mailcart_client_rejects_non_https_base_url() -> None:
+    #R015-T01: Mailcart client must fail fast when base URL is not https.
+    settings = SimpleNamespace(
+        mailcart_service_base_url="http://127.0.0.1:8788",
+        mailcart_service_token="",
+        mailcart_get_message_timeout_seconds=3,
+    )
+    try:
+        MailcartClient(settings)
+    except RuntimeError as exc:
+        assert "must use https" in str(exc)
+    else:
+        raise AssertionError("expected RuntimeError for non-https Mailcart base URL")

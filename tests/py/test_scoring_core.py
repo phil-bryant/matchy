@@ -99,10 +99,24 @@ def test_amount_hint_score_matches_dollar_form() -> None:
 
 
 def test_amount_hint_score_matches_integer_form() -> None:
-    #R020-T04: Integer absolute amount text yields a full hint score.
-    amount = Decimal("42.99")
+    #R020-T04: Whole-dollar amounts match integer-form tokens via cents normalization.
+    amount = Decimal("42.00")
     candidate = email_candidate(subject="order 42 receipt")
     assert scoring_core.amount_hint_score(amount, candidate) == 1.0
+
+
+def test_amount_hint_score_matches_thousands_separated_currency() -> None:
+    #R020-T06: Thousands separators are parsed and matched at integer-cents precision.
+    amount = Decimal("1234.56")
+    candidate = email_candidate(body_text="Your total is $1,234.56")
+    assert scoring_core.amount_hint_score(amount, candidate) == 1.0
+
+
+def test_amount_hint_score_rejects_integer_token_for_non_whole_amount() -> None:
+    #R020-T07: Integer tokens do not match non-whole amounts when cents differ.
+    amount = Decimal("42.99")
+    candidate = email_candidate(subject="order 42 receipt")
+    assert scoring_core.amount_hint_score(amount, candidate) == 0.0
 
 
 def test_amount_hint_score_returns_zero_without_amount_text() -> None:

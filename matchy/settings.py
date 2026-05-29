@@ -29,7 +29,7 @@ class Settings:
     teller_db_name: str = os.environ.get("TELLER_DB_NAME", "")
     teller_db_user: str = os.environ.get("TELLER_DB_USER", "")
     teller_db_password: str = os.environ.get("TELLER_DB_PASSWORD", "")
-    mailcart_service_base_url: str = os.environ.get("MAILCART_SERVICE_BASE_URL", "http://127.0.0.1:8788")
+    mailcart_service_base_url: str = os.environ.get("MAILCART_SERVICE_BASE_URL", "https://127.0.0.1:8788")
     mailcart_service_token: str = os.environ.get("MAILCART_SERVICE_TOKEN", "")
     #R030: Enrich search candidates with the full Mailcart message body before scoring so amount/keyword
     #R030: hints can match against the email body (not just bodyPreview). Disable when callers want the
@@ -53,6 +53,20 @@ class Settings:
     mailcart_failure_cooldown_seconds: int = int(
         (os.environ.get("MATCHY_MAILCART_FAILURE_COOLDOWN_SECONDS") or "15").strip() or "15"
     )
+    mailcart_search_date_window_days: int = int(
+        (os.environ.get("MATCHY_MAILCART_SEARCH_DATE_WINDOW_DAYS") or "45").strip() or "45"
+    )
+    #R040: Mailcart's /v1/messages/search performs a full recent-mailbox Graph scan that routinely
+    #R040: takes ~15-20s per request. The historical hardcoded 20s client timeout sat right on that
+    #R040: boundary, so scoped searches intermittently timed out and were misread as outages. Give the
+    #R040: search call a generous, configurable timeout well above the observed server latency.
+    mailcart_search_timeout_seconds: int = int(
+        (os.environ.get("MATCHY_MAILCART_SEARCH_TIMEOUT_SECONDS") or "45").strip() or "45"
+    )
+    #R045: Optional explicit CA bundle for verifying Mailcart's TLS certificate. Takes precedence over
+    #R045: REQUESTS_CA_BUNDLE/SSL_CERT_FILE and the auto-detected mkcert root CA. Leave empty to let the
+    #R045: client auto-resolve the local mkcert development root CA used for the localhost endpoint.
+    mailcart_ca_bundle: str = os.environ.get("MATCHY_MAILCART_CA_BUNDLE", "")
     anthropic_api_key_item: str = os.environ.get("MATCHY_ANTHROPIC_API_KEY_1PSA_ITEM", "anthropic_api_key")
     openai_api_key_item: str = os.environ.get("MATCHY_OPENAI_API_KEY_1PSA_ITEM", "openai_api_key")
     anthropic_api_key: str = os.environ.get("ANTHROPIC_API_KEY", "")

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
+import subprocess
 import time
 
 import requests
@@ -12,9 +14,48 @@ from .settings import Settings
 class MailcartClient:
     def __init__(self, settings: Settings):
         self._base = settings.mailcart_service_base_url.rstrip("/")
+        #R015: Mailcart transport must be TLS-only; reject non-https base URLs at initialization.
+        if not self._base.lower().startswith("https://"):
+            raise RuntimeError("MAILCART_SERVICE_BASE_URL must use https")
         self._token = settings.mailcart_service_token
         configured_timeout = int(getattr(settings, "mailcart_get_message_timeout_seconds", 6) or 6)
         self._message_timeout_seconds = configured_timeout if configured_timeout > 0 else 6
+        configured_search_timeout = int(getattr(settings, "mailcart_search_timeout_seconds", 45) or 45)
+        self._search_timeout_seconds = configured_search_timeout if configured_search_timeout > 0 else 45
+        #R045: Resolve the TLS trust bundle explicitly instead of relying on REQUESTS_CA_BUNDLE being
+        #R045: exported in whichever shell launched matchy. Mailcart serves an mkcert-signed localhost
+        #R045: certificate whose issuer (the mkcert development CA) is NOT in certifi's default bundle,
+        #R045: so every HTTPS call fails verification unless we point requests at the mkcert root CA.
+        #R045: Losing that env var across a restart silently broke all search/enrichment calls.
+        self._verify = self._resolve_ca_bundle(settings)
+
+    #R045: Determine the CA bundle to verify Mailcart's certificate against. Precedence: explicit
+    #R045: MATCHY_MAILCART_CA_BUNDLE override, then REQUESTS_CA_BUNDLE / SSL_CERT_FILE, then the local
+    #R045: mkcert development root CA (the common localhost setup), and finally requests' built-in
+    #R045: default (certifi) when none of those exist.
+    @staticmethod
+    def _resolve_ca_bundle(settings: Settings):
+        explicit_candidates = [
+            getattr(settings, "mailcart_ca_bundle", "") or "",
+            os.environ.get("REQUESTS_CA_BUNDLE", "") or "",
+            os.environ.get("SSL_CERT_FILE", "") or "",
+        ]
+        for candidate in explicit_candidates:
+            expanded = os.path.expanduser(candidate.strip())
+            if expanded and os.path.exists(expanded):
+                return expanded
+        mkcert_root = os.path.expanduser("~/Library/Application Support/mkcert/rootCA.pem")
+        if os.path.exists(mkcert_root):
+            return mkcert_root
+        try:
+            completed = subprocess.run(["mkcert", "-CAROOT"], capture_output=True, text=True, timeout=5)
+            if completed.returncode == 0:
+                root = os.path.join(completed.stdout.strip(), "rootCA.pem")
+                if root and os.path.exists(root):
+                    return root
+        except (OSError, subprocess.SubprocessError):
+            pass
+        return True
 
     #R001: Include bearer authorization only when a service token is configured.
     def _headers(self) -> dict[str, str]:
@@ -29,7 +70,8 @@ class MailcartClient:
             f"{self._base}/v1/messages/search",
             params={"query": query, "limit": limit},
             headers=self._headers(),
-            timeout=20,
+            timeout=self._search_timeout_seconds,
+            verify=self._verify,
         )
         response.raise_for_status()
         payload = response.json()
@@ -71,6 +113,7 @@ class MailcartClient:
                     f"{self._base}/v1/messages/{message_id}",
                     headers=self._headers(),
                     timeout=resolved_timeout,
+                    verify=self._verify,
                 )
                 if response.status_code == 404:
                     return {}
@@ -98,6 +141,7 @@ class MailcartClient:
             json={"folder_name": "matchy"},
             headers=self._headers(),
             timeout=20,
+            verify=self._verify,
         )
         if response.status_code in (200, 204):
             return True

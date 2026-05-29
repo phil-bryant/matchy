@@ -131,7 +131,10 @@ class MatchRepository:
                    AND tem.active = TRUE
              LEFT JOIN latest_runs lr
                     ON lr.transaction_id = tt.transaction_id
-                 WHERE tt.date >= CURRENT_DATE - (:lookback_days * INTERVAL '1 day')
+                 WHERE (
+                       tt.date >= CURRENT_DATE - (:lookback_days * INTERVAL '1 day')
+                    OR lr.transaction_id IS NULL
+                 )
                    AND (
                        tem.match_id IS NULL
                        OR tem.state::text = 'ai_candidate_uncertain'

@@ -188,6 +188,7 @@ def test_repository_pending_transaction_query_requeues_unsettled_but_skips_human
     assert "selected_by::text = 'ai'" in sql
     assert "tem.match_id IS NULL" in sql
     assert "latest_runs" in sql
+    assert "OR lr.transaction_id IS NULL" in sql
     assert "COALESCE(lr.completed_at, lr.created_at" in sql
     assert "human_confirmed_ai_match" not in sql
     assert "human_overrode_ai_match" not in sql

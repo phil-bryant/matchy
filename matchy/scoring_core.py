@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from .models import EmailCandidate
 
@@ -24,20 +24,43 @@ def token_overlap(left: str, right: str) -> float:
 
 
  #R015: Token overlap uses long tokens only and returns a bounded ratio.
- #R020: Amount hints match common decimal, absolute, dollar, and integer forms.
+#R020: Amount hints compare exact integer-cents against money-like numeric tokens.
 def amount_hint_score(amount: Decimal, candidate: EmailCandidate) -> float:
     text = f"{candidate.subject} {candidate.preview} {candidate.body_text}"
-    candidates = {
-        f"{amount:.2f}",
-        f"{abs(amount):.2f}",
-        f"${abs(amount):.2f}",
-        str(int(abs(amount))),
-    }
-    normalized = normalized_text(text)
-    for piece in candidates:
-        if normalized_text(piece).strip() in normalized:
+    target_cents = _decimal_to_cents(abs(amount))
+    if target_cents is None:
+        return 0.0
+    for candidate_cents in _extract_money_cents(text):
+        if candidate_cents == target_cents:
             return 1.0
     return 0.0
+
+
+def _decimal_to_cents(value: Decimal) -> int | None:
+    try:
+        quantized = value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, ValueError):
+        return None
+    return int((quantized * 100).to_integral_value(rounding=ROUND_HALF_UP))
+
+
+def _extract_money_cents(text: str) -> set[int]:
+    cents: set[int] = set()
+    pattern = re.compile(
+        r"(?<!\d)(?:\$\s*)?([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)(?!\d)"
+    )
+    for match in pattern.finditer(text):
+        raw = match.group(1).replace(",", "").strip()
+        if not raw:
+            continue
+        try:
+            numeric = Decimal(raw)
+        except InvalidOperation:
+            continue
+        cents_value = _decimal_to_cents(abs(numeric))
+        if cents_value is not None:
+            cents.add(cents_value)
+    return cents
 
 
  #R025: Sender hint is a binary long-token overlap signal.

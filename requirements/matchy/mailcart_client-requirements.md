@@ -20,7 +20,13 @@ Tests:
 - R010-T01: Stub `requests.get` to return a payload with body fields and verify the dict is returned verbatim; verify an empty `message_id` returns `{}` without a request.
 - R010-T02: Stub `requests.get` to return a 404 and verify `get_message` returns an empty dict (no exception).
 
+R015  Statement: Reject non-HTTPS Mailcart base URLs.
+Design: `MailcartClient` validates `MAILCART_SERVICE_BASE_URL` at initialization and raises a runtime error unless the configured base URL starts with `https://`. The client must never auto-upgrade or fallback from `http` to `https`.
+Tests:
+- R015-T01: Construct `MailcartClient` with an `http://` base URL and verify initialization raises a runtime error that states HTTPS is required.
+
 ## Changelog
 
 - 2026-05-18: Added Mailcart client requirements and numbered tests.
 - 2026-05-19: Added R010 single-message fetch so matchy can enrich candidates with full body before scoring.
+- 2026-05-28: Added R015 strict HTTPS-only Mailcart base URL enforcement with fail-fast validation.

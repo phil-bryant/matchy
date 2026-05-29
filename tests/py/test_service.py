@@ -17,13 +17,21 @@
 #R030-T01: Python test lane exists for concurrent pending matcher requirement.
 
 import logging
+import sys
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 
 from matchy.ai_ranker import PROMPT_VERSION
 from matchy.models import AiSelection, EmailCandidate, TransactionInput
 from matchy.service import MatchService
+
+_MAILCART_SCRIPTS = Path(__file__).resolve().parents[3] / "mailcart" / "scripts"
+if str(_MAILCART_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_MAILCART_SCRIPTS))
+
+import matchy_mailcart_api as mailcart_api  # noqa: E402
 
 
 def test_service_raises_valueerror_for_unknown_transactions() -> None:
@@ -52,13 +60,59 @@ def test_service_raises_valueerror_for_unknown_transactions() -> None:
         raise AssertionError("expected ValueError")
 
 
-def test_service_query_builders_normalize_and_filter_tokens() -> None:
-    #R005: Query helpers produce deterministic normalized text tokens.
+def test_service_query_builders_emit_scoped_tokens_with_date_bounds() -> None:
+    #R005: Query helpers produce deterministic scoped query strings.
     service = object.__new__(MatchService)
-    query = service._build_query("Payment #1234 at DoorDash.com", "DoorDash")
-    broad = service._build_broad_query("Payment #1234 at DoorDash.com", "DoorDash")
-    assert query == "doordash payment doordash"
-    assert broad == "payment"
+    service._settings = SimpleNamespace(mailcart_search_date_window_days=45)
+    terms = service._extract_search_terms("Payment #1234 at DoorDash.com", "DoorDash")
+    scoped = service._build_scoped_queries(
+        terms,
+        datetime(2026, 5, 5, tzinfo=timezone.utc),
+        include_date_window=True,
+    )
+    assert terms == ["doordash", "payment"]
+    assert scoped == [
+        "body:doordash from:2026-03-21 to:2026-06-19",
+        "body:payment from:2026-03-21 to:2026-06-19",
+    ]
+    subject_scoped = service._build_scoped_queries(
+        terms,
+        datetime(2026, 5, 5, tzinfo=timezone.utc),
+        fields=("subject",),
+        include_date_window=False,
+    )
+    assert subject_scoped == ["subject:doordash", "subject:payment"]
+
+
+def test_service_emits_mailcart_scoped_queries_that_pass_parser_contract() -> None:
+    #R005: Every emitted query must satisfy mailcart's scoped-query parser contract.
+    class FakeClient:
+        def __init__(self):
+            self.queries = []
+
+        def search_candidates(self, query, limit=75):
+            self.queries.append(query)
+            return []
+
+    service = object.__new__(MatchService)
+    service._settings = SimpleNamespace(mailcart_search_date_window_days=45)
+    service._mailcart_client = FakeClient()
+    service._mailcart_failure_cooldown_seconds = 15
+    service._mailcart_unavailable_until_monotonic = 0.0
+    txn = TransactionInput(
+        "txn_test",
+        "acc",
+        Decimal("76.08"),
+        datetime(2026, 5, 24, tzinfo=timezone.utc),
+        "DD *DOORDASH TACOMBI 855-431-0459",
+        "DoorDash",
+    )
+    result = service._search_candidates(txn, transaction_id="txn_test")
+    assert result == []
+    assert service._mailcart_client.queries
+    assert service._mailcart_client.queries[-1] == ""
+    for query in service._mailcart_client.queries:
+        mailcart_api._parse_scoped_query(query)
 
 
 def test_service_enriches_candidate_bodies_with_full_mailcart_message_body_before_scoring() -> None:
@@ -445,6 +499,121 @@ def test_service_refuses_to_cache_hit_when_last_run_was_failed() -> None:
             "model_name": "claude-sonnet-4-5",
             "prompt_version": PROMPT_VERSION,
             "candidate_message_ids": ["m_same"],
+        },
+    )
+    svc = object.__new__(MatchService)
+    svc._settings = type("S", (), {
+        "mailcart_body_enrichment_enabled": True,
+        "mailcart_body_enrichment_limit": 75,
+        "auto_confirm_threshold": 0.9,
+    })()
+    svc._repository = repo
+    svc._mailcart_client = FakeClient([cands])
+    svc._ai_ranker = FakeRanker()
+    result = svc.match_transaction("txn1")
+    assert result.get("skipped") is False
+    assert repo.created == 1
+
+
+def test_service_refuses_to_cache_hit_when_active_state_is_ai_no_match_found() -> None:
+    #R020: ai_no_match_found states must be re-evaluated even when candidate hash/model/prompt match.
+    class FakeRepo:
+        class Ctx:
+            def __init__(self, session):
+                self.session = session
+
+            def __enter__(self):
+                return self.session
+
+            def __exit__(self, *exc):
+                return False
+
+        def __init__(self, txn, last_summary, active):
+            self.txn = txn
+            self.last_summary = last_summary
+            self.active = active
+            self.created = 0
+
+        def session(self):
+            return FakeRepo.Ctx(_FakeSession())
+
+        def load_transaction(self, session, transaction_id):
+            return self.txn
+
+        def read_last_run_summary(self, session, transaction_id):
+            return self.last_summary
+
+        def read_active_match_summary(self, session, transaction_id):
+            return self.active
+
+        def create_run(self, **kwargs):
+            self.created += 1
+            return 201
+
+        def update_run_model_name(self, **kwargs):
+            pass
+
+        def insert_candidates(self, **kwargs):
+            pass
+
+        def persist_ai_result(self, **kwargs):
+            return []
+
+        def mark_run_failed(self, *a, **k):
+            pass
+
+    class _FakeSession:
+        def execute(self, *a, **k):
+            class R:
+                def mappings(self):
+                    return self
+
+                def all(self):
+                    return []
+
+            return R()
+
+    class FakeClient:
+        def __init__(self, results):
+            self._results = results
+
+        def search_candidates(self, query, limit=75):
+            return self._results.pop(0) if self._results else []
+
+        def get_message(self, mid, timeout_seconds=None):
+            return {}
+
+    class FakeRanker:
+        def planned_model_name(self):
+            return "claude-sonnet-4-5"
+
+        def select(self, txn, ranked):
+            return AiSelection(
+                selected_message_ids=[],
+                confidence=0.0,
+                uncertain=True,
+                rationale="retry-no-match",
+                backend="anthropic",
+                model_name="claude-sonnet-4-5",
+            )
+
+    txn = TransactionInput("txn1", "acc", Decimal("35.99"), datetime(2026, 5, 5, tzinfo=timezone.utc), "LYFT", "")
+    cands = [EmailCandidate("m_same", "s", "p", datetime(2026, 5, 5, tzinfo=timezone.utc), "x@y", "p")]
+    repo = FakeRepo(
+        txn,
+        last_summary={
+            "match_run_id": 70,
+            "status": "succeeded",
+            "model_name": "claude-sonnet-4-5",
+            "prompt_version": PROMPT_VERSION,
+            "candidate_message_ids": ["m_same"],
+        },
+        active={
+            "match_id": 70,
+            "email_message_id": None,
+            "state": "ai_no_match_found",
+            "selected_by": "ai",
+            "ai_confidence": 0.0,
         },
     )
     svc = object.__new__(MatchService)
