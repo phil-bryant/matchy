@@ -22,6 +22,7 @@ def _startup_log(start_time_seconds: float, phase: str, details: str = "") -> No
 class MatchRunRequest(BaseModel):
     transaction_ids: list[str] = Field(min_length=1, max_length=200)
     trigger_source: Literal["auto", "manual", "retry"] = "manual"
+    force_rematch: bool = False
 
 
 class MatchRunResponse(BaseModel):
@@ -31,6 +32,7 @@ class PendingMatchRunRequest(BaseModel):
     limit: int = Field(default=100, ge=1, le=500)
     lookback_days: int = Field(default=14, ge=1, le=365)
     trigger_source: Literal["auto", "manual", "retry"] = "auto"
+    force_rematch: bool = False
 
 
 def create_app() -> FastAPI:
@@ -66,7 +68,7 @@ def create_app() -> FastAPI:
         rows: list[dict] = []
         for transaction_id in request.transaction_ids:
             try:
-                rows.append(_service().match_transaction(transaction_id=transaction_id, trigger_source=request.trigger_source))
+                rows.append(_service().match_transaction(transaction_id=transaction_id, trigger_source=request.trigger_source, force_rematch=request.force_rematch))
             except ValueError as exc:
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
         return MatchRunResponse(results=rows)
@@ -78,6 +80,7 @@ def create_app() -> FastAPI:
             limit=request.limit,
             lookback_days=request.lookback_days,
             trigger_source=request.trigger_source,
+            force_rematch=request.force_rematch,
         )
         return MatchRunResponse(results=rows)
     _startup_log(startup_started_at, "create-app-complete")

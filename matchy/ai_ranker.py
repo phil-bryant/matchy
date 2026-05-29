@@ -6,7 +6,7 @@ from .models import AiSelection, RankedCandidate, TransactionInput
 from .settings import Settings
 
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v3"
 
 _OUTPUT_JSON_NOTE = (
     "Return ONLY a JSON object with keys selected_message_ids (list of strings),"
@@ -112,6 +112,7 @@ class AiRanker:
                 "Do not choose speculative candidates with weak evidence.",
                 "Prefer candidates near transaction date, but delayed receipts are possible.",
                 "Use body_excerpt to verify amounts and disambiguate same-day same-merchant emails.",
+                "If none of the candidate emails contain a clear receipt, invoice, order confirmation, payment acknowledgment, or other transaction-related document whose merchant, amount, or date are plausibly related to the input transaction, assign ai_confidence ≤ 0.30 and strongly prefer returning no selected_message_ids (ai_no_match_found) over selecting a low-quality match. Do not inflate confidence merely because one candidate is the \"least bad\" option among irrelevant emails. When in doubt, be conservative.",
                 "Return JSON only.",
             ],
             "transaction": {

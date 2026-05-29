@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError, as_completed
 from contextlib import nullcontext
+from datetime import timedelta
 import hashlib
 import logging
 import os
 import re
 from time import monotonic, perf_counter
+import requests
 from sqlalchemy import text
 
 from .ai_ranker import AiRanker, PROMPT_VERSION
@@ -52,7 +54,7 @@ class MatchService:
     #R020: since the previous run (same candidate id set under the same model + prompt version). This
     #R020: keeps the matchy auto-driver's per-loop cost bounded to a single Mailcart search per
     #R020: transaction instead of also paying for per-candidate body fetches and a Claude/GPT call.
-    def match_transaction(self, transaction_id: str, trigger_source: str = "manual") -> dict:
+    def match_transaction(self, transaction_id: str, trigger_source: str = "manual", force_rematch: bool = False) -> dict:
         with self._repository.session() as session:
             txn = self._repository.load_transaction(session, transaction_id)
             if txn is None:
@@ -66,6 +68,7 @@ class MatchService:
                 candidates=candidates,
                 planned_model=planned_model,
                 current_hash=current_hash,
+                force_rematch=force_rematch,
             )
             if cached_response is not None:
                 return cached_response
@@ -126,10 +129,70 @@ class MatchService:
             "skipped": False,
         }
 
-    #R020: Execute the existing 4-step search fallback chain (specific → broad → doordash → empty)
-    #R020: without yet creating a match_run row. Mailcart search errors are swallowed so a transient
-    #R020: Mailcart blip still allows the cache check to decide whether the last run's verdict stands.
+    #R020: Execute the scoped retrieval fallback chain (terms+date → terms-only → broad-term → empty)
+    #R020: without yet creating a match_run row. Query-tier requests intentionally use scoped
+    #R020: Mailcart syntax (`subject:`/`body:` plus optional `from:`/`to:` date bounds) and union
+    #R020: results across terms to improve recall while preserving deterministic ordering.
     def _search_candidates(self, txn, transaction_id: str) -> list[EmailCandidate]:
+        if self._mailcart_in_cooldown(transaction_id=transaction_id):
+            return []
+        terms = self._extract_search_terms(txn.description, txn.counterparty_name)
+        #R040: Each mailcart search is a ~15-20s full-mailbox Graph scan, and the driver already runs
+        #R040: several transactions in parallel, so we must keep per-transaction load to ~one scan.
+        #R040: Issue queries one at a time and stop at the first that returns anything (early-stop):
+        #R040: body matching leads because the merchant name reliably appears in receipt/confirmation
+        #R040: bodies, so the most distinctive term's body query usually catches the right email on the
+        #R040: first request. Subject, a window-free retry, and the historical recency fallback only run
+        #R040: when earlier queries come back empty. We deliberately do NOT fan out concurrently —
+        #R040: parallel scans saturate the single mailcart instance and push every request past its
+        #R040: timeout.
+        query_plan = (
+            self._build_scoped_queries(terms, txn.date, fields=("body",), include_date_window=True)
+            + self._build_scoped_queries(terms, txn.date, fields=("subject",), include_date_window=True)
+            + self._build_scoped_queries(terms, txn.date, fields=("body",), include_date_window=False)
+            + [""]
+        )
+        for query in query_plan:
+            rows = self._search_mailcart(query=query, transaction_id=transaction_id, limit=75)
+            candidates = self._dedupe_candidates(rows, limit=75)
+            if candidates:
+                return candidates
+            if self._mailcart_in_cooldown(transaction_id=transaction_id):
+                return []
+        return []
+
+    #R040: De-duplicate a single search result by message_id while preserving order and dropping rows
+    #R040: without an id, capped at `limit`.
+    @staticmethod
+    def _dedupe_candidates(rows: list[EmailCandidate], limit: int) -> list[EmailCandidate]:
+        deduped: dict[str, EmailCandidate] = {}
+        for candidate in rows:
+            message_id = str(candidate.message_id)
+            if not message_id or message_id in deduped:
+                continue
+            deduped[message_id] = candidate
+            if len(deduped) >= limit:
+                break
+        return list(deduped.values())
+
+    #R040: A slow search (Timeout) means Mailcart is up but busy, not down: skip just that query and
+    #R040: let the caller fall through to the next tier / the recency fallback. Only connection-level
+    #R040: failures and 5xx responses arm the shared cooldown. Client errors (4xx) are real bugs and
+    #R040: propagate so they are not silently masked.
+    def _search_mailcart(self, query: str, transaction_id: str, limit: int) -> list[EmailCandidate]:
+        try:
+            return self._mailcart_client.search_candidates(query=query, limit=limit)
+        except requests.exceptions.Timeout as exc:
+            LOGGER.warning("mailcart search timed out query=%r transaction_id=%s error=%s", query, transaction_id, exc)
+            return []
+        except Exception as exc:
+            LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", query, transaction_id, exc)
+            if self._is_transient_mailcart_error(exc):
+                self._mark_mailcart_temporarily_unavailable(transaction_id=transaction_id)
+                return []
+            raise
+
+    def _mailcart_in_cooldown(self, transaction_id: str) -> bool:
         now = monotonic()
         unavailable_until = float(getattr(self, "_mailcart_unavailable_until_monotonic", 0.0) or 0.0)
         if now < unavailable_until:
@@ -138,38 +201,21 @@ class MatchService:
                 "mailcart-search-skipped-cooldown",
                 f"transaction_id={transaction_id} remaining_seconds={remaining_seconds:0.1f}",
             )
-            return []
-        query = self._build_query(txn.description, txn.counterparty_name)
-        candidates: list[EmailCandidate] = []
-        try:
-            candidates = self._mailcart_client.search_candidates(query=query, limit=75)
-        except Exception as exc:
-            LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", query, transaction_id, exc)
-            self._mark_mailcart_temporarily_unavailable(transaction_id=transaction_id)
-            candidates = []
-        if not candidates:
-            broad_query = self._build_broad_query(txn.description, txn.counterparty_name)
-            try:
-                candidates = self._mailcart_client.search_candidates(query=broad_query, limit=75)
-            except Exception as exc:
-                LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", broad_query, transaction_id, exc)
-                self._mark_mailcart_temporarily_unavailable(transaction_id=transaction_id)
-                candidates = []
-        if not candidates and "doordash" in (txn.description or "").lower():
-            try:
-                candidates = self._mailcart_client.search_candidates(query="doordash", limit=75)
-            except Exception as exc:
-                LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", "doordash", transaction_id, exc)
-                self._mark_mailcart_temporarily_unavailable(transaction_id=transaction_id)
-                candidates = []
-        if not candidates:
-            try:
-                candidates = self._mailcart_client.search_candidates(query="", limit=75)
-            except Exception as exc:
-                LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", "", transaction_id, exc)
-                self._mark_mailcart_temporarily_unavailable(transaction_id=transaction_id)
-                candidates = []
-        return candidates
+            return True
+        return False
+
+    def _is_transient_mailcart_error(self, exc: Exception) -> bool:
+        if isinstance(exc, requests.exceptions.ConnectionError):
+            return True
+        if isinstance(exc, requests.exceptions.HTTPError):
+            response = getattr(exc, "response", None)
+            status_code = int(getattr(response, "status_code", 0) or 0)
+            return status_code >= 500
+        if isinstance(exc, requests.exceptions.RequestException):
+            response = getattr(exc, "response", None)
+            status_code = int(getattr(response, "status_code", 0) or 0)
+            return status_code >= 500
+        return False
 
     def _mark_mailcart_temporarily_unavailable(self, transaction_id: str) -> None:
         cooldown_seconds = int(getattr(self, "_mailcart_failure_cooldown_seconds", 15) or 15)
@@ -189,6 +235,7 @@ class MatchService:
     #R020:   - its prompt_version matches the current `PROMPT_VERSION`, and
     #R020:   - its candidate id set is byte-identical (after sorting) to the current search result.
     #R020: Returns None to indicate the caller should fall through to the full AI pipeline.
+    #R020: force_rematch bypasses the prompt_version (v2/v3) cache so new prompts take effect immediately.
     def _maybe_cached_response(
         self,
         session,
@@ -196,7 +243,10 @@ class MatchService:
         candidates: list[EmailCandidate],
         planned_model: str,
         current_hash: str,
+        force_rematch: bool = False,
     ) -> dict | None:
+        if force_rematch:
+            return None
         last_summary = self._repository.read_last_run_summary(session, transaction_id)
         if last_summary is None:
             return None
@@ -210,6 +260,8 @@ class MatchService:
         if cached_hash != current_hash:
             return None
         active = self._repository.read_active_match_summary(session, transaction_id) or {}
+        if active.get("state") == "ai_no_match_found":
+            return None
         selected_ids: list[str] = []
         active_email_id = active.get("email_message_id")
         if active_email_id and active.get("state") != "ai_no_match_found":
@@ -250,7 +302,7 @@ class MatchService:
     #R025: the rest of the batch — each error is captured into the result row, mark_run_failed has
     #R025: already recorded the failure in the DB, and the next driver loop will retry that transaction.
     #R030: Process pending transactions concurrently while preserving deterministic output order.
-    def match_pending_transactions(self, limit: int = 100, lookback_days: int = 14, trigger_source: str = "auto") -> list[dict]:
+    def match_pending_transactions(self, limit: int = 100, lookback_days: int = 14, trigger_source: str = "auto", force_rematch: bool = False) -> list[dict]:
         batch_started_at = perf_counter()
         with self._repository.session() as session:
             transaction_ids = self._repository.list_pending_transaction_ids(
@@ -286,7 +338,7 @@ class MatchService:
                 while index < len(transaction_ids):
                     transaction_id = transaction_ids[index]
                     run_started_by_index[index] = perf_counter()
-                    future = executor.submit(self.match_transaction, transaction_id=transaction_id, trigger_source=trigger_source)
+                    future = executor.submit(self.match_transaction, transaction_id=transaction_id, trigger_source=trigger_source, force_rematch=force_rematch)
                     future_to_index[future] = index
                     index += 1
                 for future in as_completed(future_to_index):
@@ -414,24 +466,52 @@ class MatchService:
             enriched.extend(candidates[enrich_count:])
         return enriched
 
-    #R005: Build search queries from normalized, non-numeric tokens with deterministic truncation.
-    def _build_query(self, description: str, counterparty_name: str) -> str:
-        raw = f"{counterparty_name} {description}".lower()
-        normalized = re.sub(r"[^a-z0-9\s]", " ", raw)
-        tokens = [token for token in normalized.split(" ") if len(token) >= 4 and not token.isdigit()]
-        if not tokens:
-            return ""
-        return " ".join(tokens[:3])
+    #R005: Build deterministic scoped search terms from merchant + transaction text. Capped at two
+    #R005: terms because each emitted query is a slow full-mailbox scan; the two most distinctive
+    #R005: merchant tokens (counterparty first, then description) carry almost all of the signal.
+    _MAX_SEARCH_TERMS = 2
 
-    def _build_broad_query(self, description: str, counterparty_name: str) -> str:
-        raw = f"{counterparty_name} {description}".lower()
-        normalized = re.sub(r"[^a-z0-9\s]", " ", raw)
-        tokens = [token for token in normalized.split(" ") if len(token) >= 4 and not token.isdigit()]
-        specific_tokens = [token for token in tokens if token not in {"doordash", "doordashcom"}]
-        if specific_tokens:
-            return specific_tokens[0]
-        if "doordash" in tokens:
-            return "doordash"
-        if tokens:
-            return tokens[0]
-        return ""
+    def _extract_search_terms(self, description: str, counterparty_name: str) -> list[str]:
+        ordered_tokens: list[str] = []
+        seen: set[str] = set()
+        sources = [counterparty_name or "", description or ""]
+        for source in sources:
+            normalized = re.sub(r"[^a-z0-9\s]", " ", source.lower())
+            for token in normalized.split():
+                if len(token) < 4:
+                    continue
+                if token.isdigit():
+                    continue
+                if re.search(r"[a-z]", token) is None:
+                    continue
+                if token in seen:
+                    continue
+                seen.add(token)
+                ordered_tokens.append(token)
+                if len(ordered_tokens) >= self._MAX_SEARCH_TERMS:
+                    return ordered_tokens
+        return ordered_tokens
+
+    def _build_scoped_queries(
+        self,
+        terms: list[str],
+        txn_date,
+        fields: tuple[str, ...] = ("body",),
+        include_date_window: bool = True,
+    ) -> list[str]:
+        if not terms:
+            return []
+        date_window = self._date_window_suffix(txn_date) if include_date_window else ""
+        scoped_queries: list[str] = []
+        for term in terms:
+            for field in fields:
+                scoped_queries.append(f"{field}:{term}{date_window}")
+        return scoped_queries
+
+    def _date_window_suffix(self, txn_date) -> str:
+        window_days = int(getattr(self._settings, "mailcart_search_date_window_days", 45) or 45)
+        if window_days <= 0:
+            return ""
+        from_date = (txn_date - timedelta(days=window_days)).date().isoformat()
+        to_date = (txn_date + timedelta(days=window_days)).date().isoformat()
+        return f" from:{from_date} to:{to_date}"

@@ -58,8 +58,8 @@ def _validated_api_base_url(raw: str) -> str:
     return candidate.rstrip("/")
 
 
-def _post_pending_run(api_base_url: str, limit: int, lookback_days: int, trigger_source: str, timeout_seconds: int) -> dict:
-    payload = {"limit": limit, "lookback_days": lookback_days, "trigger_source": trigger_source}
+def _post_pending_run(api_base_url: str, limit: int, lookback_days: int, trigger_source: str, timeout_seconds: int, force_rematch: bool = False) -> dict:
+    payload = {"limit": limit, "lookback_days": lookback_days, "trigger_source": trigger_source, "force_rematch": force_rematch}
     response_payload: dict = {"results": []}
     response = requests.post(
         f"{api_base_url}/v1/matchy/runs/pending",
@@ -82,12 +82,13 @@ def _post_pending_run_with_profile_heartbeat(
     startup_started_at: float,
     run_counter: int,
     profile_enabled: bool,
+    force_rematch: bool = False,
 ) -> dict:
     response_payload: dict = {"results": []}
     heartbeat_seconds = 5
     elapsed_wait_seconds = 0
     with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_post_pending_run, api_base_url, limit, lookback_days, trigger_source, timeout_seconds)
+        future = executor.submit(_post_pending_run, api_base_url, limit, lookback_days, trigger_source, timeout_seconds, force_rematch)
         finished = False
         while not finished:
             try:
@@ -116,6 +117,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--max-runs", type=int, default=_env_int("MATCHY_DRIVER_MAX_RUNS", 0, 0))
     parser.add_argument("--trigger-source", default=os.environ.get("MATCHY_DRIVER_TRIGGER_SOURCE", DEFAULT_TRIGGER_SOURCE).strip() or DEFAULT_TRIGGER_SOURCE)
     parser.add_argument("--once", action="store_true", default=_env_bool("MATCHY_DRIVER_ONCE", False))
+    parser.add_argument("--force-rematch", dest="force_rematch", action="store_true", default=False)
     return parser.parse_args()
 
 
@@ -142,6 +144,7 @@ def _run_driver_loop() -> int:
     max_runs = args.max_runs
     trigger_source = args.trigger_source
     run_once = args.once
+    force_rematch = args.force_rematch
     _startup_log(
         startup_started_at,
         "driver-configured",
@@ -172,6 +175,7 @@ def _run_driver_loop() -> int:
                 startup_started_at=startup_started_at,
                 run_counter=run_counter,
                 profile_enabled=args.profile,
+                force_rematch=force_rematch,
             )
             rows = payload.get("results", [])
             if isinstance(rows, list):
