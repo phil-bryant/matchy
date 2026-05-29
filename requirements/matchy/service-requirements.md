@@ -48,6 +48,11 @@ Tests:
 - R040-T01: Verify early-stop behavior returns on first successful tier and subsequent tiers are not invoked.
 - R040-T02: Verify result de-duplication preserves deterministic order.
 
+R045  Statement: Provide a human confirm endpoint so the UI Confirm button can persist a human selection without triggering state transition conflicts on `teller.transaction_email_match`.
+Design: `confirm_match` in MatchService deactivates any prior active match for the transaction then inserts a new row with state='human_confirmed', selected_by='human'. The repository exposes `deactivate_active_match` and `insert_human_confirmed_match`. The API exposes POST /v1/matchy/confirm accepting transaction_id, email_message_id, optional note.
+Tests:
+- R045-T01: Python test lane exists for human confirm requirement (delegation test in test_api.py).
+
 ## Changelog
 
 - 2026-05-18: Added service requirements coverage for missing transaction and query construction behavior.
@@ -57,3 +62,4 @@ Tests:
 - 2026-05-19: Added R025 per-transaction error tolerance in `match_pending_transactions` so a single 429/blip does not abort the whole batch.
 - 2026-05-24: Added R030 concurrent pending-batch processing with configurable worker pool and deterministic result ordering.
 - 2026-05-29: Added R040 scoped search tiering with early-stop and deterministic de-duplication.
+- 2026-05-29: Added R045 human confirm endpoint so UI Confirm button can persist human selection without state transition conflicts.

@@ -744,3 +744,21 @@ def test_service_search_candidates_dedupes_preserving_order() -> None:
     c3 = EmailCandidate(message_id="m1", subject="s", preview="p", body_text="", received_at=datetime(2026, 5, 1, tzinfo=timezone.utc))
     deduped = MatchService._dedupe_candidates([c1, c2, c3], limit=10)
     assert [d.message_id for d in deduped] == ["m1", "m2"]
+
+
+def test_service_confirm_match_delegates_to_repository() -> None:
+    #R045-T01: confirm_match calls deactivate + insert on repository (core behavior preventing state conflicts).
+    calls = []
+
+    class FakeRepo:
+        class Ctx:
+            def __enter__(self): return object()
+            def __exit__(self, *a): return False
+        def session(self): return FakeRepo.Ctx()
+        def deactivate_active_match(self, s, txn): calls.append(("deact", txn))
+        def insert_human_confirmed_match(self, s, txn, eml, note): calls.append(("insert", txn, eml, note))
+
+    service = object.__new__(MatchService)
+    service._repository = FakeRepo()
+    service.confirm_match("t123", "e456", "note")
+    assert calls == [("deact", "t123"), ("insert", "t123", "e456", "note")]

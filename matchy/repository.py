@@ -459,3 +459,36 @@ class MatchRepository:
 
     def mark_run_failed(self, session, run_id: int, error_text: str) -> None:
         self._update_run_status(session, run_id, "failed", error_text=error_text)
+
+    def deactivate_active_match(self, session, transaction_id: str) -> None:
+        session.execute(
+            text(
+                """
+                UPDATE teller.transaction_email_match
+                   SET active = FALSE, updated_at = CURRENT_TIMESTAMP
+                 WHERE transaction_id = :transaction_id AND active = TRUE
+                """
+            ),
+            {"transaction_id": transaction_id},
+        )
+
+    def insert_human_confirmed_match(self, session, transaction_id: str, email_message_id: str, note: str | None) -> None:
+        now = datetime.now(tz=timezone.utc)
+        explanation = {"note": note} if note else {}
+        session.execute(
+            text(
+                """
+                INSERT INTO teller.transaction_email_match (
+                    transaction_id, email_message_id, state, selected_by, selected_at, active, explanation_json
+                ) VALUES (
+                    :transaction_id, :email_message_id, 'human_confirmed', 'human', :selected_at, TRUE, CAST(:explanation AS jsonb)
+                )
+                """
+            ),
+            {
+                "transaction_id": transaction_id,
+                "email_message_id": email_message_id,
+                "selected_at": now,
+                "explanation": __import__("json").dumps(explanation),
+            },
+        )

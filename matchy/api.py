@@ -35,6 +35,12 @@ class PendingMatchRunRequest(BaseModel):
     force_rematch: bool = False
 
 
+class ConfirmRequest(BaseModel):
+    transaction_id: str
+    email_message_id: str
+    note: str | None = None
+
+
 def create_app() -> FastAPI:
     startup_started_at = perf_counter()
     _startup_log(startup_started_at, "create-app-enter")
@@ -83,5 +89,15 @@ def create_app() -> FastAPI:
             force_rematch=request.force_rematch,
         )
         return MatchRunResponse(results=rows)
+
+    @app.post("/v1/matchy/confirm", response_model=dict)
+    def confirm_match(request: ConfirmRequest) -> dict:
+        result = _service().confirm_match(
+            transaction_id=request.transaction_id,
+            email_message_id=request.email_message_id,
+            note=request.note,
+        )
+        return result
+
     _startup_log(startup_started_at, "create-app-complete")
     return app

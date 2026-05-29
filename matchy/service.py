@@ -515,3 +515,13 @@ class MatchService:
         from_date = (txn_date - timedelta(days=window_days)).date().isoformat()
         to_date = (txn_date + timedelta(days=window_days)).date().isoformat()
         return f" from:{from_date} to:{to_date}"
+
+    def confirm_match(self, transaction_id: str, email_message_id: str, note: str | None = None) -> dict:
+        #R045: Human confirm: deactivate prior active match for txn, insert human_confirmed state.
+        # This prevents the state transition conflict error by properly managing active flags.
+        with self._repository.session() as session:
+            self._repository.deactivate_active_match(session, transaction_id)
+            self._repository.insert_human_confirmed_match(
+                session, transaction_id, email_message_id, note
+            )
+        return {"status": "confirmed", "match_id": None}

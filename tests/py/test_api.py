@@ -56,3 +56,26 @@ def test_api_pending_run_endpoint_delegates_to_service_batch_matcher() -> None:
         assert body["results"][0]["trigger_source"] == "auto"
     finally:
         api.MatchService = old
+
+
+#R045-T02: Python test lane exists for confirm API endpoint.
+def test_api_confirm_endpoint_delegates_to_service_confirm() -> None:
+    #R045: Confirm endpoint accepts transaction+email and delegates.
+    calls = []
+
+    class StubService:
+        def confirm_match(self, transaction_id, email_message_id, note=None):
+            calls.append((transaction_id, email_message_id, note))
+            return {"status": "confirmed", "match_id": 123}
+
+    old = api.MatchService
+    api.MatchService = lambda settings: StubService()
+    try:
+        response = TestClient(create_app()).post(
+            "/v1/matchy/confirm",
+            json={"transaction_id": "txn_123", "email_message_id": "eml_456", "note": "user note"},
+        )
+        assert response.status_code == 200
+        assert calls == [("txn_123", "eml_456", "user note")]
+    finally:
+        api.MatchService = old
