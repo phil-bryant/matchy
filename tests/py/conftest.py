@@ -25,6 +25,7 @@ def _stub_teller_db_config(_settings_instance) -> dict:
 def _stub_settings_secrets(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
     if request.node.fspath and request.node.fspath.basename == "test_settings.py":
         return
+    monkeypatch.setenv("MATCHY_CLDR_CURRENCIES_REFRESH_ENABLED", "false")
     monkeypatch.setattr(
         "matchy.settings.Settings._resolve_teller_db_config",
         _stub_teller_db_config,

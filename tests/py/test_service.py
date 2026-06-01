@@ -27,6 +27,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from matchy.ai_ranker import PROMPT_VERSION
+from matchy.cldr_cache import CldrCurrencyMatcher
 from matchy.models import AiSelection, EmailCandidate, TransactionInput
 from matchy.service import MatchService
 
@@ -202,6 +203,92 @@ def test_service_skips_body_enrichment_when_feature_flag_is_disabled() -> None:
     assert service._mailcart_client.calls == []
 
 
+def test_service_filters_enriched_candidates_without_standalone_cldr_currency_before_ai() -> None:
+    #R050-T01: Currency filtering runs after full-body enrichment and before ranking/AI selection.
+    class FakeRepo:
+        class Ctx:
+            def __enter__(self):
+                return _FakeSession()
+            def __exit__(self, *exc):
+                return False
+        def __init__(self, txn):
+            self.txn = txn
+            self.candidates_inserted = None
+        def session(self):
+            return FakeRepo.Ctx()
+        def load_transaction(self, session, transaction_id):
+            return self.txn
+        def read_last_run_summary(self, session, transaction_id):
+            return None
+        def create_run(self, **kwargs):
+            return 202
+        def update_run_model_name(self, **kwargs):
+            pass
+        def insert_candidates(self, **kwargs):
+            self.candidates_inserted = kwargs["candidates"]
+        def persist_ai_result(self, **kwargs):
+            return list(kwargs["ai_selection"].selected_message_ids)
+        def mark_run_failed(self, *a, **k):
+            pass
+
+    class _FakeSession:
+        def execute(self, *a, **k):
+            class R:
+                def mappings(self):
+                    return self
+                def all(self):
+                    return []
+            return R()
+
+    class FakeClient:
+        def search_candidates(self, query, limit=75):
+            dt = datetime(2026, 5, 5, tzinfo=timezone.utc)
+            return [
+                EmailCandidate("good", "Receipt", "", dt, "x@y", ""),
+                EmailCandidate("bad", "Receipt", "", dt, "x@y", ""),
+                EmailCandidate("substring", "Receipt", "", dt, "x@y", ""),
+            ]
+        def get_message(self, message_id, timeout_seconds=None):
+            bodies = {"good": "total $35.99", "bad": "total thirty five", "substring": "code xUSDx only"}
+            return {"text_body": bodies[message_id]}
+
+    class FakeRanker:
+        def planned_model_name(self):
+            return "claude-sonnet-4-5"
+        def select(self, txn, ranked):
+            assert [row.candidate.message_id for row in ranked] == ["good"]
+            return AiSelection(["good"], 0.95, False, "currency scoped", "anthropic", "claude-sonnet-4-5")
+
+    txn = TransactionInput("txn1", "acc", Decimal("35.99"), datetime(2026, 5, 5, tzinfo=timezone.utc), "LYFT", "")
+    svc = object.__new__(MatchService)
+    svc._settings = SimpleNamespace(
+        mailcart_body_enrichment_enabled=True,
+        mailcart_body_enrichment_limit=75,
+        mailcart_body_enrichment_timeout_seconds=10,
+        mailcart_body_enrichment_max_workers=4,
+        mailcart_get_message_timeout_seconds=2,
+        auto_confirm_threshold=0.9,
+    )
+    svc._repository = FakeRepo(txn)
+    svc._mailcart_client = FakeClient()
+    svc._ai_ranker = FakeRanker()
+    svc._mailcart_failure_cooldown_seconds = 15
+    svc._mailcart_unavailable_until_monotonic = 0.0
+    svc._cldr_currency_matcher = CldrCurrencyMatcher(frozenset({"$", "USD"}))
+    result = svc.match_transaction("txn1")
+    assert result["selected_message_ids"] == ["good"]
+    assert [row.candidate.message_id for row in svc._repository.candidates_inserted] == ["good"]
+
+
+def test_service_currency_filter_leaves_candidates_unfiltered_when_matcher_is_empty() -> None:
+    #R050-T02: Missing CLDR cache data produces an empty matcher and does not drop otherwise usable candidates.
+    dt = datetime(2026, 5, 5, tzinfo=timezone.utc)
+    candidates = [EmailCandidate("m1", "Receipt", "total", dt, "x@y", "body")]
+    service = object.__new__(MatchService)
+    service._cldr_currency_matcher = CldrCurrencyMatcher(frozenset())
+    assert service._filter_currency_candidates(candidates) == candidates
+
+
 def test_service_short_circuits_ai_call_when_candidate_set_is_unchanged_since_last_run() -> None:
     #R020: match_transaction returns skipped=True when (model, prompt, candidate set) match last run.
     class FakeRepo:
@@ -247,7 +334,7 @@ def test_service_short_circuits_ai_call_when_candidate_set_is_unchanged_since_la
             return self._results.pop(0) if self._results else []
 
         def get_message(self, mid, timeout_seconds=None):
-            raise AssertionError("should not be called on cache hit")
+            return {}
 
     class FakeRanker:
         def __init__(self, model):

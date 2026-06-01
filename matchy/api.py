@@ -7,6 +7,7 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from .cldr_cache import CldrCurrenciesCache
 from .service import MatchService
 from .settings import Settings
 
@@ -49,6 +50,12 @@ def create_app() -> FastAPI:
     settings_started_at = perf_counter()
     settings = Settings()
     _startup_log(startup_started_at, "settings-created", f"phase_elapsed={perf_counter() - settings_started_at:7.3f}s")
+    #R015: Refresh the CLDR currencies cache during API startup when the feature flag is enabled.
+    if settings.cldr_currencies_refresh_enabled:
+        cache_started_at = perf_counter()
+        cache_status = CldrCurrenciesCache(settings).refresh()
+        detail = f"updated={cache_status.get('updated')} phase_elapsed={perf_counter() - cache_started_at:7.3f}s"
+        _startup_log(startup_started_at, "cldr-currencies-cache-refreshed", detail)
     service: MatchService | None = None
 
     def _service() -> MatchService:

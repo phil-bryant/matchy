@@ -55,6 +55,11 @@ Tests:
 - R045-T01: Construct `Settings` with no env override and verify `mailcart_ca_bundle` is empty (auto-resolve path).
 - R045-T02: Set `MATCHY_MAILCART_CA_BUNDLE=/custom/ca.pem` and verify the path is exposed.
 
+R050  Statement: Expose CLDR currencies cache startup settings.
+Design: `Settings` reads `MATCHY_CLDR_CURRENCIES_CACHE_PATH`, `MATCHY_CLDR_CURRENCIES_REFRESH_ENABLED`, and `MATCHY_CLDR_CURRENCIES_REFRESH_TIMEOUT_SECONDS`, defaulting to `~/.cache/matchy/cldr-currencies-en.json`, enabled refresh, and a 5-second timeout.
+Tests:
+- R050-T01: Construct `Settings` with defaults and env overrides and verify the CLDR cache path, refresh flag, and timeout values.
+
 ## Changelog
 
 - 2026-05-13: Added 1psa-backed Teller DB password resolution requirements for `matchy/settings.py`.
@@ -68,3 +73,4 @@ Tests:
 - 2026-05-19: Added R035 pinning the default Anthropic model to `claude-sonnet-4-5` since the `-latest` alias was deprecated and now 404s.
 - 2026-05-24: Switched Teller DB resolution to 1psa-first full field config with `~/.env` fallback and explicit hard failure on unresolved config.
 - 2026-05-29: Added R040 Mailcart search timeout and R045 explicit CA bundle settings.
+- 2026-06-01: Added R050 CLDR currencies cache startup settings.

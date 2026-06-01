@@ -4,6 +4,7 @@
 #R015: Python test lane coverage for AI key resolution.
 #R030: Python test lane coverage for mailcart body enrichment defaults.
 #R035: Python test lane coverage for anthropic model defaults.
+#R050: Python test lane coverage for CLDR currencies cache startup settings.
 #R001-T01: Python test lane exists for default teller DB config requirement.
 #R005-T01: Python test lane exists for item-name override requirement.
 #R005-T02: Python test lane exists for op:// reference requirement.
@@ -22,6 +23,7 @@
 #R040-T02: Python test lane exists for mailcart search timeout override requirement.
 #R045-T01: Python test lane exists for mailcart CA bundle default requirement.
 #R045-T02: Python test lane exists for mailcart CA bundle override requirement.
+#R050-T01: Python test lane exists for CLDR currencies cache setting defaults and overrides.
 
 from __future__ import annotations
 
@@ -417,3 +419,25 @@ def test_mailcart_ca_bundle_default_and_override(monkeypatch: pytest.MonkeyPatch
     SettingsCls2 = _reload_settings_class(monkeypatch)
     settings2 = SettingsCls2()
     assert settings2.mailcart_ca_bundle == "/custom/ca.pem"
+
+
+def test_cldr_currencies_cache_settings_default_and_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    #R050: CLDR currencies cache path, refresh flag, and timeout expose env-configurable startup behavior.
+    _clear_secret_env(monkeypatch)
+    monkeypatch.delenv("MATCHY_CLDR_CURRENCIES_CACHE_PATH", raising=False)
+    monkeypatch.delenv("MATCHY_CLDR_CURRENCIES_REFRESH_ENABLED", raising=False)
+    monkeypatch.delenv("MATCHY_CLDR_CURRENCIES_REFRESH_TIMEOUT_SECONDS", raising=False)
+    _install_run_stub(monkeypatch, _optional_miss_handler)
+    SettingsCls = _reload_settings_class(monkeypatch)
+    settings = SettingsCls()
+    assert settings.cldr_currencies_cache_path.endswith(".cache/matchy/cldr-currencies-en.json")
+    assert settings.cldr_currencies_refresh_enabled is True
+    assert settings.cldr_currencies_refresh_timeout_seconds == 5
+    override_path = tmp_path / "currencies.json"
+    monkeypatch.setenv("MATCHY_CLDR_CURRENCIES_CACHE_PATH", str(override_path))
+    monkeypatch.setenv("MATCHY_CLDR_CURRENCIES_REFRESH_ENABLED", "false")
+    monkeypatch.setenv("MATCHY_CLDR_CURRENCIES_REFRESH_TIMEOUT_SECONDS", "9")
+    settings2 = SettingsCls()
+    assert settings2.cldr_currencies_cache_path == str(override_path)
+    assert settings2.cldr_currencies_refresh_enabled is False
+    assert settings2.cldr_currencies_refresh_timeout_seconds == 9

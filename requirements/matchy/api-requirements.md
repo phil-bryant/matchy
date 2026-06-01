@@ -19,7 +19,13 @@ Design: Register `POST /v1/matchy/runs/pending`, validate request fields, and de
 Tests:
 - R010-T01: Stub pending matcher and verify endpoint returns delegated rows with request values.
 
+R015  Statement: Refresh the CLDR currencies cache during API startup.
+Design: When `Settings.cldr_currencies_refresh_enabled` is true, `create_app()` constructs `CldrCurrenciesCache` and calls `refresh()` before returning the FastAPI app.
+Tests:
+- R015-T01: Enable the CLDR startup refresh flag, stub the cache object, create the app, and verify the cache refresh was called.
+
 ## Changelog
 
 - 2026-05-18: Added API requirements coverage for run and health paths.
 - 2026-05-18: Added R010 pending-run endpoint requirements for external driver workflows.
+- 2026-06-01: Added R015 startup refresh for the local CLDR currencies cache.

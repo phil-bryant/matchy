@@ -1,9 +1,11 @@
 #R001: Python test lane coverage for health endpoint behavior.
 #R005: Python test lane coverage for missing-transaction HTTP mapping.
 #R010: Python test lane coverage for pending-run endpoint delegation.
+#R015: Python test lane coverage for startup CLDR currencies cache refresh.
 #R001-T01: Python test lane exists for health endpoint requirement.
 #R005-T01: Python test lane exists for 404 mapping requirement.
 #R010-T01: Python test lane exists for pending-run endpoint requirement.
+#R015-T01: Python test lane exists for startup CLDR cache refresh requirement.
 
 from fastapi.testclient import TestClient
 
@@ -16,6 +18,26 @@ def test_api_health_endpoint_returns_status_ok() -> None:
     response = TestClient(create_app()).get("/health")
     assert response.status_code == 200
     assert response.json().get("status") == "ok"
+
+
+def test_api_create_app_refreshes_cldr_currencies_cache_when_enabled(monkeypatch) -> None:
+    #R015: App startup refreshes the local CLDR currencies cache when the startup feature flag is enabled.
+    calls = []
+
+    class StubCache:
+        def __init__(self, settings):
+            self._settings = settings
+
+        def refresh(self):
+            calls.append(self._settings.cldr_currencies_cache_path)
+            return {"updated": True, "version": "sha-1", "cache_path": self._settings.cldr_currencies_cache_path}
+
+    monkeypatch.setenv("MATCHY_CLDR_CURRENCIES_REFRESH_ENABLED", "true")
+    monkeypatch.setenv("MATCHY_CLDR_CURRENCIES_CACHE_PATH", "/tmp/matchy-currencies.json")
+    monkeypatch.setattr(api, "CldrCurrenciesCache", StubCache)
+    response = TestClient(create_app()).get("/health")
+    assert response.status_code == 200
+    assert calls == ["/tmp/matchy-currencies.json"]
 
 
 def test_api_run_endpoint_maps_unknown_transaction_to_http_404() -> None:

@@ -12,6 +12,7 @@ import requests
 from sqlalchemy import text
 
 from .ai_ranker import AiRanker, PROMPT_VERSION
+from .cldr_cache import CldrCurrenciesCache
 from .mailcart_client import MailcartClient
 from .models import EmailCandidate
 from .repository import MatchRepository
@@ -43,6 +44,7 @@ class MatchService:
         self._repository = MatchRepository(settings)
         self._mailcart_client = MailcartClient(settings)
         self._ai_ranker = AiRanker(settings)
+        self._cldr_currency_matcher = CldrCurrenciesCache(settings).currency_matcher()
         cooldown_seconds = int(getattr(settings, "mailcart_failure_cooldown_seconds", 15) or 15)
         if cooldown_seconds < 0:
             cooldown_seconds = 0
@@ -60,6 +62,8 @@ class MatchService:
             if txn is None:
                 raise ValueError(f"Unknown transaction_id: {transaction_id}")
             candidates = self._search_candidates(txn, transaction_id)
+            candidates = self._enrich_candidate_bodies(candidates, transaction_id=transaction_id)
+            candidates = self._filter_currency_candidates(candidates)
             planned_model = self._ai_ranker.planned_model_name()
             current_hash = self._candidate_set_hash([c.message_id for c in candidates])
             cached_response = self._maybe_cached_response(
@@ -82,7 +86,6 @@ class MatchService:
             try:
                 transaction_scope = session.begin_nested() if hasattr(session, "begin_nested") else nullcontext()
                 with transaction_scope:
-                    candidates = self._enrich_candidate_bodies(candidates, transaction_id=transaction_id)
                     active_ids = set(
                         row["email_message_id"]
                         for row in session.execute(
@@ -465,6 +468,18 @@ class MatchService:
         if len(candidates) > enrich_count:
             enriched.extend(candidates[enrich_count:])
         return enriched
+
+    #R050: Scope matchable candidates to messages containing a standalone CLDR currency code or symbol.
+    def _filter_currency_candidates(self, candidates: list[EmailCandidate]) -> list[EmailCandidate]:
+        filtered = candidates
+        matcher = getattr(self, "_cldr_currency_matcher", None)
+        if candidates and matcher is not None and getattr(matcher, "tokens", frozenset()):
+            filtered = []
+            for candidate in candidates:
+                text_blob = f"{candidate.subject} {candidate.preview} {candidate.body_text}"
+                if matcher.contains_standalone_currency(text_blob):
+                    filtered.append(candidate)
+        return filtered
 
     #R005: Build deterministic scoped search terms from merchant + transaction text. Capped at two
     #R005: terms because each emitted query is a slow full-mailbox scan; the two most distinctive

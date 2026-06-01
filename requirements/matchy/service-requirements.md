@@ -53,6 +53,17 @@ Design: `confirm_match` in MatchService deactivates any prior active match for t
 Tests:
 - R045-T01: Python test lane exists for human confirm requirement (delegation test in test_api.py).
 
+R050  Statement: Scope match candidates to emails containing a valid standalone CLDR currency code or symbol.
+Design: `MatchService` loads a `CldrCurrenciesCache` matcher once at initialization. After Mailcart body
+enrichment and before ranking/AI selection, candidates are filtered to messages whose subject, preview,
+or body contains a standalone CLDR currency code or symbol. Missing/malformed CLDR cache data yields an
+empty matcher and leaves candidates unfiltered so offline startup remains usable. Because `TransactionInput`
+has no currency field, the filter accepts any valid CLDR currency token rather than a transaction-specific
+currency.
+Tests:
+- R050-T01: Verify a `$35.99` candidate remains while a no-currency candidate is removed before AI.
+- R050-T02: Verify an empty CLDR matcher leaves candidates unfiltered.
+
 ## Changelog
 
 - 2026-05-18: Added service requirements coverage for missing transaction and query construction behavior.
@@ -63,3 +74,4 @@ Tests:
 - 2026-05-24: Added R030 concurrent pending-batch processing with configurable worker pool and deterministic result ordering.
 - 2026-05-29: Added R040 scoped search tiering with early-stop and deterministic de-duplication.
 - 2026-05-29: Added R045 human confirm endpoint so UI Confirm button can persist human selection without state transition conflicts.
+- 2026-06-01: Added R050 CLDR currency-token candidate filtering before ranking and AI selection.

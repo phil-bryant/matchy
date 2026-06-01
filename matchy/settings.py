@@ -83,10 +83,40 @@ class Settings:
     auto_confirm_threshold: float = float(os.environ.get("MATCHY_AUTO_CONFIRM_THRESHOLD", "0.90"))
     write_enabled: bool = os.environ.get("MATCHY_WRITE_ENABLED", "true").lower() == "true"
     email_move_enabled: bool = os.environ.get("MATCHY_EMAIL_MOVE_ENABLED", "false").lower() == "true"
+    #R050: CLDR currencies cache settings control startup refresh, local storage, and HTTP timeout.
+    cldr_currencies_cache_path: str = os.environ.get(
+        "MATCHY_CLDR_CURRENCIES_CACHE_PATH",
+        str(Path.home() / ".cache" / "matchy" / "cldr-currencies-en.json"),
+    )
+    cldr_currencies_refresh_enabled: bool = (
+        os.environ.get("MATCHY_CLDR_CURRENCIES_REFRESH_ENABLED", "true").lower() == "true"
+    )
+    cldr_currencies_refresh_timeout_seconds: int = int(os.environ.get("MATCHY_CLDR_CURRENCIES_REFRESH_TIMEOUT_SECONDS", "5"))
 
     def __post_init__(self) -> None:
         startup_started_at = perf_counter()
         _startup_log(startup_started_at, "settings-init-enter")
+        object.__setattr__(
+            self,
+            "cldr_currencies_cache_path",
+            os.environ.get("MATCHY_CLDR_CURRENCIES_CACHE_PATH", self.cldr_currencies_cache_path),
+        )
+        object.__setattr__(
+            self,
+            "cldr_currencies_refresh_enabled",
+            os.environ.get(
+                "MATCHY_CLDR_CURRENCIES_REFRESH_ENABLED",
+                str(self.cldr_currencies_refresh_enabled),
+            ).lower() == "true",
+        )
+        object.__setattr__(
+            self,
+            "cldr_currencies_refresh_timeout_seconds",
+            int(os.environ.get(
+                "MATCHY_CLDR_CURRENCIES_REFRESH_TIMEOUT_SECONDS",
+                str(self.cldr_currencies_refresh_timeout_seconds),
+            )),
+        )
         resolve_db_started_at = perf_counter()
         teller_db_config = self._resolve_teller_db_config()
         _startup_log(startup_started_at, "settings-db-config-resolved", f"phase_elapsed={perf_counter() - resolve_db_started_at:7.3f}s")

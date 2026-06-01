@@ -33,6 +33,7 @@ do_not_mutate = [
   "matchy/api.py",
   "matchy/repository.py",
   "matchy/mailcart_client.py",
+  "matchy/cldr_cache.py",
   "matchy/ai_ranker.py",
   "matchy/service.py",
   "matchy/settings.py",
