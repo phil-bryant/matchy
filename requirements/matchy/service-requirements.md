@@ -64,6 +64,14 @@ Tests:
 - R050-T01: Verify a `$35.99` candidate remains while a no-currency candidate is removed before AI.
 - R050-T02: Verify an empty CLDR matcher leaves candidates unfiltered.
 
+R055  Statement: Collapse near-duplicate candidate emails (forwarded or marketing variants of the same receipt) using SimHash fingerprints under a Hamming-distance threshold.
+Design: `_simhash64` builds a 64-bit fingerprint from a candidate's long tokens using keyed BLAKE2b per-bit voting; `_hamming_distance` counts differing bits. `_collapse_near_duplicates` keeps the first representative of each cluster, never collapses contentless (zero) fingerprints, and is a no-op for a non-positive threshold or trivial input. `_near_duplicate_max_distance` resolves the threshold from `near_duplicate_max_hamming_distance`, defaulting to 0 (disabled) and rejecting non-positive/invalid values. Collapsing runs in `match_transaction` after body enrichment so similarity is judged on full bodies.
+Tests:
+- R055-T01: SimHash is deterministic, zero for empty text, and far in Hamming distance for unrelated text (`tests/py/test_service.py`).
+- R055-T02: Hamming distance counts differing bits and is zero for equal fingerprints (`tests/py/test_service.py`).
+- R055-T03: Identical bodies collapse to the first representative, distinct content survives, and disabled/trivial input is unchanged (`tests/py/test_service.py`).
+- R055-T04: The distance resolver defaults to disabled, honors positive values, and rejects invalid input (`tests/py/test_service.py`).
+
 ## Changelog
 
 - 2026-05-18: Added service requirements coverage for missing transaction and query construction behavior.

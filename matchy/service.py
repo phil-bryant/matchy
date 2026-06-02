@@ -17,9 +17,35 @@ from .mailcart_client import MailcartClient
 from .models import EmailCandidate
 from .repository import MatchRepository
 from .scoring import rank_candidates
+from . import scoring_core
 from .settings import Settings
 
 LOGGER = logging.getLogger(__name__)
+
+
+#R055: 64-bit SimHash fingerprint over a candidate's long tokens. Each token votes per bit via a
+#R055: keyed BLAKE2b digest; the sign of the per-bit vote sum sets the fingerprint bit, so
+#R055: near-identical texts produce fingerprints a small Hamming distance apart.
+def _simhash64(text: str) -> int:
+    weights = [0] * 64
+    for token in scoring_core.relevance_tokens(text):
+        token_hash = int.from_bytes(hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest(), "big")
+        for bit_index in range(64):
+            if (token_hash >> bit_index) & 1:
+                weights[bit_index] += 1
+            else:
+                weights[bit_index] -= 1
+    fingerprint = 0
+    for bit_index in range(64):
+        if weights[bit_index] > 0:
+            fingerprint |= 1 << bit_index
+    return fingerprint
+
+
+#R055: Hamming distance between two 64-bit fingerprints (count of differing bits).
+def _hamming_distance(left: int, right: int) -> int:
+    distance = bin(left ^ right).count("1")
+    return distance
 
 #R020: Statuses that represent a completed AI evaluation; only these are cache-eligible. `failed`
 #R020: runs are NOT in this set so transient errors (Mailcart down, Anthropic 404, etc.) self-heal
@@ -64,6 +90,8 @@ class MatchService:
             candidates = self._search_candidates(txn, transaction_id)
             candidates = self._enrich_candidate_bodies(candidates, transaction_id=transaction_id)
             candidates = self._filter_currency_candidates(candidates)
+            #R055: Collapse near-duplicate receipts after enrichment so similarity is judged on full bodies.
+            candidates = self._collapse_near_duplicates(candidates, self._near_duplicate_max_distance())
             planned_model = self._ai_ranker.planned_model_name()
             current_hash = self._candidate_set_hash([c.message_id for c in candidates])
             cached_response = self._maybe_cached_response(
@@ -163,6 +191,43 @@ class MatchService:
             if self._mailcart_in_cooldown(transaction_id=transaction_id):
                 return []
         return []
+
+    #R055: Resolve the near-duplicate Hamming-distance threshold. Defaults to 0 (collapsing disabled) so
+    #R055: behavior is opt-in; a positive `near_duplicate_max_hamming_distance` setting enables collapsing.
+    def _near_duplicate_max_distance(self) -> int:
+        raw = getattr(self._settings, "near_duplicate_max_hamming_distance", 0)
+        distance = 0
+        try:
+            parsed = int(raw)
+            if parsed > 0:
+                distance = parsed
+        except (TypeError, ValueError):
+            distance = 0
+        return distance
+
+    #R055: Collapse near-duplicate candidates (forwarded/marketing variants of the same receipt) using
+    #R055: SimHash fingerprints under a Hamming-distance threshold, keeping the first representative of
+    #R055: each cluster. Contentless candidates (zero fingerprint) are never collapsed since they carry
+    #R055: no similarity signal. A non-positive threshold is a no-op.
+    @staticmethod
+    def _collapse_near_duplicates(candidates: list[EmailCandidate], max_distance: int) -> list[EmailCandidate]:
+        if max_distance <= 0 or len(candidates) <= 1:
+            collapsed = list(candidates)
+        else:
+            collapsed = []
+            fingerprints: list[int] = []
+            for candidate in candidates:
+                fingerprint = _simhash64(f"{candidate.subject} {candidate.preview} {candidate.body_text}")
+                is_duplicate = False
+                if fingerprint != 0:
+                    for kept_fingerprint in fingerprints:
+                        if _hamming_distance(fingerprint, kept_fingerprint) <= max_distance:
+                            is_duplicate = True
+                if not is_duplicate:
+                    collapsed.append(candidate)
+                    if fingerprint != 0:
+                        fingerprints.append(fingerprint)
+        return collapsed
 
     #R040: De-duplicate a single search result by message_id while preserving order and dropping rows
     #R040: without an id, capped at `limit`.

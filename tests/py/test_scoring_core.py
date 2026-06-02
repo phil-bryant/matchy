@@ -5,6 +5,7 @@
 #R030: Contract tests for compact_merchant_hint_score behavior.
 #R035: Contract tests for time_proximity_score behavior.
 
+import math
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -225,3 +226,167 @@ def test_time_proximity_score_uses_absolute_delta() -> None:
     txn_time = BASE_TIME
     received_at = txn_time - timedelta(hours=3)
     assert scoring_core.time_proximity_score(txn_time, received_at) == 1.0
+
+
+def test_relevance_tokens_keeps_long_tokens_and_repeats() -> None:
+    #R040-T01: Long tokens are retained in order, including repeats, after normalization.
+    assert scoring_core.relevance_tokens("Coffee, COFFEE!! be xy") == ["coffee", "coffee"]
+
+
+def test_relevance_tokens_drops_short_tokens() -> None:
+    #R040-T02: Tokens of length two or less are excluded, yielding an empty list when none qualify.
+    assert scoring_core.relevance_tokens("a bb !! 999") == ["999"]
+    assert scoring_core.relevance_tokens("a bb cc") == []
+
+
+def test_document_frequencies_counts_documents_containing_token() -> None:
+    #R041-T01: Document frequency counts documents (not occurrences) containing each long token.
+    docs = ["coffee shop", "coffee beans", "tea time tea"]
+    assert scoring_core.document_frequencies(docs) == {
+        "coffee": 2,
+        "shop": 1,
+        "beans": 1,
+        "tea": 1,
+        "time": 1,
+    }
+
+
+def test_document_frequencies_empty_corpus_is_empty() -> None:
+    #R041-T02: An empty corpus produces no document frequencies.
+    assert scoring_core.document_frequencies([]) == {}
+
+
+def test_inverse_document_frequency_known_values() -> None:
+    #R042-T01: Smoothed BM25 idf matches the closed-form value for known corpus statistics.
+    assert scoring_core.inverse_document_frequency(2, 1) == pytest.approx(math.log(2.0))
+    assert scoring_core.inverse_document_frequency(10, 1) == pytest.approx(math.log(1.0 + 9.5 / 1.5))
+
+
+def test_inverse_document_frequency_is_monotonic_in_rarity() -> None:
+    #R042-T02: Rarer tokens (lower document frequency) receive strictly higher idf.
+    assert scoring_core.inverse_document_frequency(10, 1) > scoring_core.inverse_document_frequency(10, 5)
+
+
+def test_bm25_score_known_value() -> None:
+    #R043-T01: BM25 relevance matches the closed-form value exercising tf, idf, k1, and b length norm.
+    document = "coffee coffee beans extra terms here"
+    score = scoring_core.bm25_score("coffee", document, corpus_size=2, document_frequency_map={"coffee": 1},
+                                    average_document_length=3.0)
+    assert score == pytest.approx(0.749348303, abs=1e-6)
+
+
+def test_bm25_score_zero_when_query_token_absent() -> None:
+    #R043-T02: A query token absent from the document contributes no relevance.
+    assert scoring_core.bm25_score("zzzz", "coffee beans", 2, {"coffee": 1}, 3.0) == 0.0
+
+
+def test_bm25_score_zero_for_empty_document_or_empty_corpus() -> None:
+    #R043-T03: An empty document or empty corpus yields zero relevance.
+    assert scoring_core.bm25_score("coffee", "", 2, {"coffee": 1}, 0.0) == 0.0
+    assert scoring_core.bm25_score("coffee", "coffee beans", 0, {"coffee": 1}, 3.0) == 0.0
+
+
+def test_bm25_score_length_normalization_uses_average_length() -> None:
+    #R043-T04: A below-one average document length still drives the b length-normalization term.
+    score = scoring_core.bm25_score("coffee", "coffee coffee", 2, {"coffee": 1}, 0.5)
+    assert score == pytest.approx(0.504107040407233, abs=1e-9)
+
+
+def test_bm25_score_zero_average_falls_back_to_neutral_length() -> None:
+    #R043-T05: A zero average document length falls back to neutral normalization without dividing by zero.
+    score = scoring_core.bm25_score("coffee", "coffee coffee", 2, {"coffee": 1}, 0.0)
+    assert score == pytest.approx(0.749348303308049, abs=1e-9)
+
+
+def test_bm25_score_single_token_document_and_single_document_corpus() -> None:
+    #R043-T06: Documents of length one and single-document corpora still produce relevance.
+    assert scoring_core.bm25_score("coffee", "coffee", 2, {"coffee": 1}, 1.0) == pytest.approx(0.6931471805599453, abs=1e-9)
+    assert scoring_core.bm25_score("coffee", "coffee", 1, {"coffee": 1}, 1.0) == pytest.approx(0.28768207245178085, abs=1e-9)
+
+
+def test_bm25_score_unknown_token_uses_zero_document_frequency() -> None:
+    #R043-T07: A query token absent from the frequency map is treated as document frequency zero.
+    score = scoring_core.bm25_score("rareword", "rareword beans", 5, {}, 2.0)
+    assert score == pytest.approx(2.4849066497880004, abs=1e-9)
+
+
+def test_bm25_score_accumulates_across_multiple_query_tokens() -> None:
+    #R043-T08: Relevance sums the contribution of every distinct matching query token.
+    score = scoring_core.bm25_score("coffee beans", "coffee beans extra", 2, {"coffee": 1, "beans": 1}, 3.0)
+    assert score == pytest.approx(1.3862943611198906, abs=1e-9)
+
+
+def test_bm25_relevance_requires_positive_saturation_boundary() -> None:
+    #R044-T03: A saturation at or below the boundary still scales rather than collapsing to zero.
+    assert scoring_core.bm25_relevance(4.0, saturation=0.5) == pytest.approx(0.8888888888888888, abs=1e-9)
+
+
+def test_bm25_relevance_saturates_into_unit_interval() -> None:
+    #R044-T01: Saturation maps raw BM25 scores into [0, 1) via score/(score+saturation).
+    assert scoring_core.bm25_relevance(4.0) == pytest.approx(0.5)
+    assert scoring_core.bm25_relevance(12.0, saturation=4.0) == pytest.approx(0.75)
+
+
+def test_bm25_relevance_guards_nonpositive_inputs() -> None:
+    #R044-T02: Non-positive scores or non-positive saturation collapse to zero relevance.
+    assert scoring_core.bm25_relevance(0.0) == 0.0
+    assert scoring_core.bm25_relevance(-1.0) == 0.0
+    assert scoring_core.bm25_relevance(4.0, saturation=0.0) == 0.0
+
+
+def test_subset_sum_reachable_finds_multi_item_total() -> None:
+    #R045-T01: A subset summing exactly to the target is reachable.
+    assert scoring_core.subset_sum_reachable([300, 700], 1000) is True
+
+
+def test_subset_sum_reachable_returns_false_when_no_subset_matches() -> None:
+    #R045-T02: No subset within bounds yields False, and overshooting sums are pruned.
+    assert scoring_core.subset_sum_reachable([300, 800], 1000) is False
+    assert scoring_core.subset_sum_reachable([], 1000) is False
+
+
+def test_subset_sum_reachable_honors_tolerance_band() -> None:
+    #R045-T03: Sums within the inclusive tolerance band match; values beyond it are excluded.
+    assert scoring_core.subset_sum_reachable([300, 690], 1000, tolerance_cents=10) is True
+    assert scoring_core.subset_sum_reachable([1010], 1000, tolerance_cents=10) is True
+    assert scoring_core.subset_sum_reachable([1011], 1000, tolerance_cents=10) is False
+
+
+def test_subset_sum_reachable_ignores_nonpositive_amounts_and_zero_target() -> None:
+    #R045-T04: Non-positive amounts are ignored and a zero subset never satisfies a target.
+    assert scoring_core.subset_sum_reachable([0, -5, 1000], 1000) is True
+    assert scoring_core.subset_sum_reachable([500], 0) is False
+
+
+def test_subset_sum_reachable_counts_single_cent_amounts() -> None:
+    #R045-T05: A one-cent amount participates in subset sums (boundary above zero, not above one).
+    assert scoring_core.subset_sum_reachable([1, 999], 1000) is True
+    assert scoring_core.subset_sum_reachable([999], 1000) is False
+
+
+def test_amount_reconciliation_score_matches_sum_of_line_items() -> None:
+    #R046-T01: Reconciliation fires when the total equals a subset of smaller line items.
+    candidate = email_candidate(subject="Item A $3.00", preview="Item B $7.00", body_text="thanks")
+    assert scoring_core.amount_reconciliation_score(Decimal("10.00"), candidate) == 1.0
+
+
+def test_amount_reconciliation_score_is_distinct_from_single_token_hint() -> None:
+    #R046-T02: A single token equal to the total drives amount_hint but not reconciliation.
+    candidate = email_candidate(subject="Total $10.00", preview="", body_text="")
+    assert scoring_core.amount_hint_score(Decimal("10.00"), candidate) == 1.0
+    assert scoring_core.amount_reconciliation_score(Decimal("10.00"), candidate) == 0.0
+
+
+def test_amount_reconciliation_score_zero_without_reaching_subset() -> None:
+    #R046-T03: Line items that cannot sum to the total yield zero, as does empty or zero-target input.
+    partial = email_candidate(subject="$3.00", preview="$4.00", body_text="")
+    assert scoring_core.amount_reconciliation_score(Decimal("10.00"), partial) == 0.0
+    empty = email_candidate(subject="newsletter", preview="", body_text="")
+    assert scoring_core.amount_reconciliation_score(Decimal("10.00"), empty) == 0.0
+    assert scoring_core.amount_reconciliation_score(Decimal("0.00"), partial) == 0.0
+
+
+def test_amount_reconciliation_score_includes_one_cent_line_items() -> None:
+    #R046-T04: One-cent line items are retained (boundary strictly above zero) and can complete a subset.
+    candidate = email_candidate(subject="rounding $0.01", preview="charge $9.99", body_text="")
+    assert scoring_core.amount_reconciliation_score(Decimal("10.00"), candidate) == 1.0

@@ -36,6 +36,8 @@ REASON_KEYS = frozenset(
         "compact_merchant_hint",
         "sender_hint",
         "time_proximity",
+        "bm25_relevance",
+        "amount_reconciliation",
         "unmatched_email_priority",
     }
 )

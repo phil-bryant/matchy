@@ -72,6 +72,67 @@ Tests:
 - R035-T01: Bucket edge hours return exact scores (`tests/py/test_scoring_core.py`).
 - R035-T02: Negative time ordering still uses absolute delta (`tests/py/test_scoring_core.py`).
 
+R040  Statement: `relevance_tokens` extracts long tokens for corpus relevance statistics.
+Design: Reuse `normalized_text`, split on whitespace, and keep tokens longer than two characters while preserving order and repeats so term frequencies are accurate.
+Tests:
+- R040-T01: Long tokens are kept in order including repeats (`tests/py/test_scoring_core.py`).
+- R040-T02: Short tokens are dropped, leaving an empty list when none qualify (`tests/py/test_scoring_core.py`).
+
+R045  Statement: `subset_sum_reachable` reports whether a non-empty subset of positive integer-cent amounts lands within tolerance of the target.
+Design: Maintain a reachable-sum set seeded with zero, extend it per positive amount while pruning sums above the upper bound, and report success when any non-zero reachable sum falls inside the inclusive `[target-tolerance, target+tolerance]` band.
+Tests:
+- R045-T01: A subset summing exactly to the target is reachable (`tests/py/test_scoring_core.py`).
+- R045-T02: No in-bound subset (and overshoot pruning) yields False (`tests/py/test_scoring_core.py`).
+- R045-T03: Sums inside the tolerance band match and values beyond it are excluded (`tests/py/test_scoring_core.py`).
+- R045-T04: Non-positive amounts are ignored and a zero subset never satisfies the target (`tests/py/test_scoring_core.py`).
+- R045-T05: One-cent amounts participate in subset sums (boundary strictly above zero) (`tests/py/test_scoring_core.py`).
+
+R041  Statement: `document_frequencies` counts how many corpus documents contain each long token.
+Design: For each document, deduplicate its long tokens with a set and increment a per-token document counter so frequency reflects document presence rather than raw occurrences.
+Tests:
+- R041-T01: Document frequency counts documents containing each token (`tests/py/test_scoring_core.py`).
+- R041-T02: An empty corpus yields no frequencies (`tests/py/test_scoring_core.py`).
+
+R042  Statement: `inverse_document_frequency` returns the smoothed BM25 idf for a token.
+Design: Compute `log(1 + (corpus_size - document_frequency + 0.5) / (document_frequency + 0.5))` so rarer tokens score higher and the value stays non-negative.
+Tests:
+- R042-T01: Closed-form idf values match for known corpus statistics (`tests/py/test_scoring_core.py`).
+- R042-T02: Rarer tokens receive strictly higher idf (`tests/py/test_scoring_core.py`).
+
+R043  Statement: `bm25_score` computes Okapi BM25 relevance of a query against a document.
+Design: Accumulate per-query-token contributions using term frequency, idf, the `k1` saturation term, and `b` length normalization against the average document length; return zero for empty documents or empty corpora.
+Tests:
+- R043-T01: Closed-form BM25 value matches while exercising tf, idf, k1, and b (`tests/py/test_scoring_core.py`).
+- R043-T02: A query token absent from the document contributes nothing (`tests/py/test_scoring_core.py`).
+- R043-T03: Empty document or empty corpus yields zero relevance (`tests/py/test_scoring_core.py`).
+- R043-T04: A below-one average document length drives the b length-normalization term (`tests/py/test_scoring_core.py`).
+- R043-T05: A zero average document length falls back to neutral normalization without dividing by zero (`tests/py/test_scoring_core.py`).
+- R043-T06: Length-one documents and single-document corpora still produce relevance (`tests/py/test_scoring_core.py`).
+- R043-T07: A query token absent from the frequency map is treated as document frequency zero (`tests/py/test_scoring_core.py`).
+- R043-T08: Relevance sums the contribution of every distinct matching query token (`tests/py/test_scoring_core.py`).
+
+R044  Statement: `bm25_relevance` saturates a raw BM25 score into the unit interval.
+Design: Map non-negative scores via `score / (score + saturation)` and collapse non-positive scores or non-positive saturation to zero.
+Tests:
+- R044-T01: Saturation maps raw scores into `[0, 1)` (`tests/py/test_scoring_core.py`).
+- R044-T02: Non-positive score or saturation collapses to zero (`tests/py/test_scoring_core.py`).
+- R044-T03: A saturation at or below one still scales rather than collapsing to zero (`tests/py/test_scoring_core.py`).
+
+R046  Statement: `amount_reconciliation_score` fires when the transaction total equals a subset of smaller candidate amounts.
+Design: Extract candidate money amounts, retain only those strictly below the target so any reaching subset uses two or more items, cap the term count to bound the DP, and return `1.0` when `subset_sum_reachable` succeeds; this is distinct from single-token `amount_hint_score`.
+Tests:
+- R046-T01: A subset of line items summing to the total yields one (`tests/py/test_scoring_core.py`).
+- R046-T02: A single token equal to the total is excluded from reconciliation (`tests/py/test_scoring_core.py`).
+- R046-T03: Non-reaching, empty, and zero-target inputs yield zero (`tests/py/test_scoring_core.py`).
+- R046-T04: One-cent line items are retained and can complete a reconciling subset (`tests/py/test_scoring_core.py`).
+
+R047  Statement: `rank_candidates` blends BM25 relevance and amount reconciliation into the weighted score with a stable reason key set.
+Design: Build the candidate corpus once, compute document frequencies and average document length, score each candidate's BM25 relevance and subset-sum reconciliation, add them to the clamped weighted sum, and always emit `bm25_relevance` and `amount_reconciliation` reason keys.
+Tests:
+- R047-T01: Ranked candidates expose bounded BM25 and reconciliation reason keys (`tests/py/test_scoring.py`).
+- R047-T02: A candidate sharing a distinctive merchant token outranks an unrelated one (`tests/py/test_scoring.py`).
+- R047-T03: Subset-sum reconciliation lifts a multi-item receipt totaling the transaction amount (`tests/py/test_scoring.py`).
+
 ## Changelog
 
 - 2026-05-20: Added scoring_core contract requirements R010–R035 with unit-test traceability.
