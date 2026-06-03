@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from time import perf_counter
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -10,6 +10,9 @@ from pydantic import BaseModel, Field
 from .cldr_cache import CldrCurrenciesCache
 from .service import MatchService
 from .settings import Settings
+
+NonEmptyId = Annotated[str, Field(min_length=1)]
+SafeOptionalNote = Annotated[str, Field(pattern=r"^[^\x00]*$")]
 
 
 def _startup_log(start_time_seconds: float, phase: str, details: str = "") -> None:
@@ -21,7 +24,7 @@ def _startup_log(start_time_seconds: float, phase: str, details: str = "") -> No
 
 
 class MatchRunRequest(BaseModel):
-    transaction_ids: list[str] = Field(min_length=1, max_length=200)
+    transaction_ids: list[NonEmptyId] = Field(min_length=1, max_length=200)
     trigger_source: Literal["auto", "manual", "retry"] = "manual"
     force_rematch: bool = False
 
@@ -37,9 +40,10 @@ class PendingMatchRunRequest(BaseModel):
 
 
 class ConfirmRequest(BaseModel):
-    transaction_id: str
-    email_message_id: str
-    note: str | None = None
+    #R045: Confirm endpoint ids are required and note excludes null bytes that Postgres rejects in jsonb payloads.
+    transaction_id: NonEmptyId
+    email_message_id: NonEmptyId
+    note: SafeOptionalNote | None = None
 
 
 def create_app() -> FastAPI:
@@ -76,7 +80,8 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     #R005: Translate unknown transactions from service ValueError into HTTP 404 responses.
-    @app.post("/v1/matchy/runs", response_model=MatchRunResponse)
+    @app.post("/v1/matchy/runs", response_model=MatchRunResponse,
+              responses={404: {"description": "No transaction matched the supplied transaction_id."}})
     def run_matches(request: MatchRunRequest) -> MatchRunResponse:
         rows: list[dict] = []
         for transaction_id in request.transaction_ids:
@@ -97,13 +102,18 @@ def create_app() -> FastAPI:
         )
         return MatchRunResponse(results=rows)
 
-    @app.post("/v1/matchy/confirm", response_model=dict)
+    #R045: Expose a human-confirm endpoint with strict input validation and ValueError-to-404 mapping.
+    @app.post("/v1/matchy/confirm", response_model=dict,
+              responses={404: {"description": "Unknown transaction or email message for confirmation."}})
     def confirm_match(request: ConfirmRequest) -> dict:
-        result = _service().confirm_match(
-            transaction_id=request.transaction_id,
-            email_message_id=request.email_message_id,
-            note=request.note,
-        )
+        try:
+            result = _service().confirm_match(
+                transaction_id=request.transaction_id,
+                email_message_id=request.email_message_id,
+                note=request.note,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return result
 
     _startup_log(startup_started_at, "create-app-complete")

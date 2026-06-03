@@ -481,7 +481,7 @@ class MatchRepository:
                 INSERT INTO teller.transaction_email_match (
                     transaction_id, email_message_id, state, selected_by, selected_at, active, explanation_json
                 ) VALUES (
-                    :transaction_id, :email_message_id, 'human_confirmed', 'human', :selected_at, TRUE, CAST(:explanation AS jsonb)
+                    :transaction_id, :email_message_id, 'human_confirmed_ai_match', 'human', :selected_at, TRUE, CAST(:explanation AS jsonb)
                 )
                 """
             ),

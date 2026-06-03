@@ -49,7 +49,7 @@ Tests:
 - R040-T02: Verify result de-duplication preserves deterministic order.
 
 R045  Statement: Provide a human confirm endpoint so the UI Confirm button can persist a human selection without triggering state transition conflicts on `teller.transaction_email_match`.
-Design: `confirm_match` in MatchService deactivates any prior active match for the transaction then inserts a new row with state='human_confirmed', selected_by='human'. The repository exposes `deactivate_active_match` and `insert_human_confirmed_match`. The API exposes POST /v1/matchy/confirm accepting transaction_id, email_message_id, optional note.
+Design: `confirm_match` in MatchService deactivates any prior active match for the transaction then inserts a new row with state='human_confirmed_ai_match', selected_by='human'. The repository exposes `deactivate_active_match` and `insert_human_confirmed_match`. The API exposes POST /v1/matchy/confirm accepting transaction_id, email_message_id, optional note.
 Tests:
 - R045-T01: Python test lane exists for human confirm requirement (delegation test in test_api.py).
 

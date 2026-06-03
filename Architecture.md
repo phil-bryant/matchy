@@ -159,7 +159,7 @@ limits. `PROMPT_VERSION` (currently `v3`) participates in cache invalidation. Co
 | `teller.transaction_email_match` | Active match state per transaction |
 
 Run statuses: `needs_review`, `succeeded`, `no_candidates`, `failed`. Match states include
-`ai_match_confident`, `ai_candidate_uncertain`, `ai_no_match_found`, `human_confirmed`. "Pending" work is
+`ai_match_confident`, `ai_candidate_uncertain`, `ai_no_match_found`, `human_confirmed_ai_match`. "Pending" work is
 transactions in the lookback window without a settled active match (re-queues uncertain and AI-declared
 no-match states, but not human-settled states).
 
