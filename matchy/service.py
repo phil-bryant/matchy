@@ -10,6 +10,7 @@ import re
 from time import monotonic, perf_counter
 import requests
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from .ai_ranker import AiRanker, PROMPT_VERSION
 from .cldr_cache import CldrCurrenciesCache
@@ -69,6 +70,8 @@ class MatchService:
         self._settings = settings
         self._repository = MatchRepository(settings)
         self._mailcart_client = MailcartClient(settings)
+        if bool(getattr(settings, "mailcart_startup_healthcheck_enabled", True)):
+            self._mailcart_client.startup_preflight_healthcheck()
         self._ai_ranker = AiRanker(settings)
         self._cldr_currency_matcher = CldrCurrenciesCache(settings).currency_matcher()
         cooldown_seconds = int(getattr(settings, "mailcart_failure_cooldown_seconds", 15) or 15)
@@ -450,46 +453,51 @@ class MatchService:
     #R015: get_message (older Mailcart deployments). Per-candidate failures fall through to the
     #R015: original candidate so a flaky message id does not poison the whole run.
     def _enrich_candidate_bodies(self, candidates: list[EmailCandidate], transaction_id: str) -> list[EmailCandidate]:
-        if not candidates:
-            return candidates
-        if not getattr(self._settings, "mailcart_body_enrichment_enabled", False):
-            return candidates
+        result = candidates
+        config = self._body_enrichment_config(candidates)
+        if config is not None:
+            get_message, enrich_count, timeout_seconds, max_workers, per_message_timeout = config
+            message_ids = self._unique_message_ids(candidates, enrich_count)
+            payload_by_id = self._fetch_message_payloads(
+                get_message, message_ids, transaction_id, max_workers, timeout_seconds, per_message_timeout,
+            )
+            result = self._apply_body_enrichment(candidates, enrich_count, payload_by_id)
+        return result
+
+    def _body_enrichment_config(self, candidates: list[EmailCandidate]):
+        config = None
+        enabled = bool(getattr(self._settings, "mailcart_body_enrichment_enabled", False))
         get_message = getattr(self._mailcart_client, "get_message", None)
-        if not callable(get_message):
-            return candidates
-        limit = int(getattr(self._settings, "mailcart_body_enrichment_limit", 75) or 75)
-        timeout_seconds = int(getattr(self._settings, "mailcart_body_enrichment_timeout_seconds", 25) or 25)
-        max_workers = int(getattr(self._settings, "mailcart_body_enrichment_max_workers", 8) or 8)
-        per_message_timeout = int(getattr(self._settings, "mailcart_get_message_timeout_seconds", 6) or 6)
-        if max_workers < 1:
-            max_workers = 1
-        if timeout_seconds < 1:
-            timeout_seconds = 1
-        if per_message_timeout < 1:
-            per_message_timeout = 1
-        enrich_count = min(len(candidates), limit)
-        if enrich_count < 1:
-            return candidates
-        payloads: dict[int, dict] = {}
-        message_id_to_first_index: dict[str, int] = {}
+        if candidates and enabled and callable(get_message):
+            limit = int(getattr(self._settings, "mailcart_body_enrichment_limit", 75) or 75)
+            timeout_seconds = max(1, int(getattr(self._settings, "mailcart_body_enrichment_timeout_seconds", 25) or 25))
+            max_workers = max(1, int(getattr(self._settings, "mailcart_body_enrichment_max_workers", 8) or 8))
+            per_message_timeout = max(1, int(getattr(self._settings, "mailcart_get_message_timeout_seconds", 6) or 6))
+            enrich_count = min(len(candidates), limit)
+            if enrich_count >= 1:
+                config = (get_message, enrich_count, timeout_seconds, max_workers, per_message_timeout)
+        return config
+
+    def _unique_message_ids(self, candidates: list[EmailCandidate], enrich_count: int) -> list[str]:
+        message_ids: list[str] = []
         for index in range(enrich_count):
             message_id = str(candidates[index].message_id)
-            if message_id not in message_id_to_first_index:
-                message_id_to_first_index[message_id] = index
-        message_payload_by_id: dict[str, dict] = {}
-        unique_fetch_count = len(message_id_to_first_index)
+            if message_id not in message_ids:
+                message_ids.append(message_id)
+        return message_ids
+
+    def _fetch_message_payloads(self, get_message, message_ids, transaction_id,
+                                max_workers, timeout_seconds, per_message_timeout) -> dict[str, dict]:
+        payload_by_id: dict[str, dict] = {}
         future_to_message_id: dict[Future, str] = {}
-        with ThreadPoolExecutor(max_workers=min(max_workers, unique_fetch_count)) as executor:
-            for message_id in message_id_to_first_index:
-                future = executor.submit(get_message, message_id, per_message_timeout)
-                future_to_message_id[future] = message_id
-            unresolved_count = 0
+        with ThreadPoolExecutor(max_workers=min(max_workers, len(message_ids))) as executor:
+            for message_id in message_ids:
+                future_to_message_id[executor.submit(get_message, message_id, per_message_timeout)] = message_id
             try:
                 for future in as_completed(future_to_message_id, timeout=timeout_seconds):
                     message_id = future_to_message_id[future]
                     try:
-                        payload = future.result() or {}
-                        message_payload_by_id[message_id] = payload
+                        payload_by_id[message_id] = future.result() or {}
                     except Exception as exc:
                         LOGGER.warning(
                             "mailcart get_message failed message_id=%s transaction_id=%s error=%s",
@@ -499,37 +507,37 @@ class MatchService:
                 unresolved_count = len([future for future in future_to_message_id if not future.done()])
                 LOGGER.warning(
                     "mailcart body enrichment timed out transaction_id=%s unresolved_candidates=%s timeout_seconds=%s",
-                    transaction_id,
-                    unresolved_count,
-                    timeout_seconds,
+                    transaction_id, unresolved_count, timeout_seconds,
                 )
-        for index in range(enrich_count):
-            message_id = str(candidates[index].message_id)
-            if message_id in message_payload_by_id:
-                payloads[index] = message_payload_by_id[message_id]
-        enriched: list[EmailCandidate] = []
-        for index in range(enrich_count):
-            candidate = candidates[index]
-            if index not in payloads:
-                enriched.append(candidate)
-                continue
-            payload = payloads[index]
+        return payload_by_id
+
+    def _enrichment_body_text(self, payload) -> str:
+        body_text = ""
+        if payload:
             body_text = (
                 str(payload.get("text_body") or "").strip()
                 or str(payload.get("html_body") or "").strip()
                 or str(payload.get("body_text") or "").strip()
             )
-            if not body_text:
+        return body_text
+
+    def _apply_body_enrichment(self, candidates, enrich_count, payload_by_id) -> list[EmailCandidate]:
+        enriched: list[EmailCandidate] = []
+        for index in range(enrich_count):
+            candidate = candidates[index]
+            payload = payload_by_id.get(str(candidate.message_id))
+            body_text = self._enrichment_body_text(payload)
+            if body_text:
+                enriched.append(EmailCandidate(
+                    message_id=candidate.message_id,
+                    subject=candidate.subject or str(payload.get("subject") or ""),
+                    preview=candidate.preview or str(payload.get("preview") or ""),
+                    received_at=candidate.received_at,
+                    sender=candidate.sender or str(payload.get("sender") or ""),
+                    body_text=body_text,
+                ))
+            else:
                 enriched.append(candidate)
-                continue
-            enriched.append(EmailCandidate(
-                message_id=candidate.message_id,
-                subject=candidate.subject or str(payload.get("subject") or ""),
-                preview=candidate.preview or str(payload.get("preview") or ""),
-                received_at=candidate.received_at,
-                sender=candidate.sender or str(payload.get("sender") or ""),
-                body_text=body_text,
-            ))
         if len(candidates) > enrich_count:
             enriched.extend(candidates[enrich_count:])
         return enriched
@@ -597,11 +605,18 @@ class MatchService:
         return f" from:{from_date} to:{to_date}"
 
     def confirm_match(self, transaction_id: str, email_message_id: str, note: str | None = None) -> dict:
-        #R045: Human confirm: deactivate prior active match for txn, insert human_confirmed state.
+        #R045: Human confirm: deactivate prior active match for txn, insert human_confirmed_ai_match state.
         # This prevents the state transition conflict error by properly managing active flags.
-        with self._repository.session() as session:
-            self._repository.deactivate_active_match(session, transaction_id)
-            self._repository.insert_human_confirmed_match(
-                session, transaction_id, email_message_id, note
-            )
+        # Unknown transaction/email ids violate the foreign keys; surface that as a domain error
+        # (HTTP 404 at the API) instead of leaking a 500 on client-supplied ids.
+        try:
+            with self._repository.session() as session:
+                self._repository.deactivate_active_match(session, transaction_id)
+                self._repository.insert_human_confirmed_match(
+                    session, transaction_id, email_message_id, note
+                )
+        except IntegrityError as exc:
+            raise ValueError(
+                f"Unknown transaction_id or email_message_id for confirmation: {transaction_id}/{email_message_id}"
+            ) from exc
         return {"status": "confirmed", "match_id": None}

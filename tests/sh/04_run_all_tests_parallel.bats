@@ -7,7 +7,7 @@ teardown() {
 }
 
 src() {
-  printf '%s' "$(repo_root)/02_create_venv.sh"
+  printf '%s' "$(repo_root)/04_run_all_tests_parallel.sh"
 }
 
 @test "enables secure umask and strict shell mode" {
@@ -36,8 +36,8 @@ src() {
   [ "$status" -eq 0 ]
 }
 
-@test "delegates to mapped runner golden script" {
+@test "delegates to mapped runner orchestrator golden" {
   #R015-T01
-  run grep "exec \"\${RUNNER_HOME}/02_create_venv.sh\" \"\$@\"" "$(src)"
+  run grep "exec \"\${RUNNER_HOME}/11_run_all_tests_parallel.sh\" \"\$@\"" "$(src)"
   [ "$status" -eq 0 ]
 }

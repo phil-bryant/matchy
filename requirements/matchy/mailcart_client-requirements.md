@@ -26,9 +26,17 @@ Tests:
 - R015-T01: Construct `MailcartClient` with an `http://` base URL and verify initialization raises a runtime error that states HTTPS is required.
 
 R045  Statement: Resolve the Mailcart CA bundle explicitly instead of relying on REQUESTS_CA_BUNDLE.
-Design: Determine CA bundle precedence (MATCHY_MAILCART_CA_BUNDLE override, REQUESTS_CA_BUNDLE/SSL_CERT_FILE, local mkcert root, then certifi default) and configure `requests` to use it so mkcert-signed localhost certificates are accepted.
+Design: Determine CA bundle precedence (MATCHY_MAILCART_CA_BUNDLE override, REQUESTS_CA_BUNDLE/SSL_CERT_FILE, local mkcert root, then certifi default) and configure `requests` to use it so mkcert-signed localhost certificates are accepted. If an explicit bundle env var is set but points to a missing path, fail fast with a configuration error.
 Tests:
 - R045-T01: Verify CA bundle selection order and that an explicit override takes precedence.
+- R045-T02: Construct `MailcartClient` with a missing explicit `MATCHY_MAILCART_CA_BUNDLE` path and verify initialization fails fast with a configuration error.
+
+R050  Statement: Validate Mailcart transport configuration before processing work.
+Design: `MailcartClient` exposes a startup preflight health probe (`GET /health`) using the same configured base URL and TLS verify bundle as search/move calls. `MatchService` runs this one-shot probe when initialized (configurable via `MATCHY_MAILCART_STARTUP_HEALTHCHECK`) so worker-triggered runs fail fast with actionable transport diagnostics instead of retry-loop noise.
+Tests:
+- R050-T01: Enable startup preflight and verify `MatchService` invokes `MailcartClient.startup_preflight_healthcheck()` exactly once during initialization.
+- R050-T02: Verify startup preflight hits `/health` and forwards the resolved TLS verify bundle + configured timeout.
+- R050-T03: Simulate startup preflight transport failure and verify the surfaced error includes base URL and verify context.
 
 ## Changelog
 
@@ -36,3 +44,4 @@ Tests:
 - 2026-05-19: Added R010 single-message fetch so matchy can enrich candidates with full body before scoring.
 - 2026-05-28: Added R015 strict HTTPS-only Mailcart base URL enforcement with fail-fast validation.
 - 2026-05-29: Added R045 explicit CA bundle resolution for mkcert localhost certificates.
+- 2026-06-03: Updated R045 with fail-fast missing-bundle handling and added R050 startup transport preflight requirements.

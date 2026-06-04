@@ -3,13 +3,6 @@
 #R010: Python test lane coverage for pending transaction discovery.
 #R015: Python test lane coverage for last-run and active-match summaries.
 #R030: Python test lane coverage for cached candidate metadata on insert.
-#R001-T01: Python test lane exists for password requirement.
-#R005-T01: Python test lane exists for session context requirement.
-#R010-T01: Python test lane exists for pending id discovery requirement.
-#R010-T02: Python test lane exists for re-queue SQL predicate requirement.
-#R015-T01: Python test lane exists for last-run summary requirement.
-#R015-T02: Python test lane exists for active-match summary requirement.
-#R030-T01: Python test lane exists for cached candidate metadata requirement.
 
 from decimal import Decimal
 from datetime import datetime, timezone
@@ -22,6 +15,7 @@ from matchy.repository import MatchRepository
 
 def test_repository_initialization_fails_without_teller_db_password() -> None:
     #R001: Repository rejects missing teller_db_password.
+    #R001-T01: Python test lane exists for password requirement.
     try:
         MatchRepository(SimpleNamespace(teller_db_password=""))
     except RuntimeError as exc:
@@ -32,6 +26,7 @@ def test_repository_initialization_fails_without_teller_db_password() -> None:
 
 def test_repository_session_context_commits_and_rollbacks_through_fake_session() -> None:
     #R005: Session context commits success and rollbacks on failure.
+    #R005-T01: Python test lane exists for session context requirement.
     class FakeSession:
         def __init__(self):
             self.commits = 0
@@ -65,6 +60,7 @@ def test_repository_session_context_commits_and_rollbacks_through_fake_session()
 
 def test_repository_pending_transaction_query_returns_ordered_transaction_ids() -> None:
     #R010: Pending transaction id discovery returns string IDs from active-unmatched lookback query.
+    #R010-T01: Python test lane exists for pending id discovery requirement.
     class FakeResult:
         def mappings(self):
             return self
@@ -83,6 +79,7 @@ def test_repository_pending_transaction_query_returns_ordered_transaction_ids() 
 
 def test_repository_read_last_run_summary_returns_run_and_candidate_id_set() -> None:
     #R015: read_last_run_summary returns the newest run plus its persisted candidate id set.
+    #R015-T01: Python test lane exists for last-run summary requirement.
     class FakeResult:
         def __init__(self, row=None, rows=None):
             self._row = row
@@ -124,6 +121,7 @@ def test_repository_read_last_run_summary_returns_run_and_candidate_id_set() -> 
 
 def test_repository_read_active_match_summary_returns_active_row_or_none() -> None:
     #R015: read_active_match_summary returns the active match row metadata for cache-hit responses.
+    #R015-T02: Python test lane exists for active-match summary requirement.
     class FakeResult:
         def __init__(self, row):
             self._row = row
@@ -164,6 +162,7 @@ def test_repository_read_active_match_summary_returns_active_row_or_none() -> No
 
 def test_repository_pending_transaction_query_requeues_unsettled_but_skips_human_authoritative_rows() -> None:
     #R010: Pending discovery re-queues AI-only no-match and uncertain rows.
+    #R010-T02: Python test lane exists for re-queue SQL predicate requirement.
     class FakeResult:
         def mappings(self):
             return self
@@ -201,6 +200,12 @@ def test_insert_candidates_sql_includes_cached_metadata_columns() -> None:
     assert "cached_subject" in source
     assert "cached_sender" in source
     assert "cached_snippet" in source
+
+
+def test_insert_human_confirmed_match_uses_settled_human_state() -> None:
+    #R010-T02: Human confirmation persists the settled enum value used by pending-transaction filtering.
+    source = inspect.getsource(MatchRepository.insert_human_confirmed_match)
+    assert "human_confirmed_ai_match" in source
 
 
 def test_persist_ai_result_avoids_duplicate_active_email_match_insert_and_marks_needs_review() -> None:

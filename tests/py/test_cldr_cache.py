@@ -1,8 +1,5 @@
 #R001: Python test lane coverage for local CLDR currencies cache population and freshness checks.
 #R005: Python test lane coverage for tolerant CLDR cache refresh failures.
-#R001-T01: Python test lane exists for initial cache download.
-#R001-T02: Python test lane exists for unchanged-version no-download behavior.
-#R005-T01: Python test lane exists for retaining stale cache after network failure.
 
 from __future__ import annotations
 
@@ -34,6 +31,7 @@ class StubResponse:
 
 def test_cldr_cache_downloads_when_missing_or_version_changed(monkeypatch, tmp_path) -> None:
     #R001: Missing local cache downloads raw currencies.json and records the latest file commit sha.
+    #R001-T01: Python test lane exists for initial cache download.
     calls: list[str] = []
 
     def fake_get(url, **kwargs):
@@ -55,6 +53,7 @@ def test_cldr_cache_downloads_when_missing_or_version_changed(monkeypatch, tmp_p
 
 def test_cldr_cache_skips_download_when_cached_version_is_current(monkeypatch, tmp_path) -> None:
     #R001: Matching cached sha skips the raw download while still checking the GitHub file history URL.
+    #R001-T02: Python test lane exists for unchanged-version no-download behavior.
     cache_path = tmp_path / "currencies.json"
     cache_path.write_text('{"cached": true}', encoding="utf-8")
     cache_path.with_suffix(".json.sha").write_text("sha-1\n", encoding="utf-8")
@@ -73,6 +72,7 @@ def test_cldr_cache_skips_download_when_cached_version_is_current(monkeypatch, t
 
 def test_cldr_cache_keeps_existing_file_when_refresh_fails(monkeypatch, tmp_path) -> None:
     #R005: Network failures leave the existing cache content and version metadata untouched.
+    #R005-T01: Python test lane exists for retaining stale cache after network failure.
     cache_path = tmp_path / "currencies.json"
     cache_path.write_text('{"cached": true}', encoding="utf-8")
     cache_path.with_suffix(".json.sha").write_text("sha-1\n", encoding="utf-8")

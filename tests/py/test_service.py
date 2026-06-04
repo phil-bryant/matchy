@@ -6,18 +6,6 @@
 #R025: Python test lane coverage for batch failure tolerance.
 #R030: Python test lane coverage for concurrent pending batch behavior.
 #R040: Python test lane coverage for scoped search tiering and early-stop.
-#R001-T01: Python test lane exists for unknown transaction requirement.
-#R005-T01: Python test lane exists for query builder requirement.
-#R010-T01: Python test lane exists for pending matcher requirement.
-#R015-T01: Python test lane exists for body enrichment requirement.
-#R015-T02: Python test lane exists for enrichment flag requirement.
-#R020-T01: Python test lane exists for cache hit requirement.
-#R020-T02: Python test lane exists for cache miss requirement.
-#R020-T03: Python test lane exists for failed-run cache exclusion requirement.
-#R025-T01: Python test lane exists for batch failure tolerance requirement.
-#R030-T01: Python test lane exists for concurrent pending matcher requirement.
-#R040-T01: Python test lane exists for early-stop on first successful tier.
-#R040-T02: Python test lane exists for deterministic de-duplication order.
 
 import logging
 import sys
@@ -40,12 +28,13 @@ import matchy_mailcart_api as mailcart_api  # noqa: E402
 
 def test_service_raises_valueerror_for_unknown_transactions() -> None:
     #R001: Unknown transaction IDs raise ValueError.
+    #R001-T01: Python test lane exists for unknown transaction requirement.
     class Repo:
         class Ctx:
             def __enter__(self):
                 return object()
 
-            def __exit__(self, exc_type, exc, tb):
+            def __exit__(self, _exc_type, exc, _tb):
                 return False
 
         def session(self):
@@ -66,6 +55,7 @@ def test_service_raises_valueerror_for_unknown_transactions() -> None:
 
 def test_service_query_builders_emit_scoped_tokens_with_date_bounds() -> None:
     #R005: Query helpers produce deterministic scoped query strings.
+    #R005-T01: Python test lane exists for query builder requirement.
     service = object.__new__(MatchService)
     service._settings = SimpleNamespace(mailcart_search_date_window_days=45)
     terms = service._extract_search_terms("Payment #1234 at DoorDash.com", "DoorDash")
@@ -86,6 +76,36 @@ def test_service_query_builders_emit_scoped_tokens_with_date_bounds() -> None:
         include_date_window=False,
     )
     assert subject_scoped == ["subject:doordash", "subject:payment"]
+
+
+def test_service_initialization_runs_mailcart_startup_preflight_once(monkeypatch) -> None:
+    #R050-T01: MatchService constructor triggers Mailcart startup preflight when enabled.
+    import matchy.service as service_module
+
+    calls = {"preflight": 0}
+
+    class StubMailcartClient:
+        def __init__(self, _settings):
+            pass
+
+        def startup_preflight_healthcheck(self):
+            calls["preflight"] += 1
+
+    class StubCldrCache:
+        def __init__(self, _settings):
+            pass
+
+        def currency_matcher(self):
+            return CldrCurrencyMatcher([])
+
+    monkeypatch.setattr(service_module, "MatchRepository", lambda settings: object())
+    monkeypatch.setattr(service_module, "MailcartClient", StubMailcartClient)
+    monkeypatch.setattr(service_module, "AiRanker", lambda settings: object())
+    monkeypatch.setattr(service_module, "CldrCurrenciesCache", StubCldrCache)
+
+    settings = SimpleNamespace(mailcart_startup_healthcheck_enabled=True, mailcart_failure_cooldown_seconds=15)
+    service_module.MatchService(settings)
+    assert calls["preflight"] == 1
 
 
 def test_service_emits_mailcart_scoped_queries_that_pass_parser_contract() -> None:
@@ -121,6 +141,7 @@ def test_service_emits_mailcart_scoped_queries_that_pass_parser_contract() -> No
 
 def test_service_enriches_candidate_bodies_with_full_mailcart_message_body_before_scoring() -> None:
     #R015: _enrich_candidate_bodies replaces body_text with full Mailcart body and tolerates per-id failures.
+    #R015-T01: Python test lane exists for body enrichment requirement.
     class FakeClient:
         def __init__(self):
             self.calls = []
@@ -185,6 +206,7 @@ def test_service_enrichment_fetches_duplicate_message_ids_only_once() -> None:
 
 def test_service_skips_body_enrichment_when_feature_flag_is_disabled() -> None:
     #R015: Enrichment is gated by mailcart_body_enrichment_enabled.
+    #R015-T02: Python test lane exists for enrichment flag requirement.
     class FakeClient:
         def __init__(self):
             self.calls = []
@@ -228,11 +250,11 @@ def test_service_filters_enriched_candidates_without_standalone_cldr_currency_be
             self.candidates_inserted = kwargs["candidates"]
         def persist_ai_result(self, **kwargs):
             return list(kwargs["ai_selection"].selected_message_ids)
-        def mark_run_failed(self, *a, **k):
+        def mark_run_failed(self, *a, **_k):
             pass
 
     class _FakeSession:
-        def execute(self, *a, **k):
+        def execute(self, *a, **_k):
             class R:
                 def mappings(self):
                     return self
@@ -291,6 +313,7 @@ def test_service_currency_filter_leaves_candidates_unfiltered_when_matcher_is_em
 
 def test_service_short_circuits_ai_call_when_candidate_set_is_unchanged_since_last_run() -> None:
     #R020: match_transaction returns skipped=True when (model, prompt, candidate set) match last run.
+    #R020-T01: Python test lane exists for cache hit requirement.
     class FakeRepo:
         class Ctx:
             def __init__(self, session):
@@ -333,7 +356,7 @@ def test_service_short_circuits_ai_call_when_candidate_set_is_unchanged_since_la
             self.search_calls += 1
             return self._results.pop(0) if self._results else []
 
-        def get_message(self, mid, timeout_seconds=None):
+        def get_message(self, _mid, timeout_seconds=None):
             return {}
 
     class FakeRanker:
@@ -387,6 +410,7 @@ def test_service_short_circuits_ai_call_when_candidate_set_is_unchanged_since_la
 
 def test_service_runs_full_ai_pipeline_when_candidate_set_changes_since_last_run() -> None:
     #R020: Different candidate id set must defeat the cache and trigger a fresh evaluation.
+    #R020-T02: Python test lane exists for cache miss requirement.
     class FakeRepo:
         class Ctx:
             def __init__(self, session):
@@ -431,11 +455,11 @@ def test_service_runs_full_ai_pipeline_when_candidate_set_changes_since_last_run
             self.persisted_with = kwargs
             return list(kwargs["ai_selection"].selected_message_ids)
 
-        def mark_run_failed(self, *a, **k):
+        def mark_run_failed(self, *a, **_k):
             pass
 
     class _FakeSession:
-        def execute(self, *a, **k):
+        def execute(self, *a, **_k):
             class R:
                 def mappings(self):
                     return self
@@ -452,7 +476,7 @@ def test_service_runs_full_ai_pipeline_when_candidate_set_changes_since_last_run
         def search_candidates(self, query, limit=75):
             return self._results.pop(0) if self._results else []
 
-        def get_message(self, mid, timeout_seconds=None):
+        def get_message(self, _mid, timeout_seconds=None):
             return {"text_body": "$35.99 fare"}
 
     class FakeRanker:
@@ -500,6 +524,7 @@ def test_service_runs_full_ai_pipeline_when_candidate_set_changes_since_last_run
 
 def test_service_refuses_to_cache_hit_when_last_run_was_failed() -> None:
     #R020: Failed runs are never cache-eligible so transient errors self-heal on the next loop.
+    #R020-T03: Python test lane exists for failed-run cache exclusion requirement.
     class FakeRepo:
         class Ctx:
             def __init__(self, session):
@@ -541,11 +566,11 @@ def test_service_refuses_to_cache_hit_when_last_run_was_failed() -> None:
         def persist_ai_result(self, **kwargs):
             return list(kwargs["ai_selection"].selected_message_ids)
 
-        def mark_run_failed(self, *a, **k):
+        def mark_run_failed(self, *a, **_k):
             pass
 
     class _FakeSession:
-        def execute(self, *a, **k):
+        def execute(self, *a, **_k):
             class R:
                 def mappings(self):
                     return self
@@ -562,7 +587,7 @@ def test_service_refuses_to_cache_hit_when_last_run_was_failed() -> None:
         def search_candidates(self, query, limit=75):
             return self._results.pop(0) if self._results else []
 
-        def get_message(self, mid, timeout_seconds=None):
+        def get_message(self, _mid, timeout_seconds=None):
             return {}
 
     class FakeRanker:
@@ -649,11 +674,11 @@ def test_service_refuses_to_cache_hit_when_active_state_is_ai_no_match_found() -
         def persist_ai_result(self, **kwargs):
             return []
 
-        def mark_run_failed(self, *a, **k):
+        def mark_run_failed(self, *a, **_k):
             pass
 
     class _FakeSession:
-        def execute(self, *a, **k):
+        def execute(self, *a, **_k):
             class R:
                 def mappings(self):
                     return self
@@ -670,7 +695,7 @@ def test_service_refuses_to_cache_hit_when_active_state_is_ai_no_match_found() -
         def search_candidates(self, query, limit=75):
             return self._results.pop(0) if self._results else []
 
-        def get_message(self, mid, timeout_seconds=None):
+        def get_message(self, _mid, timeout_seconds=None):
             return {}
 
     class FakeRanker:
@@ -722,6 +747,7 @@ def test_service_refuses_to_cache_hit_when_active_state_is_ai_no_match_found() -
 
 def test_service_pending_matcher_tolerates_per_transaction_failures() -> None:
     #R025: One transaction's exception must not abort the whole batch.
+    #R025-T01: Python test lane exists for batch failure tolerance requirement.
     logging.getLogger("matchy.service").setLevel(logging.CRITICAL)
 
     class Repo:
@@ -757,12 +783,14 @@ def test_service_pending_matcher_tolerates_per_transaction_failures() -> None:
 
 def test_service_pending_matcher_loads_pending_ids_then_runs_each_transaction() -> None:
     #R010: Pending matcher uses repository discovery and runs match_transaction for each pending transaction id.
+    #R010-T01: Python test lane exists for pending matcher requirement.
+    #R030-T01: Python test lane exists for concurrent pending matcher requirement.
     class Repo:
         class Ctx:
             def __enter__(self):
                 return object()
 
-            def __exit__(self, exc_type, exc, tb):
+            def __exit__(self, _exc_type, exc, _tb):
                 return False
 
         def session(self):
@@ -889,8 +917,8 @@ def test_service_confirm_match_delegates_to_repository() -> None:
             def __enter__(self): return object()
             def __exit__(self, *a): return False
         def session(self): return FakeRepo.Ctx()
-        def deactivate_active_match(self, s, txn): calls.append(("deact", txn))
-        def insert_human_confirmed_match(self, s, txn, eml, note): calls.append(("insert", txn, eml, note))
+        def deactivate_active_match(self, _s, txn): calls.append(("deact", txn))
+        def insert_human_confirmed_match(self, _s, txn, eml, note): calls.append(("insert", txn, eml, note))
 
     service = object.__new__(MatchService)
     service._repository = FakeRepo()

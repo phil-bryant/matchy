@@ -11,8 +11,12 @@ Matchy starts from Teller transactions and finds candidate Outlook emails, then 
    - Default 1psa item: `localhost_postgres_teller` (override: `TELLER_DB_PASSWORD_1PSA_REF`).
    - 1psa item must provide: `username`, `password`, `host`, `port`, `database`.
    - `~/.env` fallback supports the same keys (`username`, `password`, `host`, `port`, `database`) or mapped keys (`TELLER_DB_USER`, `TELLER_DB_PASSWORD`, `TELLER_DB_HOST`, `TELLER_DB_PORT`, `TELLER_DB_NAME`).
-   - `MAILCART_SERVICE_BASE_URL`
+   - `MAILCART_SERVICE_BASE_URL` (must be HTTPS, for example `https://127.0.0.1:8788`)
    - `MAILCART_SERVICE_TOKEN` (optional if Mailcart is running without auth)
+   - Optional TLS verify override: `MATCHY_MAILCART_CA_BUNDLE` (path to a CA/cert bundle trusted for Mailcart TLS).
+   - Optional startup preflight controls:
+     - `MATCHY_MAILCART_STARTUP_HEALTHCHECK` (`true`/`false`, default `true`)
+     - `MATCHY_MAILCART_STARTUP_HEALTHCHECK_TIMEOUT_SECONDS` (default `2`)
    - AI keys for the match ranker are resolved via `1psa` with Anthropic primary and OpenAI fallback:
      - `anthropic_api_key` (default 1psa item; override `MATCHY_ANTHROPIC_API_KEY_1PSA_ITEM`; env override `ANTHROPIC_API_KEY`)
      - `openai_api_key` (default 1psa item; override `MATCHY_OPENAI_API_KEY_1PSA_ITEM`; env override `OPENAI_API_KEY`)
@@ -40,10 +44,10 @@ activate
 
 `11` runs Hypothesis property tests on scoring invariants (semantic bucket/normalization checks plus bounded invariants). `10` runs real mutmut mutation testing against `tests/py/test_scoring_core.py` (direct scoring contracts), `test_scoring.py`, and `test_models.py` with Hypothesis disabled for speed. The default mutation score gate is **90%**. On macOS, `10` uses a subprocess pytest driver (`tools/mutmut_darwin.py`) because stock mutmut forks after threaded pytest and every mutant SIGSEGVs. On Linux, `10` uses `mutmut run` directly. Override with `MUTATION_USE_SUBPROCESS=false` (mac) or `true` (linux) if needed.
 
-Run all seven CI gate scripts in parallel (completion-order PASS/FAIL lines on the terminal; full output per script in `.parallel-checks-reports/<script-stem>.log`):
+Run all CI gate scripts in parallel (completion-order PASS/FAIL lines on the terminal; full output per script in `.parallel-checks-reports/<script-stem>.log`):
 
 ```bash
-./12_run_all_checks_parallel.sh
+./04_run_all_tests_parallel.sh
 ```
 
 Excluded from the parallel batch: setup scripts (`01`–`03`) and integration entrypoints (`08_run_matchy_api.py`, `09_run_matchy_driver.py`).
@@ -65,7 +69,7 @@ Excluded from the parallel batch: setup scripts (`01`–`03`) and integration en
 ┌───────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │                                            SYSTEM LANDSCAPE                                           │
 │                                                                                                       │
-│  ┌────────────────────────────────┐      HTTP (search/move)       ┌────────────────────────────────┐  │
+│  ┌────────────────────────────────┐      HTTPS (search/move)      ┌────────────────────────────────┐  │
 │  │             MATCHY             │ ────────────────────────────► │            MAILCART            │  │
 │  │                                │ ◄──────────────────────────── │                                │  │
 │  │ - FastAPI service              │        message candidates     │ - Outlook/Graph integration    │  │

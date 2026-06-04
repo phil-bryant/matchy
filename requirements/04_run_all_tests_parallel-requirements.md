@@ -1,8 +1,8 @@
-# 01 install prerequisites Wrapper Requirements
+# 04 run all tests parallel Wrapper Requirements
 
 ## Scope
 
-Applies to `01_install_prerequisites.sh`.
+Applies to `04_run_all_tests_parallel.sh`.
 
 R001  Statement: Wrapper runs in strict shell mode with secure umask.
 Design: Configure `umask 007` and `set -euo pipefail` before any path resolution or delegation.
@@ -19,7 +19,7 @@ Design: Export `RUNBOOK_REPO_ROOT` and source `runner/config/runbook/matchy.env`
 Tests:
 - R010-T01: Verify wrapper source exports `RUNBOOK_REPO_ROOT` and sources `matchy.env`.
 
-R015  Statement: Wrapper delegates execution to the mapped runner golden.
-Design: Use `exec "${RUNNER_HOME}/01_install_prerequisites.sh" "$@"` so arguments pass through unchanged.
+R015  Statement: Wrapper delegates execution to the mapped runner orchestrator golden.
+Design: Use `exec "${RUNNER_HOME}/11_run_all_tests_parallel.sh" "$@"` so arguments pass through unchanged.
 Tests:
-- R015-T01: Verify wrapper source delegates to `01_install_prerequisites.sh` with `"$@"`.
+- R015-T01: Verify wrapper source delegates to `11_run_all_tests_parallel.sh` with `"$@"`.

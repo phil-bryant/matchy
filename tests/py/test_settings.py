@@ -5,25 +5,6 @@
 #R030: Python test lane coverage for mailcart body enrichment defaults.
 #R035: Python test lane coverage for anthropic model defaults.
 #R050: Python test lane coverage for CLDR currencies cache startup settings.
-#R001-T01: Python test lane exists for default teller DB config requirement.
-#R005-T01: Python test lane exists for item-name override requirement.
-#R005-T02: Python test lane exists for op:// reference requirement.
-#R010-T01: Python test lane exists for ~/.env fallback requirement.
-#R010-T02: Python test lane exists for full resolution failure requirement.
-#R010-T03: Python test lane exists for invalid port validation requirement.
-#R015-T01: Python test lane exists for Anthropic 1psa resolution requirement.
-#R015-T02: Python test lane exists for OpenAI 1psa resolution requirement.
-#R015-T03: Python test lane exists for env override requirement.
-#R015-T04: Python test lane exists for missing AI keys requirement.
-#R030-T01: Python test lane exists for enrichment default requirement.
-#R030-T02: Python test lane exists for enrichment override requirement.
-#R035-T01: Python test lane exists for default anthropic model requirement.
-#R035-T02: Python test lane exists for anthropic model override requirement.
-#R040-T01: Python test lane exists for mailcart search timeout default requirement.
-#R040-T02: Python test lane exists for mailcart search timeout override requirement.
-#R045-T01: Python test lane exists for mailcart CA bundle default requirement.
-#R045-T02: Python test lane exists for mailcart CA bundle override requirement.
-#R050-T01: Python test lane exists for CLDR currencies cache setting defaults and overrides.
 
 from __future__ import annotations
 
@@ -118,6 +99,7 @@ def _db_config(settings: Settings) -> tuple[str, str, str, int, str]:
 
 def test_loads_teller_db_config_from_default_1psa_item_when_no_refs_are_set(monkeypatch: pytest.MonkeyPatch) -> None:
     #R001: Default 1psa item resolves full teller DB config without DB env vars.
+    #R001-T01: Python test lane exists for default teller DB config requirement.
     _clear_secret_env(monkeypatch)
     _install_run_stub(monkeypatch, _optional_miss_handler)
     assert _db_config(Settings()) == ("teller", "fixture-default", "localhost", 5432, "teller")
@@ -125,6 +107,7 @@ def test_loads_teller_db_config_from_default_1psa_item_when_no_refs_are_set(monk
 
 def test_loads_teller_db_config_through_1psa_item_reference_override(monkeypatch: pytest.MonkeyPatch) -> None:
     #R005: Item-name override resolves full DB config through 1psa -p item/field.
+    #R005-T01: Python test lane exists for item-name override requirement.
     _clear_secret_env(monkeypatch)
     monkeypatch.setenv("TELLER_DB_PASSWORD_1PSA_REF", "custom_item")
 
@@ -150,6 +133,7 @@ def test_loads_teller_db_config_through_1psa_item_reference_override(monkeypatch
 
 def test_loads_teller_db_config_through_1psa_read_for_op_references(monkeypatch: pytest.MonkeyPatch) -> None:
     #R005: op:// references resolve full DB config through 1psa read.
+    #R005-T02: Python test lane exists for op:// reference requirement.
     _clear_secret_env(monkeypatch)
     monkeypatch.setenv("OP_SERVICE_ACCOUNT_TOKEN", "token-ok")
     monkeypatch.setenv("TELLER_DB_PASSWORD_1PSA_REF", "op://vault/item/password")
@@ -178,6 +162,7 @@ def test_loads_teller_db_config_through_1psa_read_for_op_references(monkeypatch:
 
 def test_falls_back_to_home_env_when_1psa_cannot_resolve_db_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     #R010: ~/.env is the single fallback when 1psa cannot provide complete DB config.
+    #R010-T01: Python test lane exists for ~/.env fallback requirement.
     _clear_secret_env(monkeypatch)
     fake_home = tmp_path / "home"
     fake_home.mkdir(parents=True, exist_ok=True)
@@ -198,6 +183,7 @@ def test_falls_back_to_home_env_when_1psa_cannot_resolve_db_config(monkeypatch: 
 
 def test_fails_clearly_when_1psa_and_home_env_both_fail(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     #R010: Settings raises a clear runtime error when both resolution sources fail.
+    #R010-T02: Python test lane exists for full resolution failure requirement.
     _clear_secret_env(monkeypatch)
     fake_home = tmp_path / "home"
     fake_home.mkdir(parents=True, exist_ok=True)
@@ -216,6 +202,7 @@ def test_fails_clearly_when_1psa_and_home_env_both_fail(monkeypatch: pytest.Monk
 
 def test_fails_clearly_when_resolved_db_port_is_not_an_integer(monkeypatch: pytest.MonkeyPatch) -> None:
     #R010: Invalid DB port values are rejected even when other fields are present.
+    #R010-T03: Python test lane exists for invalid port validation requirement.
     _clear_secret_env(monkeypatch)
 
     def handler(command, **kwargs):
@@ -253,6 +240,7 @@ def _openai_credential(settings: Settings) -> str:
 
 def test_loads_anthropic_api_key_from_1psa_item_when_env_var_is_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     #R015: Anthropic key resolves from default 1psa item when ANTHROPIC_API_KEY env var is unset.
+    #R015-T01: Python test lane exists for Anthropic 1psa resolution requirement.
     _clear_secret_env(monkeypatch)
 
     def handler(command, **kwargs):
@@ -281,6 +269,7 @@ def test_loads_anthropic_api_key_from_1psa_item_when_env_var_is_unset(monkeypatc
 
 def test_loads_openai_api_key_fallback_from_1psa_item_when_env_var_is_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     #R015: OpenAI fallback key resolves from default 1psa item when OPENAI_API_KEY env var is unset.
+    #R015-T02: Python test lane exists for OpenAI 1psa resolution requirement.
     _clear_secret_env(monkeypatch)
 
     def handler(command, **kwargs):
@@ -309,6 +298,7 @@ def test_loads_openai_api_key_fallback_from_1psa_item_when_env_var_is_unset(monk
 
 def test_env_var_override_beats_1psa_for_anthropic_key(monkeypatch: pytest.MonkeyPatch) -> None:
     #R015: ANTHROPIC_API_KEY env var overrides any 1psa-resolved anthropic key value.
+    #R015-T03: Python test lane exists for env override requirement.
     _clear_secret_env(monkeypatch)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "env-claude")
 
@@ -335,6 +325,7 @@ def test_env_var_override_beats_1psa_for_anthropic_key(monkeypatch: pytest.Monke
 
 def test_tolerates_missing_ai_keys_in_1psa_and_keeps_settings_constructible(monkeypatch: pytest.MonkeyPatch) -> None:
     #R015: Missing AI items in 1psa resolve to empty strings without failing Settings construction.
+    #R015-T04: Python test lane exists for missing AI keys requirement.
     _clear_secret_env(monkeypatch)
 
     def handler(command, **kwargs):
@@ -359,6 +350,7 @@ def test_tolerates_missing_ai_keys_in_1psa_and_keeps_settings_constructible(monk
 
 def test_mailcart_body_enrichment_flags_default_to_enabled_and_limit_75(monkeypatch: pytest.MonkeyPatch) -> None:
     #R030: Default Mailcart body-enrichment feature flag is enabled with a sane default limit.
+    #R030-T01: Python test lane exists for enrichment default requirement.
     _clear_secret_env(monkeypatch)
     monkeypatch.delenv("MATCHY_MAILCART_BODY_ENRICHMENT", raising=False)
     monkeypatch.delenv("MATCHY_MAILCART_BODY_ENRICHMENT_LIMIT", raising=False)
@@ -371,6 +363,8 @@ def test_mailcart_body_enrichment_flags_default_to_enabled_and_limit_75(monkeypa
 
 def test_default_anthropic_model_is_the_dated_stable_id_and_respects_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     #R035: Anthropic model defaults to a pinned dated id; env var overrides it.
+    #R035-T01: Python test lane exists for default anthropic model requirement.
+    #R035-T02: Python test lane exists for anthropic model override requirement.
     _clear_secret_env(monkeypatch)
     monkeypatch.delenv("MATCHY_ANTHROPIC_MODEL", raising=False)
     _install_run_stub(monkeypatch, _optional_miss_handler)
@@ -383,6 +377,7 @@ def test_default_anthropic_model_is_the_dated_stable_id_and_respects_env_overrid
 
 def test_mailcart_body_enrichment_flags_honor_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     #R030: Mailcart body-enrichment env overrides flip the flag and resize the limit.
+    #R030-T02: Python test lane exists for enrichment override requirement.
     _clear_secret_env(monkeypatch)
     monkeypatch.setenv("MATCHY_MAILCART_BODY_ENRICHMENT", "false")
     monkeypatch.setenv("MATCHY_MAILCART_BODY_ENRICHMENT_LIMIT", "10")
@@ -423,6 +418,7 @@ def test_mailcart_ca_bundle_default_and_override(monkeypatch: pytest.MonkeyPatch
 
 def test_cldr_currencies_cache_settings_default_and_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     #R050: CLDR currencies cache path, refresh flag, and timeout expose env-configurable startup behavior.
+    #R050-T01: Python test lane exists for CLDR currencies cache setting defaults and overrides.
     _clear_secret_env(monkeypatch)
     monkeypatch.delenv("MATCHY_CLDR_CURRENCIES_CACHE_PATH", raising=False)
     monkeypatch.delenv("MATCHY_CLDR_CURRENCIES_REFRESH_ENABLED", raising=False)

@@ -10,6 +10,7 @@ DerivedData/
 #R025: Ignore security report artifacts.
 .security-reports/
 .parallel-checks-reports/
+artifacts/
 mutants/
 #R025: Ignore local recovery stash for safe artifact moves.
 .trash/

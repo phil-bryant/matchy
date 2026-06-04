@@ -1,7 +1,8 @@
 anthropic==0.105.2
 click==8.4.1
 fastapi==0.136.3
-idna==3.17
+certifi==2026.5.20
+idna==3.18
 openai==2.40.0
 psycopg2-binary==2.9.12
 requests==2.34.2
@@ -12,3 +13,9 @@ mutmut==3.5.0
 hypothesis==6.155.1
 jiter==0.15.0
 starlette==1.2.1
+# code-quality lane tooling (t00)
+vulture==2.16
+radon==6.0.1
+xenon==0.9.3
+coverage==7.14.1
+platformdirs==4.10.0

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import os
 import subprocess
 import time
+from urllib.parse import urlparse
 
 import requests
 
@@ -14,9 +15,8 @@ from .settings import Settings
 class MailcartClient:
     def __init__(self, settings: Settings):
         self._base = settings.mailcart_service_base_url.rstrip("/")
-        #R015: Mailcart transport must be TLS-only; reject non-https base URLs at initialization.
-        if not self._base.lower().startswith("https://"):
-            raise RuntimeError("MAILCART_SERVICE_BASE_URL must use https")
+        #R015: Mailcart transport must be TLS-only; reject non-https/invalid base URLs at initialization.
+        self._validate_base_url(self._base)
         self._token = settings.mailcart_service_token
         configured_timeout = int(getattr(settings, "mailcart_get_message_timeout_seconds", 6) or 6)
         self._message_timeout_seconds = configured_timeout if configured_timeout > 0 else 6
@@ -28,6 +28,16 @@ class MailcartClient:
         #R045: so every HTTPS call fails verification unless we point requests at the mkcert root CA.
         #R045: Losing that env var across a restart silently broke all search/enrichment calls.
         self._verify = self._resolve_ca_bundle(settings)
+        configured_health_timeout = int(getattr(settings, "mailcart_startup_healthcheck_timeout_seconds", 2) or 2)
+        self._startup_healthcheck_timeout_seconds = configured_health_timeout if configured_health_timeout > 0 else 2
+
+    @staticmethod
+    def _validate_base_url(base_url: str) -> None:
+        parsed = urlparse(base_url)
+        if parsed.scheme.lower() != "https":
+            raise RuntimeError("MAILCART_SERVICE_BASE_URL must use https")
+        if not parsed.netloc:
+            raise RuntimeError("MAILCART_SERVICE_BASE_URL must include host and port")
 
     #R045: Determine the CA bundle to verify Mailcart's certificate against. Precedence: explicit
     #R045: MATCHY_MAILCART_CA_BUNDLE override, then REQUESTS_CA_BUNDLE / SSL_CERT_FILE, then the local
@@ -35,15 +45,26 @@ class MailcartClient:
     #R045: default (certifi) when none of those exist.
     @staticmethod
     def _resolve_ca_bundle(settings: Settings):
-        explicit_candidates = [
-            getattr(settings, "mailcart_ca_bundle", "") or "",
-            os.environ.get("REQUESTS_CA_BUNDLE", "") or "",
-            os.environ.get("SSL_CERT_FILE", "") or "",
-        ]
-        for candidate in explicit_candidates:
-            expanded = os.path.expanduser(candidate.strip())
-            if expanded and os.path.exists(expanded):
-                return expanded
+        explicit_override = str(getattr(settings, "mailcart_ca_bundle", "") or "").strip()
+        if explicit_override:
+            expanded_override = os.path.expanduser(explicit_override)
+            if os.path.exists(expanded_override):
+                return expanded_override
+            raise RuntimeError(
+                f"MATCHY_MAILCART_CA_BUNDLE points to a missing file: {expanded_override}"
+            )
+        requests_ca_bundle = str(os.environ.get("REQUESTS_CA_BUNDLE", "") or "").strip()
+        if requests_ca_bundle:
+            expanded_requests_ca = os.path.expanduser(requests_ca_bundle)
+            if os.path.exists(expanded_requests_ca):
+                return expanded_requests_ca
+            raise RuntimeError(f"REQUESTS_CA_BUNDLE points to a missing file: {expanded_requests_ca}")
+        ssl_cert_file = str(os.environ.get("SSL_CERT_FILE", "") or "").strip()
+        if ssl_cert_file:
+            expanded_ssl_cert = os.path.expanduser(ssl_cert_file)
+            if os.path.exists(expanded_ssl_cert):
+                return expanded_ssl_cert
+            raise RuntimeError(f"SSL_CERT_FILE points to a missing file: {expanded_ssl_cert}")
         mkcert_root = os.path.expanduser("~/Library/Application Support/mkcert/rootCA.pem")
         if os.path.exists(mkcert_root):
             return mkcert_root
@@ -57,6 +78,46 @@ class MailcartClient:
             pass
         return True
 
+    def _build_url(self, path: str) -> str:
+        normalized_path = path if path.startswith("/") else f"/{path}"
+        return f"{self._base}{normalized_path}"
+
+    #R050: Build deterministic transport diagnostics used by startup preflight failures so operators see
+    #R050: exactly which base URL and verify bundle requests attempted to use.
+    def _transport_context(self) -> str:
+        verify_repr = self._verify if isinstance(self._verify, str) else "default-cert-store"
+        return f"base_url={self._base} verify={verify_repr}"
+
+    def _request_get(self, path: str, *, timeout: int, params: dict | None = None) -> requests.Response:
+        return requests.get(
+            self._build_url(path),
+            params=params or {},
+            headers=self._headers(),
+            timeout=timeout,
+            verify=self._verify,
+        )
+
+    def _request_post(self, path: str, *, timeout: int, payload: dict) -> requests.Response:
+        return requests.post(
+            self._build_url(path),
+            json=payload,
+            headers=self._headers(),
+            timeout=timeout,
+            verify=self._verify,
+        )
+
+    #R050: Probe Mailcart /health with the same URL builder, headers, timeout, and TLS verify bundle used
+    #R050: by runtime search/get-message requests so startup catches transport misconfiguration early.
+    def startup_preflight_healthcheck(self) -> None:
+        try:
+            response = self._request_get("/health", timeout=self._startup_healthcheck_timeout_seconds)
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise RuntimeError(
+                "Mailcart startup preflight failed. "
+                f"Check MAILCART_SERVICE_BASE_URL scheme and TLS verify bundle. {self._transport_context()} error={exc}"
+            ) from exc
+
     #R001: Include bearer authorization only when a service token is configured.
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -66,12 +127,10 @@ class MailcartClient:
 
     #R005: Convert message search payload rows into EmailCandidate values and drop rows without message IDs.
     def search_candidates(self, query: str, limit: int = 50) -> list[EmailCandidate]:
-        response = requests.get(
-            f"{self._base}/v1/messages/search",
+        response = self._request_get(
+            "/v1/messages/search",
             params={"query": query, "limit": limit},
-            headers=self._headers(),
             timeout=self._search_timeout_seconds,
-            verify=self._verify,
         )
         response.raise_for_status()
         payload = response.json()
@@ -110,7 +169,7 @@ class MailcartClient:
             attempt += 1
             try:
                 response = requests.get(
-                    f"{self._base}/v1/messages/{message_id}",
+                    self._build_url(f"/v1/messages/{message_id}"),
                     headers=self._headers(),
                     timeout=resolved_timeout,
                     verify=self._verify,
@@ -136,12 +195,10 @@ class MailcartClient:
         return payload if isinstance(payload, dict) else {}
 
     def move_to_matchy(self, message_id: str) -> bool:
-        response = requests.post(
-            f"{self._base}/v1/messages/{message_id}/move",
-            json={"folder_name": "matchy"},
-            headers=self._headers(),
+        response = self._request_post(
+            f"/v1/messages/{message_id}/move",
+            payload={"folder_name": "matchy"},
             timeout=20,
-            verify=self._verify,
         )
         if response.status_code in (200, 204):
             return True

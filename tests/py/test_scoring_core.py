@@ -390,3 +390,53 @@ def test_amount_reconciliation_score_includes_one_cent_line_items() -> None:
     #R046-T04: One-cent line items are retained (boundary strictly above zero) and can complete a subset.
     candidate = email_candidate(subject="rounding $0.01", preview="charge $9.99", body_text="")
     assert scoring_core.amount_reconciliation_score(Decimal("10.00"), candidate) == 1.0
+
+
+def test_decimal_to_cents_uses_half_up_rounding_at_half_cent() -> None:
+    #R020: Cents normalization rounds half-up (0.005 -> 1 cent), not banker's rounding.
+    assert scoring_core._decimal_to_cents(Decimal("0.005")) == 1
+    assert scoring_core._decimal_to_cents(Decimal("0.015")) == 2
+
+
+def test_decimal_to_cents_scales_by_exactly_one_hundred() -> None:
+    #R020: A whole-dollar value converts to exactly 100 cents per dollar.
+    assert scoring_core._decimal_to_cents(Decimal("1.00")) == 100
+    assert scoring_core._decimal_to_cents(Decimal("3.50")) == 350
+
+
+def test_decimal_to_cents_returns_none_for_unquantizable_value() -> None:
+    #R020: A value too large to quantize at cent precision resolves to None rather than a cents value.
+    assert scoring_core._decimal_to_cents(Decimal("1E1000")) is None
+
+
+def test_amount_hint_score_returns_zero_when_target_cents_unresolvable() -> None:
+    #R020: An unresolvable target amount yields no hint (target cents is None -> zero, never a full match).
+    candidate = email_candidate(subject="total 10.00 posted")
+    assert scoring_core.amount_hint_score(Decimal("1E1000"), candidate) == 0.0
+
+
+def test_amount_reconciliation_score_returns_zero_when_target_cents_unresolvable() -> None:
+    #R046: An unresolvable target amount short-circuits reconciliation to zero without raising.
+    candidate = email_candidate(subject="Item A $3.00", preview="Item B $7.00", body_text="")
+    assert scoring_core.amount_reconciliation_score(Decimal("1E1000"), candidate) == 0.0
+
+
+def test_subset_sum_reachable_default_tolerance_is_exact() -> None:
+    #R045: The default tolerance is zero, so a near-miss subset does not satisfy the target.
+    assert scoring_core.subset_sum_reachable([100], 99) is False
+    assert scoring_core.subset_sum_reachable([100], 101) is False
+    assert scoring_core.subset_sum_reachable([100], 100) is True
+
+
+def test_bm25_relevance_default_saturation_is_four() -> None:
+    #R044: The default saturation constant is 4.0, mapping a raw score of 4.0 to exactly 0.5.
+    assert scoring_core.bm25_relevance(4.0) == pytest.approx(0.5)
+    assert scoring_core.bm25_relevance(16.0) == pytest.approx(0.8)
+
+
+def test_bm25_score_default_k1_and_b_constants() -> None:
+    #R043: Default Okapi constants (k1=1.5, b=0.75) drive the closed-form relevance value (doc length != average).
+    document = "coffee coffee beans extra terms here"
+    score = scoring_core.bm25_score("coffee", document, corpus_size=2, document_frequency_map={"coffee": 1},
+                                    average_document_length=3.0)
+    assert score == pytest.approx(0.749348303308049, abs=1e-12)

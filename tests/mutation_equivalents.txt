@@ -1,0 +1,43 @@
+# Proven-equivalent mutmut mutants for matchy/scoring_core.py.
+#
+# Each entry is a mutant that NO test can kill because it produces output identical to the original
+# for every possible input. They are excluded from the mutation score denominator (standard mutation-
+# testing practice for equivalent mutants). Every entry below was confirmed by (a) a structural
+# argument that no input distinguishes mutant from original and (b) empirical full-test-suite
+# escalation in the macOS driver leaving them alive. Only the exact names listed here are excluded;
+# any other survivor still fails the gate.
+#
+# Format: <mutant name>  # justification
+#
+# --- Equivalent by mutmut trampoline architecture (default-argument mutations) ---
+# The generated dispatcher binds the ORIGINAL default and passes it explicitly to the mutant, so a
+# mutated default value in the mutant signature is never used. Such mutants are unkillable by design.
+matchy.scoring_core.x_bm25_score__mutmut_1            # k1 default 1.5->2.5 never reaches mutant (dispatcher passes original default)
+matchy.scoring_core.x_bm25_score__mutmut_2            # b default 0.75->1.75 never reaches mutant (dispatcher passes original default)
+matchy.scoring_core.x_bm25_relevance__mutmut_1        # saturation default 4.0->5.0 never reaches mutant (dispatcher passes original default)
+matchy.scoring_core.x_subset_sum_reachable__mutmut_1  # tolerance_cents default 0->1 never reaches mutant (dispatcher passes original default)
+matchy.scoring_core.x_amount_reconciliation_score__mutmut_1  # max_terms default 12->13 never reaches mutant (dispatcher passes original default)
+#
+# --- Equivalent by guard semantics (the changed branch yields identical results downstream) ---
+matchy.scoring_core.x_token_overlap__mutmut_9         # empty-guard or->and: one empty side still yields 0/max == 0.0 via the overlap path
+matchy.scoring_core.x_sender_hint_score__mutmut_5     # normalized-guard or->and: later long-token guard returns identical 0.0
+matchy.scoring_core.x_sender_hint_score__mutmut_15    # token-guard or->and: empty-set intersection returns identical 0.0
+matchy.scoring_core.x_bm25_score__mutmut_22           # document_length >0 -> >=0: length 0 means no document tokens, so no term contributes
+matchy.scoring_core.x_bm25_score__mutmut_34           # term_frequency >0 -> >=0: tf 0 contributes tf*(k1+1)==0, adding nothing
+matchy.scoring_core.x_bm25_relevance__mutmut_5        # score >0.0 -> >=0.0: score 0 yields 0/(0+sat)==0.0 unchanged
+matchy.scoring_core.x_subset_sum_reachable__mutmut_8  # amount >0 -> >=0: amount 0 adds {partial+0} already in the reachable set
+matchy.scoring_core.x_amount_reconciliation_score__mutmut_10  # target >0 -> >=0: target 0 yields no sub-target line items, score stays 0.0
+matchy.scoring_core.x_amount_reconciliation_score__mutmut_11  # target >0 -> >1: target 1 has no line items in (0,1), score stays 0.0
+matchy.scoring_core.x_amount_reconciliation_score__mutmut_16  # 0<cents -> 0<=cents: 0-cent items are ignored by subset-sum (amount>0)
+#
+# --- Equivalent by token-length symmetry ---
+matchy.scoring_core.x_sender_hint_score__mutmut_10    # txn token >2 -> >=2: sender tokens still >2, so 2-char tokens can never overlap
+matchy.scoring_core.x_sender_hint_score__mutmut_13    # sender token >2 -> >=2: txn tokens still >2, so 2-char tokens can never overlap
+#
+# --- Equivalent by unreachable branch ---
+matchy.scoring_core.x__extract_money_cents__mutmut_16 # 'continue'->'break' on empty raw: regex always captures digits, raw never empty
+matchy.scoring_core.x__extract_money_cents__mutmut_19 # 'continue'->'break' on Decimal error: comma-stripped digit raw never raises
+matchy.scoring_core.x__decimal_to_cents__mutmut_9     # to_integral_value rounding=None: operand (quantized*100) is already integer-valued
+#
+# --- Equivalent by bounded pruning ---
+matchy.scoring_core.x_subset_sum_reachable__mutmut_12 # prune partial+amount -> partial-amount: extra retained sums all exceed upper_bound and are never in-band

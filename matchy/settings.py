@@ -70,6 +70,14 @@ class Settings:
     #R045: REQUESTS_CA_BUNDLE/SSL_CERT_FILE and the auto-detected mkcert root CA. Leave empty to let the
     #R045: client auto-resolve the local mkcert development root CA used for the localhost endpoint.
     mailcart_ca_bundle: str = os.environ.get("MATCHY_MAILCART_CA_BUNDLE", "")
+    #R050: Optionally run a single Mailcart /health probe when MatchService initializes so worker-triggered
+    #R050: runs fail fast on TLS/base-url misconfiguration instead of spamming per-query transport errors.
+    mailcart_startup_healthcheck_enabled: bool = (
+        (os.environ.get("MATCHY_MAILCART_STARTUP_HEALTHCHECK") or "true").strip().lower() == "true"
+    )
+    mailcart_startup_healthcheck_timeout_seconds: int = int(
+        (os.environ.get("MATCHY_MAILCART_STARTUP_HEALTHCHECK_TIMEOUT_SECONDS") or "2").strip() or "2"
+    )
     anthropic_api_key_item: str = os.environ.get("MATCHY_ANTHROPIC_API_KEY_1PSA_ITEM", "anthropic_api_key")
     openai_api_key_item: str = os.environ.get("MATCHY_OPENAI_API_KEY_1PSA_ITEM", "openai_api_key")
     anthropic_api_key: str = os.environ.get("ANTHROPIC_API_KEY", "")

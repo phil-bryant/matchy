@@ -17,17 +17,6 @@ from matchy import scoring_core
 
 TZ = timezone.utc
 BASE_TIME = datetime(2024, 6, 1, 12, 0, 0, tzinfo=TZ)
-BUCKET_DELTAS = (
-    (0, 1.0),
-    (6, 1.0),
-    (6 + 1 / 3600, 0.85),
-    (24, 0.85),
-    (24 + 1 / 3600, 0.65),
-    (72, 0.65),
-    (72 + 1 / 3600, 0.3),
-    (24 * 30, 0.3),
-    (24 * 30 + 1 / 3600, 0.1),
-)
 REASON_KEYS = frozenset(
     {
         "merchant_overlap",
@@ -132,11 +121,20 @@ def test_normalized_text_strips_non_alnum_to_spaces(value: str) -> None:
 
 
 @fuzz_settings()
-@given(hours_delta=st.sampled_from([delta for delta, _expected in BUCKET_DELTAS]))
+@given(hours_delta=st.floats(min_value=0.0, max_value=24 * 365, allow_nan=False, allow_infinity=False))
 def test_time_proximity_matches_bucket_for_known_deltas(hours_delta: float) -> None:
-    #R030: Documented hour buckets return exact proximity scores.
-    expected = {delta: score for delta, score in BUCKET_DELTAS}[hours_delta]
+    #R030: Documented hour buckets return exact proximity scores across the full delta domain.
     received_at = BASE_TIME + timedelta(hours=hours_delta)
+    effective_hours = abs((received_at - BASE_TIME).total_seconds()) / 3600.0
+    expected = 0.1
+    if effective_hours <= 6:
+        expected = 1.0
+    elif effective_hours <= 24:
+        expected = 0.85
+    elif effective_hours <= 72:
+        expected = 0.65
+    elif effective_hours <= 24 * 30:
+        expected = 0.3
     assert scoring_core.time_proximity_score(BASE_TIME, received_at) == expected
 
 
