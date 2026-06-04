@@ -8,4 +8,4 @@ RUNBOOK_REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 export RUNBOOK_REPO_ROOT
 # shellcheck source=/dev/null
 source "${RUNNER_HOME}/config/runbook/matchy.env"
-exec "${RUNNER_HOME}/tests/t18_verify_filevault_encryption_test.sh" "$@"
+exec "${RUNNER_HOME}/tests/t08_run_fuzz_tests.sh" "$@"

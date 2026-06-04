@@ -8,4 +8,4 @@ RUNBOOK_REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 export RUNBOOK_REPO_ROOT
 # shellcheck source=/dev/null
 source "${RUNNER_HOME}/config/runbook/matchy.env"
-exec "${RUNNER_HOME}/tests/t08_run_python_unit_tests.sh" "$@"
+exec "${RUNNER_HOME}/tests/t09_run_dynamic_security_tests.sh" "$@"
