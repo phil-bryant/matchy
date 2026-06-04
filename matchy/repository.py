@@ -16,6 +16,7 @@ class MatchRepository:
     def __init__(self, settings: Settings):
         if not settings.teller_db_password:
             raise RuntimeError("TELLER_DB_PASSWORD is required for matchy writes")
+        self._write_enabled = bool(getattr(settings, "write_enabled", True))
         self._engine = create_engine(
             "postgresql+psycopg2://",
             connect_args={
@@ -32,9 +33,13 @@ class MatchRepository:
     @contextmanager
     def session(self):
         session = self._session_factory()
+        write_enabled = bool(getattr(self, "_write_enabled", True))
         try:
             yield session
-            session.commit()
+            if write_enabled:
+                session.commit()
+            else:
+                session.rollback()
         except Exception:
             session.rollback()
             raise
@@ -150,10 +155,10 @@ class MatchRepository:
         ).mappings().all()
         return [str(row["transaction_id"]) for row in rows]
 
-    #R015: Read the most recent match_run for a transaction plus the candidate id set that run scored.
+    #R015: Read the most recent match_run for a transaction plus the stored candidate payload that run scored.
     #R015: Used by MatchService to decide whether the AI call is necessary on this iteration; if the
-    #R015: previous run was a real evaluation under the same model+prompt with the same candidate id
-    #R015: set as the current search returns, calling Claude again would be a guaranteed no-op.
+    #R015: previous run was a real evaluation under the same model+prompt with the same rank-relevant
+    #R015: candidate payload as the current search returns, calling Claude again would be a guaranteed no-op.
     def read_last_run_summary(self, session, transaction_id: str) -> dict | None:
         run_row = session.execute(
             text(
@@ -172,7 +177,14 @@ class MatchRepository:
         candidate_rows = session.execute(
             text(
                 """
-                SELECT email_message_id
+                SELECT email_message_id,
+                       email_received_at,
+                       score,
+                       reason_json,
+                       cached_subject,
+                       cached_sender,
+                       cached_snippet,
+                       is_unmatched_email_priority
                   FROM teller.transaction_email_candidate
                  WHERE match_run_id = :match_run_id
                 """
@@ -184,7 +196,23 @@ class MatchRepository:
             "status": str(run_row["status"]),
             "model_name": str(run_row["model_name"]),
             "prompt_version": str(run_row["prompt_version"]),
-            "candidate_message_ids": [str(row["email_message_id"]) for row in candidate_rows],
+            "candidate_cache_rows": [
+                {
+                    "email_message_id": str(row["email_message_id"]),
+                    "email_received_at": (
+                        row["email_received_at"].isoformat()
+                        if row.get("email_received_at") is not None
+                        else ""
+                    ),
+                    "score": float(row["score"]) if row.get("score") is not None else 0.0,
+                    "reason_json": row.get("reason_json") or {},
+                    "cached_subject": str(row.get("cached_subject") or ""),
+                    "cached_sender": str(row.get("cached_sender") or ""),
+                    "cached_snippet": str(row.get("cached_snippet") or ""),
+                    "is_unmatched_email_priority": bool(row.get("is_unmatched_email_priority")),
+                }
+                for row in candidate_rows
+            ],
         }
 
     #R015: Read the active match row so service callers can echo the cached AI decision back to clients
@@ -213,6 +241,21 @@ class MatchRepository:
             "selected_by": str(row["selected_by"]),
             "ai_confidence": float(confidence) if confidence is not None else None,
         }
+
+    def list_active_email_ids_for_other_transactions(self, session, transaction_id: str) -> set[str]:
+        rows = session.execute(
+            text(
+                """
+                SELECT email_message_id
+                  FROM teller.transaction_email_match
+                 WHERE active = TRUE
+                   AND email_message_id IS NOT NULL
+                   AND transaction_id <> :transaction_id
+                """
+            ),
+            {"transaction_id": transaction_id},
+        ).mappings().all()
+        return {str(row["email_message_id"]) for row in rows}
 
     #R030: Persist subject/sender/preview into cached_* columns at candidate-insert time so
     #R030: downstream UIs (Teller's Match & Classify candidates pane) can render without paying
@@ -296,7 +339,8 @@ class MatchRepository:
     ) -> list[str]:
         selected = []
         now = datetime.now(tz=timezone.utc)
-        selected_ids = set(ai_selection.selected_message_ids)
+        candidate_message_ids = {ranked.candidate.message_id for ranked in ranked_candidates}
+        selected_ids = set(ai_selection.selected_message_ids) & candidate_message_ids
         conflict_detected = False
         session.execute(
             text(
@@ -472,23 +516,26 @@ class MatchRepository:
             {"transaction_id": transaction_id},
         )
 
-    def insert_human_confirmed_match(self, session, transaction_id: str, email_message_id: str, note: str | None) -> None:
+    def insert_human_confirmed_match(self, session, transaction_id: str, email_message_id: str, note: str | None) -> int:
         now = datetime.now(tz=timezone.utc)
         explanation = {"note": note} if note else {}
-        session.execute(
-            text(
-                """
-                INSERT INTO teller.transaction_email_match (
-                    transaction_id, email_message_id, state, selected_by, selected_at, active, explanation_json
-                ) VALUES (
-                    :transaction_id, :email_message_id, 'human_confirmed_ai_match', 'human', :selected_at, TRUE, CAST(:explanation AS jsonb)
-                )
-                """
-            ),
-            {
-                "transaction_id": transaction_id,
-                "email_message_id": email_message_id,
-                "selected_at": now,
-                "explanation": __import__("json").dumps(explanation),
-            },
+        return int(
+            session.execute(
+                text(
+                    """
+                    INSERT INTO teller.transaction_email_match (
+                        transaction_id, email_message_id, state, selected_by, selected_at, active, explanation_json
+                    ) VALUES (
+                        :transaction_id, :email_message_id, 'human_confirmed_ai_match', 'human', :selected_at, TRUE, CAST(:explanation AS jsonb)
+                    )
+                    RETURNING match_id
+                    """
+                ),
+                {
+                    "transaction_id": transaction_id,
+                    "email_message_id": email_message_id,
+                    "selected_at": now,
+                    "explanation": __import__("json").dumps(explanation),
+                },
+            ).scalar_one()
         )

@@ -58,12 +58,21 @@ def _validated_api_base_url(raw: str) -> str:
     return candidate.rstrip("/")
 
 
-def _post_pending_run(api_base_url: str, limit: int, lookback_days: int, trigger_source: str, timeout_seconds: int, force_rematch: bool = False) -> dict:
+def _post_pending_run(
+    api_base_url: str,
+    limit: int,
+    lookback_days: int,
+    trigger_source: str,
+    timeout_seconds: int,
+    api_auth_token: str,
+    force_rematch: bool = False,
+) -> dict:
     payload = {"limit": limit, "lookback_days": lookback_days, "trigger_source": trigger_source, "force_rematch": force_rematch}
     response_payload: dict = {"results": []}
     response = requests.post(
         f"{api_base_url}/v1/matchy/runs/pending",
         json=payload,
+        headers={"Authorization": f"Bearer {api_auth_token}"},
         timeout=timeout_seconds,
     )
     response.raise_for_status()
@@ -79,6 +88,7 @@ def _post_pending_run_with_profile_heartbeat(
     lookback_days: int,
     trigger_source: str,
     timeout_seconds: int,
+    api_auth_token: str,
     startup_started_at: float,
     run_counter: int,
     profile_enabled: bool,
@@ -88,7 +98,16 @@ def _post_pending_run_with_profile_heartbeat(
     heartbeat_seconds = 5
     elapsed_wait_seconds = 0
     with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_post_pending_run, api_base_url, limit, lookback_days, trigger_source, timeout_seconds, force_rematch)
+        future = executor.submit(
+            _post_pending_run,
+            api_base_url,
+            limit,
+            lookback_days,
+            trigger_source,
+            timeout_seconds,
+            api_auth_token,
+            force_rematch,
+        )
         finished = False
         while not finished:
             try:
@@ -116,6 +135,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout-seconds", type=int, default=_env_int("MATCHY_DRIVER_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS, 1))
     parser.add_argument("--max-runs", type=int, default=_env_int("MATCHY_DRIVER_MAX_RUNS", 0, 0))
     parser.add_argument("--trigger-source", default=os.environ.get("MATCHY_DRIVER_TRIGGER_SOURCE", DEFAULT_TRIGGER_SOURCE).strip() or DEFAULT_TRIGGER_SOURCE)
+    parser.add_argument("--api-auth-token", default=os.environ.get("MATCHY_API_AUTH_TOKEN", "").strip())
     parser.add_argument("--once", action="store_true", default=_env_bool("MATCHY_DRIVER_ONCE", False))
     parser.add_argument("--force-rematch", dest="force_rematch", action="store_true", default=False)
     return parser.parse_args()
@@ -143,8 +163,11 @@ def _run_driver_loop() -> int:
     timeout_seconds = args.timeout_seconds
     max_runs = args.max_runs
     trigger_source = args.trigger_source
+    api_auth_token = args.api_auth_token.strip()
     run_once = args.once
     force_rematch = args.force_rematch
+    if not api_auth_token:
+        raise ValueError("MATCHY_API_AUTH_TOKEN (or --api-auth-token) is required for POST /v1/matchy/runs/pending.")
     _startup_log(
         startup_started_at,
         "driver-configured",
@@ -172,6 +195,7 @@ def _run_driver_loop() -> int:
                 lookback_days=lookback_days,
                 trigger_source=trigger_source,
                 timeout_seconds=timeout_seconds,
+                api_auth_token=api_auth_token,
                 startup_started_at=startup_started_at,
                 run_counter=run_counter,
                 profile_enabled=args.profile,

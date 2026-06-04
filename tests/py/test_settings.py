@@ -402,6 +402,20 @@ def test_mailcart_search_timeout_default_and_override(monkeypatch: pytest.Monkey
     assert settings2.mailcart_search_timeout_seconds == 30
 
 
+def test_near_duplicate_hamming_distance_default_and_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    #R055-T05: near_duplicate_max_hamming_distance defaults to 0 and is configurable via env var.
+    _clear_secret_env(monkeypatch)
+    monkeypatch.delenv("MATCHY_NEAR_DUPLICATE_MAX_HAMMING_DISTANCE", raising=False)
+    _install_run_stub(monkeypatch, _optional_miss_handler)
+    SettingsCls = _reload_settings_class(monkeypatch)
+    settings = SettingsCls()
+    assert settings.near_duplicate_max_hamming_distance == 0
+    monkeypatch.setenv("MATCHY_NEAR_DUPLICATE_MAX_HAMMING_DISTANCE", "7")
+    SettingsCls2 = _reload_settings_class(monkeypatch)
+    settings2 = SettingsCls2()
+    assert settings2.near_duplicate_max_hamming_distance == 7
+
+
 def test_mailcart_ca_bundle_default_and_override(monkeypatch: pytest.MonkeyPatch) -> None:
     #R045-T01: Default mailcart_ca_bundle is empty (auto-resolve) when unset.
     #R045-T02: MATCHY_MAILCART_CA_BUNDLE exposes the explicit path.

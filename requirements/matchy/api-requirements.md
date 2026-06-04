@@ -32,9 +32,16 @@ Tests:
 - R045-T02: Stub service success and verify `/v1/matchy/confirm` delegates transaction, message id, and note.
 - R045-T03: Submit a note containing a null byte and verify `/v1/matchy/confirm` returns 422.
 
+R055  Statement: Protect mutating run/confirm endpoints with a shared Bearer token.
+Design: Require `Authorization: Bearer <token>` for `POST /v1/matchy/runs`, `/v1/matchy/runs/pending`, and `/v1/matchy/confirm`, where `<token>` matches `MATCHY_API_AUTH_TOKEN`.
+Tests:
+- R055-T01: Call each mutating endpoint without an Authorization header and verify HTTP 401.
+- R055-T02: Call a mutating endpoint with an invalid bearer token and verify HTTP 401.
+
 ## Changelog
 
 - 2026-05-18: Added API requirements coverage for run and health paths.
 - 2026-05-18: Added R010 pending-run endpoint requirements for external driver workflows.
 - 2026-06-01: Added R015 startup refresh for the local CLDR currencies cache.
 - 2026-06-03: Added run/confirm request validation and explicit confirm endpoint requirements.
+- 2026-06-04: Added R055 Bearer-auth requirement for mutating API endpoints.

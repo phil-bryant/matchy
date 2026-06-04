@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
 import os
+import secrets
 from time import perf_counter
 from typing import Annotated, Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from .cldr_cache import CldrCurrenciesCache
@@ -13,6 +15,7 @@ from .settings import Settings
 
 NonEmptyId = Annotated[str, Field(min_length=1)]
 SafeOptionalNote = Annotated[str, Field(pattern=r"^[^\x00]*$")]
+LOGGER = logging.getLogger(__name__)
 
 
 def _startup_log(start_time_seconds: float, phase: str, details: str = "") -> None:
@@ -68,11 +71,23 @@ def create_app() -> FastAPI:
             try:
                 service = MatchService(settings)
             except Exception as exc:
+                LOGGER.exception("Failed to initialize MatchService.")
                 raise HTTPException(
                     status_code=503,
-                    detail=f"Match service not configured: {exc}",
+                    detail="Match service is unavailable.",
                 ) from exc
         return service
+
+    #R055: Require Bearer auth for mutating run/confirm endpoints so only trusted callers can trigger writes.
+    def _require_api_auth(authorization: str | None = Header(default=None)) -> None:
+        configured_token = settings.matchy_api_auth_token
+        provided_token = ""
+        if authorization and authorization.startswith("Bearer "):
+            provided_token = authorization[len("Bearer ") :].strip()
+        if not configured_token:
+            raise HTTPException(status_code=503, detail="Matchy API auth token is not configured.")
+        if (not provided_token) or (not secrets.compare_digest(provided_token, configured_token)):
+            raise HTTPException(status_code=401, detail="Unauthorized", headers={"WWW-Authenticate": "Bearer"})
 
     #R001: Publish a health endpoint that always returns an ok status payload.
     @app.get("/health")
@@ -81,19 +96,33 @@ def create_app() -> FastAPI:
 
     #R005: Translate unknown transactions from service ValueError into HTTP 404 responses.
     @app.post("/v1/matchy/runs", response_model=MatchRunResponse,
-              responses={404: {"description": "No transaction matched the supplied transaction_id."}})
-    def run_matches(request: MatchRunRequest) -> MatchRunResponse:
+              responses={401: {"description": "Unauthorized."}, 404: {"description": "No transaction matched the supplied transaction_id."},
+                         503: {"description": "API auth token is not configured."}})
+    def run_matches(request: MatchRunRequest, _auth: None = Depends(_require_api_auth)) -> MatchRunResponse:
+        service = _service()
+        batch_matcher = getattr(service, "match_transactions_atomic", None)
+        if callable(batch_matcher):
+            try:
+                rows = batch_matcher(
+                    transaction_ids=request.transaction_ids,
+                    trigger_source=request.trigger_source,
+                    force_rematch=request.force_rematch,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            return MatchRunResponse(results=rows)
         rows: list[dict] = []
         for transaction_id in request.transaction_ids:
             try:
-                rows.append(_service().match_transaction(transaction_id=transaction_id, trigger_source=request.trigger_source, force_rematch=request.force_rematch))
+                rows.append(service.match_transaction(transaction_id=transaction_id, trigger_source=request.trigger_source, force_rematch=request.force_rematch))
             except ValueError as exc:
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
         return MatchRunResponse(results=rows)
 
     #R010: Publish a pending-transaction batch endpoint for driver-triggered matching runs.
-    @app.post("/v1/matchy/runs/pending", response_model=MatchRunResponse)
-    def run_pending_matches(request: PendingMatchRunRequest) -> MatchRunResponse:
+    @app.post("/v1/matchy/runs/pending", response_model=MatchRunResponse,
+              responses={401: {"description": "Unauthorized."}, 503: {"description": "API auth token is not configured."}})
+    def run_pending_matches(request: PendingMatchRunRequest, _auth: None = Depends(_require_api_auth)) -> MatchRunResponse:
         rows = _service().match_pending_transactions(
             limit=request.limit,
             lookback_days=request.lookback_days,
@@ -104,8 +133,9 @@ def create_app() -> FastAPI:
 
     #R045: Expose a human-confirm endpoint with strict input validation and ValueError-to-404 mapping.
     @app.post("/v1/matchy/confirm", response_model=dict,
-              responses={404: {"description": "Unknown transaction or email message for confirmation."}})
-    def confirm_match(request: ConfirmRequest) -> dict:
+              responses={401: {"description": "Unauthorized."}, 404: {"description": "Unknown transaction or email message for confirmation."},
+                         503: {"description": "API auth token is not configured."}})
+    def confirm_match(request: ConfirmRequest, _auth: None = Depends(_require_api_auth)) -> dict:
         try:
             result = _service().confirm_match(
                 transaction_id=request.transaction_id,

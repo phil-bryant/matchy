@@ -26,6 +26,7 @@ def _stub_settings_secrets(monkeypatch: pytest.MonkeyPatch, request: pytest.Fixt
     if request.node.fspath and request.node.fspath.basename == "test_settings.py":
         return
     monkeypatch.setenv("MATCHY_CLDR_CURRENCIES_REFRESH_ENABLED", "false")
+    monkeypatch.setenv("MATCHY_API_AUTH_TOKEN", "test-matchy-api-token")
     monkeypatch.setattr(
         "matchy.settings.Settings._resolve_teller_db_config",
         _stub_teller_db_config,

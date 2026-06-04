@@ -13,6 +13,7 @@ Matchy starts from Teller transactions and finds candidate Outlook emails, then 
    - `~/.env` fallback supports the same keys (`username`, `password`, `host`, `port`, `database`) or mapped keys (`TELLER_DB_USER`, `TELLER_DB_PASSWORD`, `TELLER_DB_HOST`, `TELLER_DB_PORT`, `TELLER_DB_NAME`).
    - `MAILCART_SERVICE_BASE_URL` (must be HTTPS, for example `https://127.0.0.1:8788`)
    - `MAILCART_SERVICE_TOKEN` (optional if Mailcart is running without auth)
+   - `MATCHY_API_AUTH_TOKEN` (required bearer token for write-capable Matchy API endpoints)
    - Optional TLS verify override: `MATCHY_MAILCART_CA_BUNDLE` (path to a CA/cert bundle trusted for Mailcart TLS).
    - Optional startup preflight controls:
      - `MATCHY_MAILCART_STARTUP_HEALTHCHECK` (`true`/`false`, default `true`)
@@ -54,6 +55,8 @@ Excluded from the parallel batch: setup scripts (`01`–`03`) and integration en
 
 ## Endpoint
 
+- Auth header for mutating endpoints:
+  - `Authorization: Bearer $MATCHY_API_AUTH_TOKEN`
 - `POST /v1/matchy/runs`
   - Body:
     - `{"transaction_ids": ["txn_1"], "trigger_source": "manual"}`
@@ -63,6 +66,9 @@ Excluded from the parallel batch: setup scripts (`01`–`03`) and integration en
   - Purpose:
     - Driver-friendly endpoint that discovers active-unmatched transactions and runs matching in batch.
   - Driver default batch size is `10` per run (`./09_run_matchy_driver.py`), with CLI arg overrides (`--limit`, `--timeout-seconds`, `--once`, etc.).
+- `POST /v1/matchy/confirm`
+  - Body:
+    - `{"transaction_id": "txn_1", "email_message_id": "msg_1", "note": "optional"}`
 
 ## GLOBAL ARCHITECTURE: TELLER → MATCHY ← MAILCART
 ```text

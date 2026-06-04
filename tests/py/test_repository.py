@@ -45,6 +45,7 @@ def test_repository_session_context_commits_and_rollbacks_through_fake_session()
     repo = object.__new__(MatchRepository)
     sessions = []
     repo._session_factory = lambda: sessions.append(FakeSession()) or sessions[-1]
+    repo._write_enabled = True
     with repo.session():
         pass
     first = sessions[-1]
@@ -56,6 +57,11 @@ def test_repository_session_context_commits_and_rollbacks_through_fake_session()
         pass
     second = sessions[-1]
     assert second.commits == 0 and second.rollbacks == 1 and second.closed == 1
+    repo._write_enabled = False
+    with repo.session():
+        pass
+    third = sessions[-1]
+    assert third.commits == 0 and third.rollbacks == 1 and third.closed == 1
 
 
 def test_repository_pending_transaction_query_returns_ordered_transaction_ids() -> None:
@@ -77,8 +83,8 @@ def test_repository_pending_transaction_query_returns_ordered_transaction_ids() 
     assert rows == ["txn_1", "txn_2"]
 
 
-def test_repository_read_last_run_summary_returns_run_and_candidate_id_set() -> None:
-    #R015: read_last_run_summary returns the newest run plus its persisted candidate id set.
+def test_repository_read_last_run_summary_returns_run_and_candidate_cache_rows() -> None:
+    #R015: read_last_run_summary returns the newest run plus its persisted candidate payload rows.
     #R015-T01: Python test lane exists for last-run summary requirement.
     class FakeResult:
         def __init__(self, row=None, rows=None):
@@ -114,7 +120,28 @@ def test_repository_read_last_run_summary_returns_run_and_candidate_id_set() -> 
         "status": "succeeded",
         "model_name": "claude-sonnet-4-5",
         "prompt_version": "v1",
-        "candidate_message_ids": ["m1", "m2"],
+        "candidate_cache_rows": [
+            {
+                "email_message_id": "m1",
+                "email_received_at": "",
+                "score": 0.0,
+                "reason_json": {},
+                "cached_subject": "",
+                "cached_sender": "",
+                "cached_snippet": "",
+                "is_unmatched_email_priority": False,
+            },
+            {
+                "email_message_id": "m2",
+                "email_received_at": "",
+                "score": 0.0,
+                "reason_json": {},
+                "cached_subject": "",
+                "cached_sender": "",
+                "cached_snippet": "",
+                "is_unmatched_email_priority": False,
+            },
+        ],
     }
     assert empty is None
 
@@ -255,3 +282,52 @@ def test_persist_ai_result_avoids_duplicate_active_email_match_insert_and_marks_
         if "INSERT INTO teller.transaction_email_match" in sql and "'ai_candidate_uncertain'" in sql and "email_message_id" not in params
     ]
     assert uncertain_rows and uncertain_rows[-1]["transaction_id"] == "txn_1"
+
+
+def test_persist_ai_result_filters_out_of_set_ai_ids_to_no_match_found() -> None:
+    #R015: AI ids outside ranked candidate set are treated as unselected to avoid empty-result active-row gaps.
+    class CapturingSession:
+        def __init__(self):
+            self.calls = []
+
+        def execute(self, statement, params=None):
+            self.calls.append((str(statement), dict(params or {})))
+            return SimpleNamespace()
+
+    candidate = EmailCandidate(
+        message_id="msg_valid",
+        subject="s",
+        preview="p",
+        received_at=datetime(2026, 5, 24, tzinfo=timezone.utc),
+        sender="x@y",
+        body_text="body",
+    )
+    ranked = RankedCandidate(candidate=candidate, score=0.9, reasons={"reason": "r"})
+    selection = AiSelection(
+        selected_message_ids=["msg_out_of_set"],
+        confidence=0.95,
+        uncertain=False,
+        rationale="invalid id",
+        backend="anthropic",
+        model_name="claude-sonnet-4-5",
+    )
+    repo = object.__new__(MatchRepository)
+    repo.has_active_match = lambda session, email_message_id: False
+    session = CapturingSession()
+    selected = repo.persist_ai_result(
+        session=session,
+        transaction_id="txn_1",
+        run_id=123,
+        ranked_candidates=[ranked],
+        ai_selection=selection,
+        auto_confirm_threshold=0.9,
+    )
+    assert selected == []
+    no_match_rows = [
+        params
+        for sql, params in session.calls
+        if "INSERT INTO teller.transaction_email_match" in sql and "'ai_no_match_found'" in sql
+    ]
+    assert no_match_rows and no_match_rows[-1]["transaction_id"] == "txn_1"
+    status_calls = [params for sql, params in session.calls if "UPDATE teller.transaction_email_match_run" in sql]
+    assert status_calls and status_calls[-1]["status"] == "no_candidates"

@@ -31,6 +31,7 @@ class Settings:
     teller_db_password: str = os.environ.get("TELLER_DB_PASSWORD", "")
     mailcart_service_base_url: str = os.environ.get("MAILCART_SERVICE_BASE_URL", "https://127.0.0.1:8788")
     mailcart_service_token: str = os.environ.get("MAILCART_SERVICE_TOKEN", "")
+    matchy_api_auth_token: str = os.environ.get("MATCHY_API_AUTH_TOKEN", "").strip()
     #R030: Enrich search candidates with the full Mailcart message body before scoring so amount/keyword
     #R030: hints can match against the email body (not just bodyPreview). Disable when callers want the
     #R030: legacy preview-only behavior for performance or determinism reasons. Empty env var values
@@ -91,6 +92,9 @@ class Settings:
     auto_confirm_threshold: float = float(os.environ.get("MATCHY_AUTO_CONFIRM_THRESHOLD", "0.90"))
     write_enabled: bool = os.environ.get("MATCHY_WRITE_ENABLED", "true").lower() == "true"
     email_move_enabled: bool = os.environ.get("MATCHY_EMAIL_MOVE_ENABLED", "false").lower() == "true"
+    near_duplicate_max_hamming_distance: int = int(
+        (os.environ.get("MATCHY_NEAR_DUPLICATE_MAX_HAMMING_DISTANCE") or "0").strip() or "0"
+    )
     #R050: CLDR currencies cache settings control startup refresh, local storage, and HTTP timeout.
     cldr_currencies_cache_path: str = os.environ.get(
         "MATCHY_CLDR_CURRENCIES_CACHE_PATH",
@@ -124,6 +128,11 @@ class Settings:
                 "MATCHY_CLDR_CURRENCIES_REFRESH_TIMEOUT_SECONDS",
                 str(self.cldr_currencies_refresh_timeout_seconds),
             )),
+        )
+        object.__setattr__(
+            self,
+            "matchy_api_auth_token",
+            os.environ.get("MATCHY_API_AUTH_TOKEN", self.matchy_api_auth_token).strip(),
         )
         resolve_db_started_at = perf_counter()
         teller_db_config = self._resolve_teller_db_config()

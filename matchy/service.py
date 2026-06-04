@@ -4,6 +4,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError, as_comp
 from contextlib import nullcontext
 from datetime import timedelta
 import hashlib
+import json
 import logging
 import os
 import re
@@ -82,77 +83,90 @@ class MatchService:
 
     #R001: Raise a ValueError when a requested transaction cannot be loaded.
     #R020: Run the Mailcart search up-front and skip the AI call when nothing meaningful has changed
-    #R020: since the previous run (same candidate id set under the same model + prompt version). This
+    #R020: since the previous run (same rank-relevant candidate payload under the same model + prompt).
     #R020: keeps the matchy auto-driver's per-loop cost bounded to a single Mailcart search per
     #R020: transaction instead of also paying for per-candidate body fetches and a Claude/GPT call.
-    def match_transaction(self, transaction_id: str, trigger_source: str = "manual", force_rematch: bool = False) -> dict:
-        with self._repository.session() as session:
-            txn = self._repository.load_transaction(session, transaction_id)
+    def match_transaction(
+        self,
+        transaction_id: str,
+        trigger_source: str = "manual",
+        force_rematch: bool = False,
+        *,
+        session=None,
+        record_failure: bool = True,
+    ) -> dict:
+        def _session_scope():
+            return nullcontext(session) if session is not None else self._repository.session()
+
+        with _session_scope() as active_session:
+            txn = self._repository.load_transaction(active_session, transaction_id)
             if txn is None:
                 raise ValueError(f"Unknown transaction_id: {transaction_id}")
-            candidates = self._search_candidates(txn, transaction_id)
-            candidates = self._enrich_candidate_bodies(candidates, transaction_id=transaction_id)
-            candidates = self._filter_currency_candidates(candidates)
-            #R055: Collapse near-duplicate receipts after enrichment so similarity is judged on full bodies.
-            candidates = self._collapse_near_duplicates(candidates, self._near_duplicate_max_distance())
-            planned_model = self._ai_ranker.planned_model_name()
-            current_hash = self._candidate_set_hash([c.message_id for c in candidates])
+        candidates = self._search_candidates(txn, transaction_id)
+        candidates = self._enrich_candidate_bodies(candidates, transaction_id=transaction_id)
+        candidates = self._filter_currency_candidates(candidates)
+        #R055: Collapse near-duplicate receipts after enrichment so similarity is judged on full bodies.
+        candidates = self._collapse_near_duplicates(candidates, self._near_duplicate_max_distance())
+        planned_model = self._ai_ranker.planned_model_name()
+        with _session_scope() as active_session:
+            active_ids = self._active_ids_for_other_transactions(session=active_session, transaction_id=transaction_id)
+        ranked = rank_candidates(txn, candidates, already_matched_ids=active_ids)
+        current_rows = self._ranked_candidate_cache_rows(ranked)
+        current_hash = self._candidate_set_hash(current_rows)
+        current_message_id_hash = self._candidate_message_id_hash([row["email_message_id"] for row in current_rows])
+        run_id: int | None = None
+        with _session_scope() as active_session:
             cached_response = self._maybe_cached_response(
-                session=session,
+                session=active_session,
                 transaction_id=transaction_id,
                 candidates=candidates,
                 planned_model=planned_model,
                 current_hash=current_hash,
+                current_message_id_hash=current_message_id_hash,
                 force_rematch=force_rematch,
             )
             if cached_response is not None:
                 return cached_response
             run_id = self._repository.create_run(
-                session=session,
+                session=active_session,
                 transaction_id=transaction_id,
                 trigger_source=trigger_source,
                 model_name=planned_model,
                 prompt_version=PROMPT_VERSION,
             )
-            try:
-                transaction_scope = session.begin_nested() if hasattr(session, "begin_nested") else nullcontext()
+        try:
+            ai_selection = self._ai_ranker.select(txn, ranked)
+            with _session_scope() as active_session:
+                transaction_scope = active_session.begin_nested() if hasattr(active_session, "begin_nested") else nullcontext()
                 with transaction_scope:
-                    active_ids = set(
-                        row["email_message_id"]
-                        for row in session.execute(
-                            text(
-                                """
-                                SELECT email_message_id
-                                  FROM teller.transaction_email_match
-                                 WHERE active = TRUE
-                                   AND email_message_id IS NOT NULL
-                                   AND transaction_id <> :transaction_id
-                                """
-                            ),
-                            {"transaction_id": transaction_id},
-                        ).mappings().all()
-                    )
-                    ranked = rank_candidates(txn, candidates, already_matched_ids=active_ids)
-                    ai_selection = self._ai_ranker.select(txn, ranked)
-                    self._repository.update_run_model_name(session=session, run_id=run_id, model_name=ai_selection.model_name)
+                    self._repository.update_run_model_name(session=active_session, run_id=run_id, model_name=ai_selection.model_name)
                     self._repository.insert_candidates(
-                        session=session,
+                        session=active_session,
                         match_run_id=run_id,
                         transaction_id=transaction_id,
                         candidates=ranked,
                         ai_selected_ids=set(ai_selection.selected_message_ids),
                     )
                     selected_ids = self._repository.persist_ai_result(
-                        session=session,
+                        session=active_session,
                         transaction_id=transaction_id,
                         run_id=run_id,
                         ranked_candidates=ranked,
                         ai_selection=ai_selection,
                         auto_confirm_threshold=self._settings.auto_confirm_threshold,
                     )
-            except Exception as exc:
-                self._repository.mark_run_failed(session, run_id, str(exc))
-                raise
+            self._maybe_move_selected_messages(selected_ids, transaction_id=transaction_id, source="ai")
+        except Exception as exc:
+            if record_failure and run_id is not None:
+                try:
+                    if session is None:
+                        with self._repository.session() as failed_session:
+                            self._repository.mark_run_failed(failed_session, run_id, str(exc))
+                    else:
+                        self._repository.mark_run_failed(session, run_id, str(exc))
+                except Exception as mark_exc:
+                    LOGGER.warning("matchy failed to persist failed run run_id=%s error=%s", run_id, mark_exc)
+            raise
         return {
             "transaction_id": transaction_id,
             "run_id": run_id,
@@ -162,6 +176,26 @@ class MatchService:
             "uncertain": ai_selection.uncertain,
             "skipped": False,
         }
+
+    def match_transactions_atomic(
+        self,
+        transaction_ids: list[str],
+        trigger_source: str = "manual",
+        force_rematch: bool = False,
+    ) -> list[dict]:
+        rows: list[dict] = []
+        with self._repository.session() as session:
+            for transaction_id in transaction_ids:
+                rows.append(
+                    self.match_transaction(
+                        transaction_id=transaction_id,
+                        trigger_source=trigger_source,
+                        force_rematch=force_rematch,
+                        session=session,
+                        record_failure=False,
+                    )
+                )
+        return rows
 
     #R020: Execute the scoped retrieval fallback chain (terms+date → terms-only → broad-term → empty)
     #R020: without yet creating a match_run row. Query-tier requests intentionally use scoped
@@ -298,13 +332,55 @@ class MatchService:
                 f"transaction_id={transaction_id} cooldown_seconds={cooldown_seconds}",
             )
 
+    def _active_ids_for_other_transactions(self, session, transaction_id: str) -> set[str]:
+        repository_reader = getattr(self._repository, "list_active_email_ids_for_other_transactions", None)
+        if callable(repository_reader):
+            return set(repository_reader(session=session, transaction_id=transaction_id))
+        if not hasattr(session, "execute"):
+            return set()
+        return set(
+            row["email_message_id"]
+            for row in session.execute(
+                text(
+                    """
+                    SELECT email_message_id
+                      FROM teller.transaction_email_match
+                     WHERE active = TRUE
+                       AND email_message_id IS NOT NULL
+                       AND transaction_id <> :transaction_id
+                    """
+                ),
+                {"transaction_id": transaction_id},
+            ).mappings().all()
+        )
+
+    def _ranked_candidate_cache_rows(self, ranked_candidates) -> list[dict]:
+        rows: list[dict] = []
+        for ranked in ranked_candidates:
+            candidate = ranked.candidate
+            reasons = ranked.reasons or {}
+            preview = candidate.preview or (candidate.body_text[:240] if candidate.body_text else candidate.preview)
+            rows.append(
+                {
+                    "email_message_id": str(candidate.message_id),
+                    "email_received_at": candidate.received_at.isoformat() if candidate.received_at is not None else "",
+                    "score": float(ranked.score),
+                    "reason_json": reasons,
+                    "cached_subject": str(candidate.subject or ""),
+                    "cached_sender": str(candidate.sender or ""),
+                    "cached_snippet": str(preview or ""),
+                    "is_unmatched_email_priority": bool(reasons.get("unmatched_email_priority", False)),
+                }
+            )
+        return rows
+
     #R020: Decide whether the previous AI verdict still applies. Returns a cached response dict (the
     #R020: same shape as a fresh evaluation, with `skipped=True`) when all of these hold:
     #R020:   - a prior run exists,
     #R020:   - its status was a real completed evaluation (`_CACHE_HIT_STATUSES`),
     #R020:   - its model_name matches what the current ranker would use,
     #R020:   - its prompt_version matches the current `PROMPT_VERSION`, and
-    #R020:   - its candidate id set is byte-identical (after sorting) to the current search result.
+    #R020:   - its ranked candidate payload hash is byte-identical to the current pre-AI ranking.
     #R020: Returns None to indicate the caller should fall through to the full AI pipeline.
     #R020: force_rematch bypasses the prompt_version (v2/v3) cache so new prompts take effect immediately.
     def _maybe_cached_response(
@@ -314,6 +390,7 @@ class MatchService:
         candidates: list[EmailCandidate],
         planned_model: str,
         current_hash: str,
+        current_message_id_hash: str = "",
         force_rematch: bool = False,
     ) -> dict | None:
         if force_rematch:
@@ -327,9 +404,15 @@ class MatchService:
             return None
         if last_summary["prompt_version"] != PROMPT_VERSION:
             return None
-        cached_hash = self._candidate_set_hash(last_summary["candidate_message_ids"])
-        if cached_hash != current_hash:
-            return None
+        cached_rows = last_summary.get("candidate_cache_rows")
+        if cached_rows is None:
+            cached_hash = self._candidate_message_id_hash(last_summary.get("candidate_message_ids", []))
+            if cached_hash != current_message_id_hash:
+                return None
+        else:
+            cached_hash = self._candidate_set_hash(cached_rows)
+            if cached_hash != current_hash:
+                return None
         active = self._repository.read_active_match_summary(session, transaction_id) or {}
         if active.get("state") == "ai_no_match_found":
             return None
@@ -353,14 +436,39 @@ class MatchService:
             "ai_confidence": active.get("ai_confidence") if active else None,
             "uncertain": None,
             "skipped": True,
-            "skip_reason": "candidate_set_unchanged_for_model_and_prompt",
+            "skip_reason": "candidate_signature_unchanged_for_model_and_prompt",
             "state": active.get("state") if active else None,
         }
 
-    #R020: Deterministic, order-independent fingerprint of the candidate id set. We sort first so a
-    #R020: shuffled order from Mailcart doesn't masquerade as a real change.
+    #R020: Deterministic, order-independent fingerprint of rank/scoring-relevant candidate payload.
     @staticmethod
-    def _candidate_set_hash(message_ids: list[str]) -> str:
+    def _candidate_set_hash(candidate_cache_rows: list[dict]) -> str:
+        digest = hashlib.sha256()
+        normalized_rows = []
+        for row in candidate_cache_rows:
+            normalized_rows.append(
+                {
+                    "email_message_id": str(row.get("email_message_id") or ""),
+                    "email_received_at": str(row.get("email_received_at") or ""),
+                    "score": f"{float(row.get('score') or 0.0):0.8f}",
+                    "reason_json": row.get("reason_json") or {},
+                    "cached_subject": str(row.get("cached_subject") or ""),
+                    "cached_sender": str(row.get("cached_sender") or ""),
+                    "cached_snippet": str(row.get("cached_snippet") or ""),
+                    "is_unmatched_email_priority": bool(row.get("is_unmatched_email_priority")),
+                }
+            )
+        normalized_rows = sorted(
+            normalized_rows,
+            key=lambda row: (row["email_message_id"], row["email_received_at"], row["cached_snippet"]),
+        )
+        for row in normalized_rows:
+            digest.update(json.dumps(row, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8"))
+            digest.update(b"\n")
+        return digest.hexdigest()
+
+    @staticmethod
+    def _candidate_message_id_hash(message_ids: list[str]) -> str:
         digest = hashlib.sha256()
         for message_id in sorted(str(item) for item in message_ids):
             digest.update(message_id.encode("utf-8"))
@@ -604,19 +712,42 @@ class MatchService:
         to_date = (txn_date + timedelta(days=window_days)).date().isoformat()
         return f" from:{from_date} to:{to_date}"
 
+    #R060: Optionally move selected emails into the Mailcart `matchy` folder after successful selection.
+    #R060: This is gated by both write-enabled mode and MATCHY_EMAIL_MOVE_ENABLED.
+    def _maybe_move_selected_messages(self, selected_message_ids: list[str], transaction_id: str, source: str) -> None:
+        settings = getattr(self, "_settings", None)
+        move_enabled = bool(getattr(settings, "write_enabled", True)) and bool(getattr(settings, "email_move_enabled", False))
+        mover = getattr(getattr(self, "_mailcart_client", None), "move_to_matchy", None)
+        if move_enabled and callable(mover):
+            for message_id in dict.fromkeys(str(item) for item in selected_message_ids if str(item)):
+                try:
+                    moved = bool(mover(message_id))
+                    if not moved:
+                        LOGGER.warning(
+                            "mailcart move_to_matchy returned false transaction_id=%s source=%s message_id=%s",
+                            transaction_id, source, message_id,
+                        )
+                except Exception as exc:
+                    LOGGER.warning(
+                        "mailcart move_to_matchy failed transaction_id=%s source=%s message_id=%s error=%s",
+                        transaction_id, source, message_id, exc,
+                    )
+
     def confirm_match(self, transaction_id: str, email_message_id: str, note: str | None = None) -> dict:
         #R045: Human confirm: deactivate prior active match for txn, insert human_confirmed_ai_match state.
         # This prevents the state transition conflict error by properly managing active flags.
         # Unknown transaction/email ids violate the foreign keys; surface that as a domain error
         # (HTTP 404 at the API) instead of leaking a 500 on client-supplied ids.
+        match_id = None
         try:
             with self._repository.session() as session:
                 self._repository.deactivate_active_match(session, transaction_id)
-                self._repository.insert_human_confirmed_match(
+                match_id = self._repository.insert_human_confirmed_match(
                     session, transaction_id, email_message_id, note
                 )
         except IntegrityError as exc:
             raise ValueError(
                 f"Unknown transaction_id or email_message_id for confirmation: {transaction_id}/{email_message_id}"
             ) from exc
-        return {"status": "confirmed", "match_id": None}
+        self._maybe_move_selected_messages([email_message_id], transaction_id=transaction_id, source="human_confirm")
+        return {"status": "confirmed", "match_id": match_id}

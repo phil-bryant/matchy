@@ -2,11 +2,17 @@
 #R005: Python test lane coverage for missing-transaction HTTP mapping.
 #R010: Python test lane coverage for pending-run endpoint delegation.
 #R015: Python test lane coverage for startup CLDR currencies cache refresh.
+#R055: Python test lane coverage for API Bearer-auth protections on mutating endpoints.
 
 from fastapi.testclient import TestClient
+import pytest
 
 import matchy.api as api
 from matchy.api import create_app
+
+
+def _auth_headers(token: str = "test-matchy-api-token") -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
 
 
 def test_api_health_endpoint_returns_status_ok() -> None:
@@ -51,6 +57,7 @@ def test_api_run_endpoint_maps_unknown_transaction_to_http_404() -> None:
         response = TestClient(create_app()).post(
             "/v1/matchy/runs",
             json={"transaction_ids": ["missing"], "trigger_source": "manual"},
+            headers=_auth_headers(),
         )
         assert response.status_code == 404
     finally:
@@ -63,8 +70,61 @@ def test_api_run_endpoint_rejects_empty_transaction_id_with_422() -> None:
     response = TestClient(create_app()).post(
         "/v1/matchy/runs",
         json={"transaction_ids": [""], "trigger_source": "manual"},
+        headers=_auth_headers(),
     )
     assert response.status_code == 422
+
+
+def test_api_run_endpoint_uses_atomic_batch_matcher_when_service_supports_it() -> None:
+    calls = []
+
+    class StubService:
+        def match_transactions_atomic(self, transaction_ids, trigger_source="manual", force_rematch=False):
+            calls.append((transaction_ids, trigger_source, force_rematch))
+            return [{"transaction_id": transaction_id, "run_id": 1} for transaction_id in transaction_ids]
+
+        def match_transaction(self, transaction_id, trigger_source="manual", force_rematch=False):
+            raise AssertionError("run endpoint should use match_transactions_atomic when available")
+
+    old = api.MatchService
+    api.MatchService = lambda settings: StubService()
+    try:
+        response = TestClient(create_app()).post(
+            "/v1/matchy/runs",
+            json={"transaction_ids": ["txn_1", "txn_2"], "trigger_source": "manual", "force_rematch": True},
+            headers=_auth_headers(),
+        )
+        assert response.status_code == 200
+        assert [item["transaction_id"] for item in response.json()["results"]] == ["txn_1", "txn_2"]
+        assert calls == [(["txn_1", "txn_2"], "manual", True)]
+    finally:
+        api.MatchService = old
+
+
+@pytest.mark.parametrize(
+    "path,payload",
+    [
+        ("/v1/matchy/runs", {"transaction_ids": ["txn_1"], "trigger_source": "manual"}),
+        ("/v1/matchy/runs/pending", {"limit": 7, "lookback_days": 3, "trigger_source": "auto"}),
+        ("/v1/matchy/confirm", {"transaction_id": "txn_123", "email_message_id": "eml_456", "note": "ok"}),
+    ],
+)
+def test_api_mutating_endpoints_require_bearer_auth(path: str, payload: dict) -> None:
+    #R055: Mutating endpoints require Authorization: Bearer <token>.
+    #R055-T01: Missing auth header is rejected with HTTP 401.
+    response = TestClient(create_app()).post(path, json=payload)
+    assert response.status_code == 401
+
+
+def test_api_mutating_endpoints_reject_wrong_bearer_token() -> None:
+    #R055: Invalid auth token is rejected even when the header shape is valid.
+    #R055-T02: Wrong bearer token returns HTTP 401.
+    response = TestClient(create_app()).post(
+        "/v1/matchy/runs/pending",
+        json={"limit": 7, "lookback_days": 3, "trigger_source": "auto"},
+        headers=_auth_headers(token="wrong-token"),
+    )
+    assert response.status_code == 401
 
 
 def test_api_pending_run_endpoint_delegates_to_service_batch_matcher() -> None:
@@ -80,6 +140,7 @@ def test_api_pending_run_endpoint_delegates_to_service_batch_matcher() -> None:
         response = TestClient(create_app()).post(
             "/v1/matchy/runs/pending",
             json={"limit": 7, "lookback_days": 3, "trigger_source": "auto"},
+            headers=_auth_headers(),
         )
         body = response.json()
         assert response.status_code == 200
@@ -106,6 +167,7 @@ def test_api_confirm_endpoint_delegates_to_service_confirm() -> None:
         response = TestClient(create_app()).post(
             "/v1/matchy/confirm",
             json={"transaction_id": "txn_123", "email_message_id": "eml_456", "note": "user note"},
+            headers=_auth_headers(),
         )
         assert response.status_code == 200
         assert calls == [("txn_123", "eml_456", "user note")]
@@ -126,6 +188,7 @@ def test_api_confirm_endpoint_maps_unknown_ids_to_http_404() -> None:
         response = TestClient(create_app()).post(
             "/v1/matchy/confirm",
             json={"transaction_id": "txn_missing", "email_message_id": "eml_missing", "note": "n"},
+            headers=_auth_headers(),
         )
         assert response.status_code == 404
     finally:
@@ -138,5 +201,6 @@ def test_api_confirm_endpoint_rejects_note_with_null_byte() -> None:
     response = TestClient(create_app()).post(
         "/v1/matchy/confirm",
         json={"transaction_id": "txn_123", "email_message_id": "eml_456", "note": "ok\u0000bad"},
+        headers=_auth_headers(),
     )
     assert response.status_code == 422

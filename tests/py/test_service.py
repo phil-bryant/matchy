@@ -53,6 +53,104 @@ def test_service_raises_valueerror_for_unknown_transactions() -> None:
         raise AssertionError("expected ValueError")
 
 
+def test_service_match_transactions_atomic_commits_once_for_successful_batch() -> None:
+    class Repo:
+        class Ctx:
+            def __init__(self, repo):
+                self._repo = repo
+
+            def __enter__(self):
+                return self._repo.session_obj
+
+            def __exit__(self, exc_type, _exc, _tb):
+                if exc_type is None:
+                    self._repo.commits += 1
+                else:
+                    self._repo.rollbacks += 1
+                return False
+
+        def __init__(self):
+            self.session_obj = object()
+            self.commits = 0
+            self.rollbacks = 0
+
+        def session(self):
+            return Repo.Ctx(self)
+
+    repo = Repo()
+    svc = object.__new__(MatchService)
+    svc._repository = repo
+    calls = []
+
+    def fake_match_transaction(transaction_id, trigger_source="manual", force_rematch=False, *, session=None, record_failure=True):
+        calls.append((transaction_id, trigger_source, force_rematch, session, record_failure))
+        return {"transaction_id": transaction_id}
+
+    svc.match_transaction = fake_match_transaction
+
+    rows = svc.match_transactions_atomic(["txn_1", "txn_2"], trigger_source="retry", force_rematch=True)
+
+    assert rows == [{"transaction_id": "txn_1"}, {"transaction_id": "txn_2"}]
+    assert repo.commits == 1
+    assert repo.rollbacks == 0
+    assert calls[0][3] is repo.session_obj
+    assert calls[1][3] is repo.session_obj
+    assert calls[0][4] is False
+    assert calls[1][4] is False
+
+
+def test_service_match_transactions_atomic_rolls_back_batch_on_failure() -> None:
+    class Repo:
+        class Ctx:
+            def __init__(self, repo):
+                self._repo = repo
+
+            def __enter__(self):
+                return self._repo.session_obj
+
+            def __exit__(self, exc_type, _exc, _tb):
+                if exc_type is None:
+                    self._repo.commits += 1
+                else:
+                    self._repo.rollbacks += 1
+                return False
+
+        def __init__(self):
+            self.session_obj = object()
+            self.commits = 0
+            self.rollbacks = 0
+
+        def session(self):
+            return Repo.Ctx(self)
+
+    repo = Repo()
+    svc = object.__new__(MatchService)
+    svc._repository = repo
+    calls = []
+
+    def fake_match_transaction(transaction_id, trigger_source="manual", force_rematch=False, *, session=None, record_failure=True):
+        calls.append((transaction_id, session, record_failure))
+        if transaction_id == "txn_2":
+            raise ValueError("Unknown transaction_id: txn_2")
+        return {"transaction_id": transaction_id}
+
+    svc.match_transaction = fake_match_transaction
+
+    try:
+        svc.match_transactions_atomic(["txn_1", "txn_2"])
+    except ValueError as exc:
+        assert "txn_2" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+    assert repo.commits == 0
+    assert repo.rollbacks == 1
+    assert calls[0][1] is repo.session_obj
+    assert calls[1][1] is repo.session_obj
+    assert calls[0][2] is False
+    assert calls[1][2] is False
+
+
 def test_service_query_builders_emit_scoped_tokens_with_date_bounds() -> None:
     #R005: Query helpers produce deterministic scoped query strings.
     #R005-T01: Python test lane exists for query builder requirement.
@@ -908,9 +1006,101 @@ def test_near_duplicate_max_distance_defaults_off_and_validates() -> None:
     assert service._near_duplicate_max_distance() == 0
 
 
+def test_service_match_transaction_moves_selected_messages_when_email_move_is_enabled() -> None:
+    #R060-T01: Successful AI-selected ids are moved to Mailcart's matchy folder when move flag is enabled.
+    class FakeSession:
+        def execute(self, *a, **_k):
+            class R:
+                def mappings(self):
+                    return self
+                def all(self):
+                    return []
+            return R()
+
+    class FakeRepo:
+        class Ctx:
+            def __init__(self, session):
+                self._session = session
+            def __enter__(self):
+                return self._session
+            def __exit__(self, *exc):
+                return False
+        def __init__(self, txn):
+            self._txn = txn
+            self._session = FakeSession()
+        def session(self):
+            return FakeRepo.Ctx(self._session)
+        def load_transaction(self, _session, _transaction_id):
+            return self._txn
+        def read_last_run_summary(self, _session, _transaction_id):
+            return None
+        def create_run(self, **_kwargs):
+            return 501
+        def update_run_model_name(self, **_kwargs):
+            pass
+        def insert_candidates(self, **_kwargs):
+            pass
+        def persist_ai_result(self, **_kwargs):
+            return ["msg_move"]
+        def mark_run_failed(self, *_args, **_kwargs):
+            pass
+
+    class FakeMailcartClient:
+        def __init__(self):
+            self.moved = []
+        def search_candidates(self, query, limit=75):
+            return [
+                EmailCandidate(
+                    message_id="msg_move",
+                    subject="Receipt",
+                    preview="p",
+                    received_at=datetime(2026, 5, 5, tzinfo=timezone.utc),
+                    sender="x@y",
+                    body_text="body",
+                )
+            ]
+        def get_message(self, _message_id, timeout_seconds=None):
+            return {}
+        def move_to_matchy(self, message_id):
+            self.moved.append(message_id)
+            return True
+
+    class FakeRanker:
+        def planned_model_name(self):
+            return "claude-sonnet-4-5"
+        def select(self, _txn, _ranked):
+            return AiSelection(
+                selected_message_ids=["msg_move"],
+                confidence=0.95,
+                uncertain=False,
+                rationale="ok",
+                backend="anthropic",
+                model_name="claude-sonnet-4-5",
+            )
+
+    txn = TransactionInput("txn_move", "acc", Decimal("11.00"), datetime(2026, 5, 5, tzinfo=timezone.utc), "ACME", "ACME")
+    service = object.__new__(MatchService)
+    service._settings = SimpleNamespace(
+        auto_confirm_threshold=0.9,
+        mailcart_body_enrichment_enabled=False,
+        near_duplicate_max_hamming_distance=0,
+        email_move_enabled=True,
+        write_enabled=True,
+    )
+    service._repository = FakeRepo(txn)
+    service._mailcart_client = FakeMailcartClient()
+    service._ai_ranker = FakeRanker()
+    service._mailcart_failure_cooldown_seconds = 15
+    service._mailcart_unavailable_until_monotonic = 0.0
+    service._cldr_currency_matcher = CldrCurrencyMatcher(frozenset())
+    service.match_transaction("txn_move")
+    assert service._mailcart_client.moved == ["msg_move"]
+
+
 def test_service_confirm_match_delegates_to_repository() -> None:
-    #R045-T01: confirm_match calls deactivate + insert on repository (core behavior preventing state conflicts).
+    #R045-T01: confirm_match deactivates prior active row, inserts human-confirmed row, and returns match_id.
     calls = []
+    moved = []
 
     class FakeRepo:
         class Ctx:
@@ -918,9 +1108,20 @@ def test_service_confirm_match_delegates_to_repository() -> None:
             def __exit__(self, *a): return False
         def session(self): return FakeRepo.Ctx()
         def deactivate_active_match(self, _s, txn): calls.append(("deact", txn))
-        def insert_human_confirmed_match(self, _s, txn, eml, note): calls.append(("insert", txn, eml, note))
+        def insert_human_confirmed_match(self, _s, txn, eml, note):
+            calls.append(("insert", txn, eml, note))
+            return 321
+
+    class FakeMailcartClient:
+        def move_to_matchy(self, message_id):
+            moved.append(message_id)
+            return True
 
     service = object.__new__(MatchService)
     service._repository = FakeRepo()
-    service.confirm_match("t123", "e456", "note")
+    service._mailcart_client = FakeMailcartClient()
+    service._settings = SimpleNamespace(email_move_enabled=True, write_enabled=True)
+    result = service.confirm_match("t123", "e456", "note")
     assert calls == [("deact", "t123"), ("insert", "t123", "e456", "note")]
+    assert moved == ["e456"]
+    assert result == {"status": "confirmed", "match_id": 321}
