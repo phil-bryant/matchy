@@ -38,6 +38,6 @@ src() {
 
 @test "delegates to mapped runner orchestrator golden" {
   #R015-T01
-  run grep "exec \"\${RUNNER_HOME}/11_run_all_tests_parallel.sh\" \"\$@\"" "$(src)"
+  run grep "exec \"\${RUNNER_HOME}/07_run_all_tests_parallel.sh\" \"\$@\"" "$(src)"
   [ "$status" -eq 0 ]
 }

@@ -20,6 +20,6 @@ Tests:
 - R010-T01: Verify wrapper source exports `RUNBOOK_REPO_ROOT` and sources `matchy.env`.
 
 R015  Statement: Wrapper delegates execution to the mapped runner orchestrator golden.
-Design: Use `exec "${RUNNER_HOME}/11_run_all_tests_parallel.sh" "$@"` so arguments pass through unchanged.
+Design: Use `exec "${RUNNER_HOME}/07_run_all_tests_parallel.sh" "$@"` so arguments pass through unchanged.
 Tests:
-- R015-T01: Verify wrapper source delegates to `11_run_all_tests_parallel.sh` with `"$@"`.
+- R015-T01: Verify wrapper source delegates to `07_run_all_tests_parallel.sh` with `"$@"`.

@@ -11,4 +11,4 @@ export RUNBOOK_REPO_ROOT="$SCRIPT_DIR"
 # shellcheck source=/dev/null
 source "${RUNNER_HOME}/config/runbook/matchy.env"
 #R015: Delegate to the mapped runner golden with argument passthrough.
-exec "${RUNNER_HOME}/11_run_all_tests_parallel.sh" "$@"
+exec "${RUNNER_HOME}/07_run_all_tests_parallel.sh" "$@"
