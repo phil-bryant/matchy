@@ -3,6 +3,7 @@
 #R010: Python test lane coverage for body excerpt extraction.
 #R015: Python test lane coverage for markdown fence parsing.
 #R020: Python test lane coverage for Anthropic 429 retry behavior.
+#R030: Python test lane coverage for untrusted-body delimiter handling.
 
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -157,6 +158,8 @@ def test_ai_ranker_prompt_payload_exposes_body_excerpt_to_the_ai_model() -> None
 
 
 def test_ai_ranker_prompt_payload_redacts_embedded_delimiter_tokens_from_body_excerpt() -> None:
+    #R030: Prompt payload wraps body excerpts as untrusted content and redacts embedded delimiter tokens.
+    #R030-T01: Python test lane exists for untrusted-body delimiter/redaction requirement.
     ranker = AiRanker(Settings(anthropic_api_key="", openai_api_key=""))
     txn = TransactionInput("txn1", "acc", Decimal("35.99"), datetime(2026, 5, 5, tzinfo=timezone.utc), "LYFT", "")
     dangerous = (

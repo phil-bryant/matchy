@@ -55,6 +55,11 @@ def main() -> None:
         mkcert_root_ca = _resolve_mkcert_root_ca()
         if mkcert_root_ca:
             os.environ["MATCHY_MAILCART_CA_BUNDLE"] = mkcert_root_ca
+    configured_api_auth = os.environ.get("MATCHY_API_AUTH_TOKEN", "").strip()
+    if not configured_api_auth:
+        fallback_api_auth = _resolve(["TELLER_CLASSIFIER_WRITE_TOKEN", "DAST_WRITE_TOKEN"], "")
+        if fallback_api_auth:
+            os.environ["MATCHY_API_AUTH_TOKEN"] = fallback_api_auth
     from matchy.api import create_app
     uvicorn.run(create_app(), host=host, port=port, ssl_certfile=cert, ssl_keyfile=key, log_level="warning")
 

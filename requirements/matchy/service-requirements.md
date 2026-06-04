@@ -72,6 +72,11 @@ Tests:
 - R055-T03: Identical bodies collapse to the first representative, distinct content survives, and disabled/trivial input is unchanged (`tests/py/test_service.py`).
 - R055-T04: The distance resolver defaults to disabled, honors positive values, and rejects invalid input (`tests/py/test_service.py`).
 
+R060  Statement: Optionally move AI-selected emails into Mailcart's `matchy` folder after successful selection.
+Design: After a successful run and persisted AI selection, `match_transaction` invokes `_maybe_move_selected_messages`, which calls `MailcartClient.move_to_matchy(message_id)` only when `MATCHY_WRITE_ENABLED=true` and `MATCHY_EMAIL_MOVE_ENABLED=true`. Move failures are logged and do not fail the run.
+Tests:
+- R060-T01: Verify successful AI-selected ids are moved when email-move mode is enabled.
+
 ## Changelog
 
 - 2026-05-18: Added service requirements coverage for missing transaction and query construction behavior.
@@ -83,3 +88,4 @@ Tests:
 - 2026-05-29: Added R040 scoped search tiering with early-stop and deterministic de-duplication.
 - 2026-05-29: Added R045 human confirm endpoint so UI Confirm button can persist human selection without state transition conflicts.
 - 2026-06-01: Added R050 CLDR currency-token candidate filtering before ranking and AI selection.
+- 2026-06-04: Added R060 optional post-selection Mailcart move behavior gated by write+move flags.

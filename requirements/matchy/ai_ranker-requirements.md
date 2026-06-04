@@ -25,6 +25,11 @@ Design: `_select_with_anthropic` retries up to three times when Anthropic raises
 Tests:
 - R020-T01: Stub the Anthropic client to raise `RateLimitError` then return a valid payload and verify `_select_with_anthropic` returns the parsed selection after shrinking the body excerpt.
 
+R030  Statement: Delimit body excerpts as untrusted payload to reduce prompt-injection risk from email-body instructions.
+Design: `_delimit_untrusted_body_excerpt` wraps every candidate body excerpt between fixed boundary tokens (`[[BEGIN_UNTRUSTED_EMAIL_BODY]]` / `[[END_UNTRUSTED_EMAIL_BODY]]`) and redacts any embedded copies of those boundary tokens from source content before wrapping.
+Tests:
+- R030-T01: Build a prompt payload from a candidate body containing embedded delimiter tokens and verify boundary tokens are redacted in-content while the wrapped excerpt still uses the canonical outer delimiters.
+
 R015  Statement: Tolerate models that wrap JSON output in markdown fences or pad it with prose.
 Design: `_parse_ai_payload` strips a single leading/trailing ```` ``` ```` fence (with or without a `json` language hint) via `_strip_markdown_fences`, then if `json.loads` still fails, attempts to extract the first balanced `{...}` object via `_extract_first_json_object` (which respects string literals and backslash escapes). Only when both attempts fail does the parser fall back to the default empty-selection AiSelection.
 Tests:
@@ -37,3 +42,4 @@ Tests:
 - 2026-05-19: Added R010 body-excerpt extraction so the AI prompt sees email content (not just bodyPreview) to disambiguate same-day same-merchant candidates.
 - 2026-05-19: Added R015 fence-tolerant + object-extraction JSON parsing so Claude responses wrapped in ```` ``` ```` fences (the observed default behavior) are no longer silently dropped.
 - 2026-05-19: Added R020 retry-with-shrink so Anthropic 429s during a matchy batch no longer abort the batch and instead shrink the prompt for that transaction before re-trying.
+- 2026-06-04: Added R030 untrusted-body delimiter handling so prompt payloads isolate email-body content and redact embedded delimiter tokens.
