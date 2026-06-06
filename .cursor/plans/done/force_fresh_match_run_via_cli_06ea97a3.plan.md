@@ -4,13 +4,13 @@ overview: Provide a --force flag on the existing driver (Option 1) and optionall
 todos:
   - id: option-1-driver-flag
     content: "Add optional force: bool = False to MatchRunRequest and PendingMatchRunRequest in matchy/api.py; thread through MatchService.match_transaction and match_pending_transactions; short-circuit cache in _maybe_cached_response when force=True. Extend 09_run_matchy_driver.py with --force arg and include it in the pending-run payload. Usage: ./09_run_matchy_driver.py --once --force"
-    status: pending
+    status: completed
   - id: option-2-standalone-command
     content: Create a new 10_force_match.py entrypoint (modeled on 08/09) that accepts one or more --transaction-id values, always sends force=true to POST /v1/matchy/runs, and prints results. Minimal argparse surface for targeted re-evaluation.
-    status: pending
+    status: completed
   - id: docs-and-tests
     content: Update the two request models and service signatures; add minimal traceability comments. No new unit tests required beyond the existing stub style unless the user requests full coverage.
-    status: pending
+    status: completed
 isProject: false
 ---
 
