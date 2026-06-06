@@ -2,6 +2,20 @@
 
 Matchy starts from Teller transactions and finds candidate Outlook emails, then stores AI-assisted match decisions in Teller DB.
 
+## Pre-release CI/CD Policy
+
+CI is **implemented but intentionally disabled for automatic runs** until the `v1.0` customer release. A GitHub
+Actions workflow exists at `.github/workflows/ci.yml`, but it is **manual-dispatch-only**
+(`on: workflow_dispatch`) — it does **not** trigger on `push`, `pull_request`, or `schedule`. Pre-release, the
+enforcement mechanism is the local numbered test lanes (`tests/tNN_*.sh` + `./04_run_all_tests_parallel.sh`),
+not GitHub-hosted CI: this is a solo project and red X's on every push are noise rather than signal. matchy is
+pure-Python FastAPI, so the workflow runs a high-coverage Linux-portable subset (code quality `t00` + Python
+unit `t06` + requirements traceability `t04`, delegating to the shared `runner` goldens); the AV (`t01`),
+dependency-freshness (`t02`), SAST (`t03`), shell/Bats (`t05`), mutation (`t07`), fuzz (`t08`), DAST (`t09`),
+and FileVault (`t10`) lanes stay local. It is kept correct and manually runnable so it can be wired to
+`push`/`pull_request` as the project approaches `v1.0`. This matches the workspace-wide policy in
+[`teller`'s README](../teller/README.md#pre-release-cicd-policy).
+
 ## Run
 
 1. Install dependencies:
