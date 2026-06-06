@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
-# Thin runbook pointer: sets RUNBOOK_REPO_ROOT + matchy profile, execs the runner golden.
-#R001: Enable secure umask and strict shell mode before delegation.
-umask 007
-set -euo pipefail
-#R005: Resolve script and runner locations from the wrapper path.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RUNNER_HOME="$(cd "${SCRIPT_DIR}/../runner" && pwd)"
-#R010: Export repo root context and load matchy runbook profile.
-export RUNBOOK_REPO_ROOT="$SCRIPT_DIR"
+# Thin pointer: selects the matchy runbook profile and delegates to the runner golden via the shared shim.
+#R001: Secure umask and strict shell mode are centralized in pointer_shim.sh.
+#R005: RUNNER_HOME and RUNBOOK_REPO_ROOT resolution are centralized in pointer_shim.sh.
+#R010: Pointer selects its runbook profile; the shim sources the matching runner/config/runbook profile and exports RUNBOOK_REPO_ROOT.
+RUNBOOK_PROFILE="matchy"
 # shellcheck source=/dev/null
-source "${RUNNER_HOME}/config/runbook/matchy.env"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../runner/src/scripts" && pwd -P)/pointer_shim.sh"
 #R015: Delegate to the mapped runner golden with argument passthrough.
-exec "${RUNNER_HOME}/07_run_all_tests_parallel.sh" "$@"
+delegate_golden "07_run_all_tests_parallel.sh" "$@"

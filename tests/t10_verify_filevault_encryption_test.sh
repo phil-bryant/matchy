@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
-# Thin test pointer: sets RUNBOOK_REPO_ROOT + matchy profile, execs the runner test golden.
-umask 007
-set -euo pipefail
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RUNNER_HOME="$(cd "${SCRIPT_DIR}/../../runner" && pwd)"
-RUNBOOK_REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-export RUNBOOK_REPO_ROOT
+# Thin pointer: selects the matchy runbook profile and delegates to the runner golden via the shared shim.
+RUNBOOK_PROFILE="matchy"
 # shellcheck source=/dev/null
-source "${RUNNER_HOME}/config/runbook/matchy.env"
-exec "${RUNNER_HOME}/tests/t10_verify_filevault_encryption_test.sh" "$@"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../runner/src/scripts" && pwd -P)/pointer_shim.sh"
+delegate_golden "tests/t10_verify_filevault_encryption_test.sh" "$@"
