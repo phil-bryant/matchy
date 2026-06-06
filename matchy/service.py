@@ -1,72 +1,31 @@
 from __future__ import annotations
 
-from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from contextlib import nullcontext
-from datetime import timedelta
-import hashlib
-import json
 import logging
 import os
-import re
-from time import monotonic, perf_counter
-import requests
+from time import perf_counter
+
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from .ai_ranker import AiRanker, PROMPT_VERSION
+from .caching import CachingMixin
 from .cldr_cache import CldrCurrenciesCache
+from .email_move import EmailMoveMixin
+from .enrichment import EnrichmentMixin
 from .mailcart_client import MailcartClient
-from .models import EmailCandidate
+from .near_duplicate import NearDuplicateMixin
 from .repository import MatchRepository
+from .runtime_profile import _runtime_profile_log
 from .scoring import rank_candidates
-from . import scoring_core
+from .search import SearchMixin
 from .settings import Settings
 
 LOGGER = logging.getLogger(__name__)
 
 
-#R055: 64-bit SimHash fingerprint over a candidate's long tokens. Each token votes per bit via a
-#R055: keyed BLAKE2b digest; the sign of the per-bit vote sum sets the fingerprint bit, so
-#R055: near-identical texts produce fingerprints a small Hamming distance apart.
-def _simhash64(text: str) -> int:
-    weights = [0] * 64
-    for token in scoring_core.relevance_tokens(text):
-        token_hash = int.from_bytes(hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest(), "big")
-        for bit_index in range(64):
-            if (token_hash >> bit_index) & 1:
-                weights[bit_index] += 1
-            else:
-                weights[bit_index] -= 1
-    fingerprint = 0
-    for bit_index in range(64):
-        if weights[bit_index] > 0:
-            fingerprint |= 1 << bit_index
-    return fingerprint
-
-
-#R055: Hamming distance between two 64-bit fingerprints (count of differing bits).
-def _hamming_distance(left: int, right: int) -> int:
-    distance = bin(left ^ right).count("1")
-    return distance
-
-#R020: Statuses that represent a completed AI evaluation; only these are cache-eligible. `failed`
-#R020: runs are NOT in this set so transient errors (Mailcart down, Anthropic 404, etc.) self-heal
-#R020: on the next loop instead of being permanently cached as no-ops.
-_CACHE_HIT_STATUSES = frozenset({"succeeded", "needs_review", "no_candidates"})
-
-
-def _runtime_profile_enabled() -> bool:
-    enabled = os.environ.get("MATCHY_RUNTIME_PROFILE", "false").strip().lower() == "true"
-    return enabled
-
-
-def _runtime_profile_log(phase: str, details: str = "") -> None:
-    if _runtime_profile_enabled():
-        suffix = f" | {details}" if details else ""
-        print(f"[matchy-runtime] {phase}{suffix}", flush=True)
-
-
-class MatchService:
+class MatchService(SearchMixin, EnrichmentMixin, NearDuplicateMixin, CachingMixin, EmailMoveMixin):
     def __init__(self, settings: Settings):
         self._settings = settings
         self._repository = MatchRepository(settings)
@@ -82,10 +41,8 @@ class MatchService:
         self._mailcart_unavailable_until_monotonic = 0.0
 
     #R001: Raise a ValueError when a requested transaction cannot be loaded.
-    #R020: Run the Mailcart search up-front and skip the AI call when nothing meaningful has changed
-    #R020: since the previous run (same rank-relevant candidate payload under the same model + prompt).
-    #R020: keeps the matchy auto-driver's per-loop cost bounded to a single Mailcart search per
-    #R020: transaction instead of also paying for per-candidate body fetches and a Claude/GPT call.
+    # Orchestration: search up-front, enrich/filter/collapse candidates, consult the Postgres-backed
+    # AI-skip cache (R020, see caching.py), then run the AI pipeline and persist results.
     def match_transaction(
         self,
         transaction_id: str,
@@ -105,7 +62,7 @@ class MatchService:
         candidates = self._search_candidates(txn, transaction_id)
         candidates = self._enrich_candidate_bodies(candidates, transaction_id=transaction_id)
         candidates = self._filter_currency_candidates(candidates)
-        #R055: Collapse near-duplicate receipts after enrichment so similarity is judged on full bodies.
+        # Collapse near-duplicate receipts after enrichment so similarity is judged on full bodies (R055).
         candidates = self._collapse_near_duplicates(candidates, self._near_duplicate_max_distance())
         planned_model = self._ai_ranker.planned_model_name()
         with _session_scope() as active_session:
@@ -197,141 +154,6 @@ class MatchService:
                 )
         return rows
 
-    #R020: Execute the scoped retrieval fallback chain (terms+date → terms-only → broad-term → empty)
-    #R020: without yet creating a match_run row. Query-tier requests intentionally use scoped
-    #R020: Mailcart syntax (`subject:`/`body:` plus optional `from:`/`to:` date bounds) and union
-    #R020: results across terms to improve recall while preserving deterministic ordering.
-    def _search_candidates(self, txn, transaction_id: str) -> list[EmailCandidate]:
-        if self._mailcart_in_cooldown(transaction_id=transaction_id):
-            return []
-        terms = self._extract_search_terms(txn.description, txn.counterparty_name)
-        #R040: Each mailcart search is a ~15-20s full-mailbox Graph scan, and the driver already runs
-        #R040: several transactions in parallel, so we must keep per-transaction load to ~one scan.
-        #R040: Issue queries one at a time and stop at the first that returns anything (early-stop):
-        #R040: body matching leads because the merchant name reliably appears in receipt/confirmation
-        #R040: bodies, so the most distinctive term's body query usually catches the right email on the
-        #R040: first request. Subject, a window-free retry, and the historical recency fallback only run
-        #R040: when earlier queries come back empty. We deliberately do NOT fan out concurrently —
-        #R040: parallel scans saturate the single mailcart instance and push every request past its
-        #R040: timeout.
-        query_plan = (
-            self._build_scoped_queries(terms, txn.date, fields=("body",), include_date_window=True)
-            + self._build_scoped_queries(terms, txn.date, fields=("subject",), include_date_window=True)
-            + self._build_scoped_queries(terms, txn.date, fields=("body",), include_date_window=False)
-            + [""]
-        )
-        for query in query_plan:
-            rows = self._search_mailcart(query=query, transaction_id=transaction_id, limit=75)
-            candidates = self._dedupe_candidates(rows, limit=75)
-            if candidates:
-                return candidates
-            if self._mailcart_in_cooldown(transaction_id=transaction_id):
-                return []
-        return []
-
-    #R055: Resolve the near-duplicate Hamming-distance threshold. Defaults to 0 (collapsing disabled) so
-    #R055: behavior is opt-in; a positive `near_duplicate_max_hamming_distance` setting enables collapsing.
-    def _near_duplicate_max_distance(self) -> int:
-        raw = getattr(self._settings, "near_duplicate_max_hamming_distance", 0)
-        distance = 0
-        try:
-            parsed = int(raw)
-            if parsed > 0:
-                distance = parsed
-        except (TypeError, ValueError):
-            distance = 0
-        return distance
-
-    #R055: Collapse near-duplicate candidates (forwarded/marketing variants of the same receipt) using
-    #R055: SimHash fingerprints under a Hamming-distance threshold, keeping the first representative of
-    #R055: each cluster. Contentless candidates (zero fingerprint) are never collapsed since they carry
-    #R055: no similarity signal. A non-positive threshold is a no-op.
-    @staticmethod
-    def _collapse_near_duplicates(candidates: list[EmailCandidate], max_distance: int) -> list[EmailCandidate]:
-        if max_distance <= 0 or len(candidates) <= 1:
-            collapsed = list(candidates)
-        else:
-            collapsed = []
-            fingerprints: list[int] = []
-            for candidate in candidates:
-                fingerprint = _simhash64(f"{candidate.subject} {candidate.preview} {candidate.body_text}")
-                is_duplicate = False
-                if fingerprint != 0:
-                    for kept_fingerprint in fingerprints:
-                        if _hamming_distance(fingerprint, kept_fingerprint) <= max_distance:
-                            is_duplicate = True
-                if not is_duplicate:
-                    collapsed.append(candidate)
-                    if fingerprint != 0:
-                        fingerprints.append(fingerprint)
-        return collapsed
-
-    #R040: De-duplicate a single search result by message_id while preserving order and dropping rows
-    #R040: without an id, capped at `limit`.
-    @staticmethod
-    def _dedupe_candidates(rows: list[EmailCandidate], limit: int) -> list[EmailCandidate]:
-        deduped: dict[str, EmailCandidate] = {}
-        for candidate in rows:
-            message_id = str(candidate.message_id)
-            if not message_id or message_id in deduped:
-                continue
-            deduped[message_id] = candidate
-            if len(deduped) >= limit:
-                break
-        return list(deduped.values())
-
-    #R040: A slow search (Timeout) means Mailcart is up but busy, not down: skip just that query and
-    #R040: let the caller fall through to the next tier / the recency fallback. Only connection-level
-    #R040: failures and 5xx responses arm the shared cooldown. Client errors (4xx) are real bugs and
-    #R040: propagate so they are not silently masked.
-    def _search_mailcart(self, query: str, transaction_id: str, limit: int) -> list[EmailCandidate]:
-        try:
-            return self._mailcart_client.search_candidates(query=query, limit=limit)
-        except requests.exceptions.Timeout as exc:
-            LOGGER.warning("mailcart search timed out query=%r transaction_id=%s error=%s", query, transaction_id, exc)
-            return []
-        except Exception as exc:
-            LOGGER.warning("mailcart search failed query=%r transaction_id=%s error=%s", query, transaction_id, exc)
-            if self._is_transient_mailcart_error(exc):
-                self._mark_mailcart_temporarily_unavailable(transaction_id=transaction_id)
-                return []
-            raise
-
-    def _mailcart_in_cooldown(self, transaction_id: str) -> bool:
-        now = monotonic()
-        unavailable_until = float(getattr(self, "_mailcart_unavailable_until_monotonic", 0.0) or 0.0)
-        if now < unavailable_until:
-            remaining_seconds = unavailable_until - now
-            _runtime_profile_log(
-                "mailcart-search-skipped-cooldown",
-                f"transaction_id={transaction_id} remaining_seconds={remaining_seconds:0.1f}",
-            )
-            return True
-        return False
-
-    def _is_transient_mailcart_error(self, exc: Exception) -> bool:
-        if isinstance(exc, requests.exceptions.ConnectionError):
-            return True
-        if isinstance(exc, requests.exceptions.HTTPError):
-            response = getattr(exc, "response", None)
-            status_code = int(getattr(response, "status_code", 0) or 0)
-            return status_code >= 500
-        if isinstance(exc, requests.exceptions.RequestException):
-            response = getattr(exc, "response", None)
-            status_code = int(getattr(response, "status_code", 0) or 0)
-            return status_code >= 500
-        return False
-
-    def _mark_mailcart_temporarily_unavailable(self, transaction_id: str) -> None:
-        cooldown_seconds = int(getattr(self, "_mailcart_failure_cooldown_seconds", 15) or 15)
-        if cooldown_seconds > 0:
-            next_available = monotonic() + cooldown_seconds
-            self._mailcart_unavailable_until_monotonic = next_available
-            _runtime_profile_log(
-                "mailcart-search-cooldown-started",
-                f"transaction_id={transaction_id} cooldown_seconds={cooldown_seconds}",
-            )
-
     def _active_ids_for_other_transactions(self, session, transaction_id: str) -> set[str]:
         repository_reader = getattr(self._repository, "list_active_email_ids_for_other_transactions", None)
         if callable(repository_reader):
@@ -353,127 +175,6 @@ class MatchService:
                 {"transaction_id": transaction_id},
             ).mappings().all()
         )
-
-    def _ranked_candidate_cache_rows(self, ranked_candidates) -> list[dict]:
-        rows: list[dict] = []
-        for ranked in ranked_candidates:
-            candidate = ranked.candidate
-            reasons = ranked.reasons or {}
-            preview = candidate.preview or (candidate.body_text[:240] if candidate.body_text else candidate.preview)
-            rows.append(
-                {
-                    "email_message_id": str(candidate.message_id),
-                    "email_received_at": candidate.received_at.isoformat() if candidate.received_at is not None else "",
-                    "score": float(ranked.score),
-                    "reason_json": reasons,
-                    "cached_subject": str(candidate.subject or ""),
-                    "cached_sender": str(candidate.sender or ""),
-                    "cached_snippet": str(preview or ""),
-                    "is_unmatched_email_priority": bool(reasons.get("unmatched_email_priority", False)),
-                }
-            )
-        return rows
-
-    #R020: Decide whether the previous AI verdict still applies. Returns a cached response dict (the
-    #R020: same shape as a fresh evaluation, with `skipped=True`) when all of these hold:
-    #R020:   - a prior run exists,
-    #R020:   - its status was a real completed evaluation (`_CACHE_HIT_STATUSES`),
-    #R020:   - its model_name matches what the current ranker would use,
-    #R020:   - its prompt_version matches the current `PROMPT_VERSION`, and
-    #R020:   - its ranked candidate payload hash is byte-identical to the current pre-AI ranking.
-    #R020: Returns None to indicate the caller should fall through to the full AI pipeline.
-    #R020: force_rematch bypasses the prompt_version (v2/v3) cache so new prompts take effect immediately.
-    def _maybe_cached_response(
-        self,
-        session,
-        transaction_id: str,
-        candidates: list[EmailCandidate],
-        planned_model: str,
-        current_hash: str,
-        current_message_id_hash: str = "",
-        force_rematch: bool = False,
-    ) -> dict | None:
-        if force_rematch:
-            return None
-        last_summary = self._repository.read_last_run_summary(session, transaction_id)
-        if last_summary is None:
-            return None
-        if last_summary["status"] not in _CACHE_HIT_STATUSES:
-            return None
-        if last_summary["model_name"] != planned_model:
-            return None
-        if last_summary["prompt_version"] != PROMPT_VERSION:
-            return None
-        cached_rows = last_summary.get("candidate_cache_rows")
-        if cached_rows is None:
-            cached_hash = self._candidate_message_id_hash(last_summary.get("candidate_message_ids", []))
-            if cached_hash != current_message_id_hash:
-                return None
-        else:
-            cached_hash = self._candidate_set_hash(cached_rows)
-            if cached_hash != current_hash:
-                return None
-        active = self._repository.read_active_match_summary(session, transaction_id) or {}
-        if active.get("state") == "ai_no_match_found":
-            return None
-        selected_ids: list[str] = []
-        active_email_id = active.get("email_message_id")
-        if active_email_id and active.get("state") != "ai_no_match_found":
-            selected_ids = [str(active_email_id)]
-        LOGGER.info(
-            "matchy cache hit transaction_id=%s last_run_id=%s candidates=%d model=%s prompt=%s",
-            transaction_id,
-            last_summary["match_run_id"],
-            len(candidates),
-            planned_model,
-            PROMPT_VERSION,
-        )
-        return {
-            "transaction_id": transaction_id,
-            "run_id": last_summary["match_run_id"],
-            "selected_message_ids": selected_ids,
-            "candidate_count": len(candidates),
-            "ai_confidence": active.get("ai_confidence") if active else None,
-            "uncertain": None,
-            "skipped": True,
-            "skip_reason": "candidate_signature_unchanged_for_model_and_prompt",
-            "state": active.get("state") if active else None,
-        }
-
-    #R020: Deterministic, order-independent fingerprint of rank/scoring-relevant candidate payload.
-    @staticmethod
-    def _candidate_set_hash(candidate_cache_rows: list[dict]) -> str:
-        digest = hashlib.sha256()
-        normalized_rows = []
-        for row in candidate_cache_rows:
-            normalized_rows.append(
-                {
-                    "email_message_id": str(row.get("email_message_id") or ""),
-                    "email_received_at": str(row.get("email_received_at") or ""),
-                    "score": f"{float(row.get('score') or 0.0):0.8f}",
-                    "reason_json": row.get("reason_json") or {},
-                    "cached_subject": str(row.get("cached_subject") or ""),
-                    "cached_sender": str(row.get("cached_sender") or ""),
-                    "cached_snippet": str(row.get("cached_snippet") or ""),
-                    "is_unmatched_email_priority": bool(row.get("is_unmatched_email_priority")),
-                }
-            )
-        normalized_rows = sorted(
-            normalized_rows,
-            key=lambda row: (row["email_message_id"], row["email_received_at"], row["cached_snippet"]),
-        )
-        for row in normalized_rows:
-            digest.update(json.dumps(row, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8"))
-            digest.update(b"\n")
-        return digest.hexdigest()
-
-    @staticmethod
-    def _candidate_message_id_hash(message_ids: list[str]) -> str:
-        digest = hashlib.sha256()
-        for message_id in sorted(str(item) for item in message_ids):
-            digest.update(message_id.encode("utf-8"))
-            digest.update(b"\n")
-        return digest.hexdigest()
 
     #R010: Discover pending transactions and run each through match_transaction with the caller-specified
     #R010: trigger source.
@@ -554,184 +255,6 @@ class MatchService:
             f"count={len(transaction_ids)} elapsed={perf_counter() - batch_started_at:0.3f}s",
         )
         return results
-
-    #R015: Replace each candidate's body_text with the full email body fetched from Mailcart so that
-    #R015: amount/keyword/compact-merchant hints can score against the real message body. Returns the
-    #R015: original candidates unchanged when the feature flag is off or when the client is missing
-    #R015: get_message (older Mailcart deployments). Per-candidate failures fall through to the
-    #R015: original candidate so a flaky message id does not poison the whole run.
-    def _enrich_candidate_bodies(self, candidates: list[EmailCandidate], transaction_id: str) -> list[EmailCandidate]:
-        result = candidates
-        config = self._body_enrichment_config(candidates)
-        if config is not None:
-            get_message, enrich_count, timeout_seconds, max_workers, per_message_timeout = config
-            message_ids = self._unique_message_ids(candidates, enrich_count)
-            payload_by_id = self._fetch_message_payloads(
-                get_message, message_ids, transaction_id, max_workers, timeout_seconds, per_message_timeout,
-            )
-            result = self._apply_body_enrichment(candidates, enrich_count, payload_by_id)
-        return result
-
-    def _body_enrichment_config(self, candidates: list[EmailCandidate]):
-        config = None
-        enabled = bool(getattr(self._settings, "mailcart_body_enrichment_enabled", False))
-        get_message = getattr(self._mailcart_client, "get_message", None)
-        if candidates and enabled and callable(get_message):
-            limit = int(getattr(self._settings, "mailcart_body_enrichment_limit", 75) or 75)
-            timeout_seconds = max(1, int(getattr(self._settings, "mailcart_body_enrichment_timeout_seconds", 25) or 25))
-            max_workers = max(1, int(getattr(self._settings, "mailcart_body_enrichment_max_workers", 8) or 8))
-            per_message_timeout = max(1, int(getattr(self._settings, "mailcart_get_message_timeout_seconds", 6) or 6))
-            enrich_count = min(len(candidates), limit)
-            if enrich_count >= 1:
-                config = (get_message, enrich_count, timeout_seconds, max_workers, per_message_timeout)
-        return config
-
-    def _unique_message_ids(self, candidates: list[EmailCandidate], enrich_count: int) -> list[str]:
-        message_ids: list[str] = []
-        for index in range(enrich_count):
-            message_id = str(candidates[index].message_id)
-            if message_id not in message_ids:
-                message_ids.append(message_id)
-        return message_ids
-
-    def _fetch_message_payloads(self, get_message, message_ids, transaction_id,
-                                max_workers, timeout_seconds, per_message_timeout) -> dict[str, dict]:
-        payload_by_id: dict[str, dict] = {}
-        future_to_message_id: dict[Future, str] = {}
-        with ThreadPoolExecutor(max_workers=min(max_workers, len(message_ids))) as executor:
-            for message_id in message_ids:
-                future_to_message_id[executor.submit(get_message, message_id, per_message_timeout)] = message_id
-            try:
-                for future in as_completed(future_to_message_id, timeout=timeout_seconds):
-                    message_id = future_to_message_id[future]
-                    try:
-                        payload_by_id[message_id] = future.result() or {}
-                    except Exception as exc:
-                        LOGGER.warning(
-                            "mailcart get_message failed message_id=%s transaction_id=%s error=%s",
-                            message_id, transaction_id, exc,
-                        )
-            except TimeoutError:
-                unresolved_count = len([future for future in future_to_message_id if not future.done()])
-                LOGGER.warning(
-                    "mailcart body enrichment timed out transaction_id=%s unresolved_candidates=%s timeout_seconds=%s",
-                    transaction_id, unresolved_count, timeout_seconds,
-                )
-        return payload_by_id
-
-    def _enrichment_body_text(self, payload) -> str:
-        body_text = ""
-        if payload:
-            body_text = (
-                str(payload.get("text_body") or "").strip()
-                or str(payload.get("html_body") or "").strip()
-                or str(payload.get("body_text") or "").strip()
-            )
-        return body_text
-
-    def _apply_body_enrichment(self, candidates, enrich_count, payload_by_id) -> list[EmailCandidate]:
-        enriched: list[EmailCandidate] = []
-        for index in range(enrich_count):
-            candidate = candidates[index]
-            payload = payload_by_id.get(str(candidate.message_id))
-            body_text = self._enrichment_body_text(payload)
-            if body_text:
-                enriched.append(EmailCandidate(
-                    message_id=candidate.message_id,
-                    subject=candidate.subject or str(payload.get("subject") or ""),
-                    preview=candidate.preview or str(payload.get("preview") or ""),
-                    received_at=candidate.received_at,
-                    sender=candidate.sender or str(payload.get("sender") or ""),
-                    body_text=body_text,
-                ))
-            else:
-                enriched.append(candidate)
-        if len(candidates) > enrich_count:
-            enriched.extend(candidates[enrich_count:])
-        return enriched
-
-    #R050: Scope matchable candidates to messages containing a standalone CLDR currency code or symbol.
-    def _filter_currency_candidates(self, candidates: list[EmailCandidate]) -> list[EmailCandidate]:
-        filtered = candidates
-        matcher = getattr(self, "_cldr_currency_matcher", None)
-        if candidates and matcher is not None and getattr(matcher, "tokens", frozenset()):
-            filtered = []
-            for candidate in candidates:
-                text_blob = f"{candidate.subject} {candidate.preview} {candidate.body_text}"
-                if matcher.contains_standalone_currency(text_blob):
-                    filtered.append(candidate)
-        return filtered
-
-    #R005: Build deterministic scoped search terms from merchant + transaction text. Capped at two
-    #R005: terms because each emitted query is a slow full-mailbox scan; the two most distinctive
-    #R005: merchant tokens (counterparty first, then description) carry almost all of the signal.
-    _MAX_SEARCH_TERMS = 2
-
-    def _extract_search_terms(self, description: str, counterparty_name: str) -> list[str]:
-        ordered_tokens: list[str] = []
-        seen: set[str] = set()
-        sources = [counterparty_name or "", description or ""]
-        for source in sources:
-            normalized = re.sub(r"[^a-z0-9\s]", " ", source.lower())
-            for token in normalized.split():
-                if len(token) < 4:
-                    continue
-                if token.isdigit():
-                    continue
-                if re.search(r"[a-z]", token) is None:
-                    continue
-                if token in seen:
-                    continue
-                seen.add(token)
-                ordered_tokens.append(token)
-                if len(ordered_tokens) >= self._MAX_SEARCH_TERMS:
-                    return ordered_tokens
-        return ordered_tokens
-
-    def _build_scoped_queries(
-        self,
-        terms: list[str],
-        txn_date,
-        fields: tuple[str, ...] = ("body",),
-        include_date_window: bool = True,
-    ) -> list[str]:
-        if not terms:
-            return []
-        date_window = self._date_window_suffix(txn_date) if include_date_window else ""
-        scoped_queries: list[str] = []
-        for term in terms:
-            for field in fields:
-                scoped_queries.append(f"{field}:{term}{date_window}")
-        return scoped_queries
-
-    def _date_window_suffix(self, txn_date) -> str:
-        window_days = int(getattr(self._settings, "mailcart_search_date_window_days", 45) or 45)
-        if window_days <= 0:
-            return ""
-        from_date = (txn_date - timedelta(days=window_days)).date().isoformat()
-        to_date = (txn_date + timedelta(days=window_days)).date().isoformat()
-        return f" from:{from_date} to:{to_date}"
-
-    #R060: Optionally move selected emails into the Mailcart `matchy` folder after successful selection.
-    #R060: This is gated by both write-enabled mode and MATCHY_EMAIL_MOVE_ENABLED.
-    def _maybe_move_selected_messages(self, selected_message_ids: list[str], transaction_id: str, source: str) -> None:
-        settings = getattr(self, "_settings", None)
-        move_enabled = bool(getattr(settings, "write_enabled", True)) and bool(getattr(settings, "email_move_enabled", False))
-        mover = getattr(getattr(self, "_mailcart_client", None), "move_to_matchy", None)
-        if move_enabled and callable(mover):
-            for message_id in dict.fromkeys(str(item) for item in selected_message_ids if str(item)):
-                try:
-                    moved = bool(mover(message_id))
-                    if not moved:
-                        LOGGER.warning(
-                            "mailcart move_to_matchy returned false transaction_id=%s source=%s message_id=%s",
-                            transaction_id, source, message_id,
-                        )
-                except Exception as exc:
-                    LOGGER.warning(
-                        "mailcart move_to_matchy failed transaction_id=%s source=%s message_id=%s error=%s",
-                        transaction_id, source, message_id, exc,
-                    )
 
     def confirm_match(self, transaction_id: str, email_message_id: str, note: str | None = None) -> dict:
         #R045: Human confirm: deactivate prior active match for txn, insert human_confirmed_ai_match state.

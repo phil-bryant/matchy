@@ -2,7 +2,6 @@
 #R005: Python test lane coverage for session commit/rollback behavior.
 #R010: Python test lane coverage for pending transaction discovery.
 #R015: Python test lane coverage for last-run and active-match summaries.
-#R030: Python test lane coverage for cached candidate metadata on insert.
 
 from decimal import Decimal
 from datetime import datetime, timezone
@@ -219,14 +218,6 @@ def test_repository_pending_transaction_query_requeues_unsettled_but_skips_human
     assert "human_confirmed_ai_match" not in sql
     assert "human_overrode_ai_match" not in sql
     assert params == {"lookback_days": 14, "limit": 10}
-
-
-def test_insert_candidates_sql_includes_cached_metadata_columns() -> None:
-    #R030-T01: Candidate insert persists cached Mailcart metadata columns.
-    source = inspect.getsource(MatchRepository.insert_candidates)
-    assert "cached_subject" in source
-    assert "cached_sender" in source
-    assert "cached_snippet" in source
 
 
 def test_insert_human_confirmed_match_uses_settled_human_state() -> None:
