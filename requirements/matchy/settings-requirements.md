@@ -4,61 +4,56 @@
 
 Applies to `matchy/settings.py`.
 
-R001  Statement: Resolve full Teller DB connection config from 1psa by default.
-Design: `Settings` resolves `username`, `password`, `host`, `port`, and `database` from the default 1psa item `localhost_postgres_teller` (or item override), using item fields instead of hardcoded DB defaults.
+R880  Statement: Resolve complete Teller DB configuration from 1psa during startup initialization.
+Design: `__post_init__` invokes `_resolve_teller_db_config`, which prefers 1psa-backed values and populates host/user/password/port/database on the frozen settings object for runtime use.
 Tests:
-- R001-T01: Run with no Teller DB env vars and verify `Settings()` resolves host/user/password/port/database from the default 1psa item fields.
+- R880-T01: Run with no Teller DB env vars and verify `Settings()` resolves DB fields from the default 1psa item.
 
-R005  Statement: Resolve Teller DB config from configurable 1psa references.
-Design: Resolve with `1psa`: for item refs, read `item/username`, `item/db_auth`, `item/host`, `item/port`, and `item/database`; for `op://...` references, switch to `1psa read` against the same field names on the referenced item.
+R885  Statement: Support configurable 1psa item and `op://` references for DB resolution.
+Design: `_resolve_db_config_from_1psa` plus `_build_1psa_db_field_refs`/`_parse_1psa_multi_output`/`_validate_1psa_secret_ref` resolve DB fields from item-name or `op://` references and parse supported 1psa response formats.
 Tests:
-- R005-T01: Stub `1psa -p` to return all DB fields for an item-name override and verify `Settings()` uses that complete config.
-- R005-T02: Stub `1psa read` to return all DB fields for an `op://...` override and verify `Settings()` uses that complete config.
+- R885-T01: Stub item-name lookup and verify complete DB resolution through custom item reference.
+- R885-T02: Stub `op://` lookup and verify complete DB resolution through `1psa read`.
 
-R010  Statement: Use a single fallback (`~/.env`) and fail clearly when Teller DB config remains unresolved.
-Design: If 1psa cannot produce a complete DB config, `Settings` loads `~/.env` as the only fallback source for `username`, `password`, `host`, `port`, and `database` (or mapped `TELLER_DB_*` keys); if both sources fail or produce invalid/incomplete config, raise a clear runtime error.
+R890  Statement: Use `~/.env` as the only DB fallback and fail clearly on invalid/incomplete config.
+Design: If 1psa does not return complete DB fields, `_resolve_db_config_from_home_env` parses `~/.env`; `_coerce_db_config` enforces integer ports and required field presence, raising explicit runtime errors when unresolved.
 Tests:
-- R010-T01: Stub 1psa DB lookups to fail and verify `Settings()` resolves DB config from `~/.env`.
-- R010-T02: Stub 1psa DB lookups to fail and provide incomplete `~/.env`; verify `Settings()` raises a clear resolution failure error.
-- R010-T03: Stub DB fields with a non-integer `port`; verify `Settings()` rejects the config with an explicit validation error.
+- R890-T01: Force 1psa DB lookup failure and verify fallback resolves from `~/.env`.
+- R890-T02: Force both 1psa and `~/.env` failure and verify clear runtime error is raised.
+- R890-T03: Provide non-integer port and verify validation failure is raised.
 
-R015  Statement: Resolve AI API keys from 1psa with Anthropic primary and OpenAI fallback.
-Design: `Settings` resolves `anthropic_api_key` from 1psa item `anthropic_api_key` (override `MATCHY_ANTHROPIC_API_KEY_1PSA_ITEM`) and `openai_api_key` from 1psa item `openai_api_key` (override `MATCHY_OPENAI_API_KEY_1PSA_ITEM`); env vars `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` take precedence; missing 1psa items or `1psa` failures resolve to empty strings so the deterministic fallback can run.
-Rationale: Matchy prefers Claude for transaction↔email matching but must keep running when either key is absent so the API stays usable in offline/local contexts.
+R895  Statement: Resolve optional Anthropic/OpenAI API keys with env precedence and tolerant 1psa fallback.
+Design: `_resolve_optional_api_key` prefers env vars, then optional 1psa lookups (`_load_optional_secret_from_1psa`/`_build_1psa_command`) and keeps settings constructible when AI secrets are absent.
 Tests:
-- R015-T01: Stub `1psa -p anthropic_api_key` to return a secret and verify `Settings().anthropic_api_key` resolves from 1psa when env var is unset.
-- R015-T02: Stub `1psa -p openai_api_key` to return a secret and verify `Settings().openai_api_key` resolves from 1psa when env var is unset.
-- R015-T03: Set `ANTHROPIC_API_KEY` env var and verify it overrides any 1psa value for the anthropic key.
-- R015-T04: Stub `1psa` to fail for AI items and verify `Settings()` still constructs with empty AI keys.
+- R895-T01: Stub Anthropic key lookup and verify value resolves from 1psa when env var is unset.
+- R895-T02: Stub OpenAI key lookup and verify value resolves from 1psa when env var is unset.
+- R895-T03: Set `ANTHROPIC_API_KEY` and verify env value overrides 1psa.
+- R895-T04: Make AI-key 1psa lookups fail and verify settings still construct with empty keys.
 
-R035  Statement: Default the Anthropic model to a stable dated id (not the deprecated `-latest` aliases).
-Design: `Settings.anthropic_model` reads `MATCHY_ANTHROPIC_MODEL` and falls back to `claude-sonnet-4-5`. Anthropic deprecated and now 404s requests against the `-latest` aliases (e.g., `claude-3-5-sonnet-latest`), so the default must be a dated/stable model id. Callers retain the env override for upgrades and rollbacks.
+R905  Statement: Expose Mailcart body enrichment feature flags with defaults and env overrides.
+Design: `mailcart_body_enrichment_enabled` defaults to `true` and `mailcart_body_enrichment_limit` defaults to `75`, both overridable via `MATCHY_MAILCART_BODY_ENRICHMENT*` env vars.
 Tests:
-- R035-T01: Construct `Settings` with no env override and verify `anthropic_model == "claude-sonnet-4-5"`.
-- R035-T02: Set `MATCHY_ANTHROPIC_MODEL=claude-opus-x` and verify `Settings().anthropic_model == "claude-opus-x"`.
+- R905-T01: Construct with no overrides and verify enabled flag + default limit.
+- R905-T02: Set override env vars and verify flag/limit values are applied.
 
-R030  Statement: Expose feature flags for Mailcart body enrichment used by the matching service.
-Design: `Settings` reads `MATCHY_MAILCART_BODY_ENRICHMENT` (default `true`) into the boolean `mailcart_body_enrichment_enabled` and `MATCHY_MAILCART_BODY_ENRICHMENT_LIMIT` (default `75`) into the integer `mailcart_body_enrichment_limit`, which control whether and how many candidates `MatchService` enriches with the full email body before scoring.
+R910  Statement: Default Anthropic model to a stable pinned id while preserving env override behavior.
+Design: `anthropic_model` falls back to `claude-sonnet-4-5` and accepts `MATCHY_ANTHROPIC_MODEL` override for controlled upgrades/rollbacks.
 Tests:
-- R030-T01: Construct `Settings` with no env overrides and verify `mailcart_body_enrichment_enabled is True` and `mailcart_body_enrichment_limit == 75`.
-- R030-T02: Set `MATCHY_MAILCART_BODY_ENRICHMENT=false` and `MATCHY_MAILCART_BODY_ENRICHMENT_LIMIT=10`, construct `Settings`, and verify the flag is `False` and the limit is `10`.
+- R910-T01: Construct with no model override and verify stable default model id.
+- R910-T02: Set `MATCHY_ANTHROPIC_MODEL` and verify override is applied.
 
-R040  Statement: Expose a configurable Mailcart search timeout that exceeds observed server latency.
-Design: `Settings` reads `MATCHY_MAILCART_GET_MESSAGE_TIMEOUT_SECONDS` (default 20) to give the search call a generous, configurable timeout well above the observed ~15-20s server latency so scoped searches do not intermittently time out.
+R915  Statement: Expose Mailcart transport timeout and CA bundle settings.
+Design: `mailcart_search_timeout_seconds` provides configurable request timeout defaults and `mailcart_ca_bundle` exposes optional explicit certificate bundle path.
 Tests:
-- R040-T01: Construct `Settings` with no env override and verify `mailcart_get_message_timeout_seconds == 20`.
-- R040-T02: Set `MATCHY_MAILCART_GET_MESSAGE_TIMEOUT_SECONDS=30` and verify the setting is applied.
+- R915-T01: Verify default search timeout value when env var is unset.
+- R915-T02: Verify search timeout env override is applied.
+- R915-T03: Verify default CA bundle is empty.
+- R915-T04: Verify CA bundle env override path is exposed.
 
-R045  Statement: Expose an optional explicit CA bundle path for verifying Mailcart's TLS certificate.
-Design: `Settings` reads `MATCHY_MAILCART_CA_BUNDLE` as an optional override that takes precedence over `REQUESTS_CA_BUNDLE`/`SSL_CERT_FILE` and the auto-detected mkcert root CA. When empty, the client auto-resolves the local mkcert development root CA.
+R919  Statement: Expose CLDR currencies cache startup path/refresh controls.
+Design: `cldr_currencies_cache_path`, `cldr_currencies_refresh_enabled`, and `cldr_currencies_refresh_timeout_seconds` default to local cache conventions and support env overrides.
 Tests:
-- R045-T01: Construct `Settings` with no env override and verify `mailcart_ca_bundle` is empty (auto-resolve path).
-- R045-T02: Set `MATCHY_MAILCART_CA_BUNDLE=/custom/ca.pem` and verify the path is exposed.
-
-R050  Statement: Expose CLDR currencies cache startup settings.
-Design: `Settings` reads `MATCHY_CLDR_CURRENCIES_CACHE_PATH`, `MATCHY_CLDR_CURRENCIES_REFRESH_ENABLED`, and `MATCHY_CLDR_CURRENCIES_REFRESH_TIMEOUT_SECONDS`, defaulting to `~/.cache/matchy/cldr-currencies-en.json`, enabled refresh, and a 5-second timeout.
-Tests:
-- R050-T01: Construct `Settings` with defaults and env overrides and verify the CLDR cache path, refresh flag, and timeout values.
+- R919-T01: Verify CLDR cache settings defaults and env overrides.
 
 ## Changelog
 
@@ -74,3 +69,4 @@ Tests:
 - 2026-05-24: Switched Teller DB resolution to 1psa-first full field config with `~/.env` fallback and explicit hard failure on unresolved config.
 - 2026-05-29: Added R040 Mailcart search timeout and R045 explicit CA bundle settings.
 - 2026-06-01: Added R050 CLDR currencies cache startup settings.
+- 2026-06-06: Rebased settings traceability onto shard-1 ID band R880-R919 with anchored tests.

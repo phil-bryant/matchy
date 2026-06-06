@@ -53,6 +53,7 @@ class MatchService(SearchMixin, EnrichmentMixin, NearDuplicateMixin, CachingMixi
         session=None,
         record_failure: bool = True,
     ) -> dict:
+        #R001: Use caller-provided session when present, otherwise open repository-managed session scope.
         def _session_scope():
             return nullcontext(session) if session is not None else self._repository.session()
 
@@ -157,6 +158,7 @@ class MatchService(SearchMixin, EnrichmentMixin, NearDuplicateMixin, CachingMixi
                 )
         return rows
 
+    #R001: Exclude emails already active on other transactions from candidate ranking.
     def _active_ids_for_other_transactions(self, session, transaction_id: str) -> set[str]:
         repository_reader = getattr(self._repository, "list_active_email_ids_for_other_transactions", None)
         if callable(repository_reader):

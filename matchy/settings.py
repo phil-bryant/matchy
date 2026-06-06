@@ -13,6 +13,7 @@ _ONEPSA_ITEM_FIELD_REF_PATTERN = re.compile(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
 _ONEPSA_OP_REF_PATTERN = re.compile(r"^op://[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 
 
+#R880: Emit optional startup phase timing logs when MATCHY_STARTUP_LOG is enabled.
 def _startup_log(start_time_seconds: float, phase: str, details: str = "") -> None:
     enabled = os.environ.get("MATCHY_STARTUP_LOG", "false").strip().lower() == "true"
     if enabled:
@@ -32,10 +33,8 @@ class Settings:
     mailcart_service_base_url: str = os.environ.get("MAILCART_SERVICE_BASE_URL", "https://127.0.0.1:8788")
     mailcart_service_token: str = os.environ.get("MAILCART_SERVICE_TOKEN", "")
     matchy_api_auth_token: str = os.environ.get("MATCHY_API_AUTH_TOKEN", "").strip()
-    #R030: Enrich search candidates with the full Mailcart message body before scoring so amount/keyword
-    #R030: hints can match against the email body (not just bodyPreview). Disable when callers want the
-    #R030: legacy preview-only behavior for performance or determinism reasons. Empty env var values
-    #R030: collapse to the default so `MATCHY_MAILCART_BODY_ENRICHMENT=""` behaves the same as unset.
+    #R905: Enrich search candidates with the full Mailcart message body before scoring so amount/keyword
+    #R905: hints can match against body content, with env-controlled defaults and overrides.
     mailcart_body_enrichment_enabled: bool = (
         (os.environ.get("MATCHY_MAILCART_BODY_ENRICHMENT") or "true").strip().lower() == "true"
     )
@@ -57,22 +56,13 @@ class Settings:
     mailcart_search_date_window_days: int = int(
         (os.environ.get("MATCHY_MAILCART_SEARCH_DATE_WINDOW_DAYS") or "45").strip() or "45"
     )
-    #R040: Mailcart's /v1/messages/search performs a full recent-mailbox Graph scan that routinely
-    #R040: takes ~15-20s per request. The historical hardcoded 20s client timeout sat right on that
-    #R040: boundary, so scoped searches intermittently timed out and were misread as outages. Give the
-    #R040: search call a generous, configurable timeout well above the observed server latency.
+    #R915: Expose configurable Mailcart search timeout defaults to reduce false timeout failures.
     mailcart_search_timeout_seconds: int = int(
         (os.environ.get("MATCHY_MAILCART_SEARCH_TIMEOUT_SECONDS") or "45").strip() or "45"
     )
-    #R045: Optional explicit CA bundle for verifying Mailcart's TLS certificate. Takes precedence over
-    #R045: REQUESTS_CA_BUNDLE/SSL_CERT_FILE and the auto-detected mkcert root CA. Leave empty to let the
-    #R045: client auto-resolve the local mkcert development root CA used for the localhost endpoint.
-    #R045: Optional explicit CA bundle for verifying Mailcart's TLS certificate. Takes precedence over
-    #R045: REQUESTS_CA_BUNDLE/SSL_CERT_FILE and the auto-detected mkcert root CA. Leave empty to let the
-    #R045: client auto-resolve the local mkcert development root CA used for the localhost endpoint.
+    #R915: Expose optional explicit CA bundle path for Mailcart TLS verification.
     mailcart_ca_bundle: str = os.environ.get("MATCHY_MAILCART_CA_BUNDLE", "")
-    #R050: Optionally run a single Mailcart /health probe when MatchService initializes so worker-triggered
-    #R050: runs fail fast on TLS/base-url misconfiguration instead of spamming per-query transport errors.
+    #R915: Optionally run a single Mailcart /health probe at startup to fail fast on transport misconfiguration.
     mailcart_startup_healthcheck_enabled: bool = (
         (os.environ.get("MATCHY_MAILCART_STARTUP_HEALTHCHECK") or "true").strip().lower() == "true"
     )
@@ -83,10 +73,7 @@ class Settings:
     openai_api_key_item: str = os.environ.get("MATCHY_OPENAI_API_KEY_1PSA_ITEM", "openai_api_key")
     anthropic_api_key: str = os.environ.get("ANTHROPIC_API_KEY", "")
     openai_api_key: str = os.environ.get("OPENAI_API_KEY", "")
-    #R035: Default Anthropic model. The `-latest` aliases (e.g., `claude-3-5-sonnet-latest`) were
-    #R035: deprecated by Anthropic and now return 404 when called. Pin a dated/stable model id so the
-    #R035: AI ranker keeps working out of the box; callers can override via `MATCHY_ANTHROPIC_MODEL`.
-    #R035: Empty env values collapse to the default so `MATCHY_ANTHROPIC_MODEL=""` behaves like unset.
+    #R910: Default Anthropic model is pinned to a stable id and remains env-overridable.
     anthropic_model: str = (os.environ.get("MATCHY_ANTHROPIC_MODEL") or "claude-sonnet-4-5").strip() or "claude-sonnet-4-5"
     openai_model: str = os.environ.get("MATCHY_OPENAI_MODEL", "gpt-4.1-mini")
     auto_confirm_threshold: float = float(os.environ.get("MATCHY_AUTO_CONFIRM_THRESHOLD", "0.90"))
@@ -95,7 +82,7 @@ class Settings:
     near_duplicate_max_hamming_distance: int = int(
         (os.environ.get("MATCHY_NEAR_DUPLICATE_MAX_HAMMING_DISTANCE") or "0").strip() or "0"
     )
-    #R050: CLDR currencies cache settings control startup refresh, local storage, and HTTP timeout.
+    #R919: Expose CLDR currencies cache path/refresh controls with env overrides.
     cldr_currencies_cache_path: str = os.environ.get(
         "MATCHY_CLDR_CURRENCIES_CACHE_PATH",
         str(Path.home() / ".cache" / "matchy" / "cldr-currencies-en.json"),
@@ -105,6 +92,7 @@ class Settings:
     )
     cldr_currencies_refresh_timeout_seconds: int = int(os.environ.get("MATCHY_CLDR_CURRENCIES_REFRESH_TIMEOUT_SECONDS", "5"))
 
+    #R880: Initialize runtime settings, then resolve DB and API secrets before service startup.
     def __post_init__(self) -> None:
         startup_started_at = perf_counter()
         _startup_log(startup_started_at, "settings-init-enter")
@@ -151,7 +139,7 @@ class Settings:
         _startup_log(startup_started_at, "settings-init-complete")
 
     def _resolve_teller_db_config(self) -> dict[str, str | int]:
-        #R001: Resolve all Teller DB fields from 1psa first, then ~/.env as a single fallback.
+        #R880: Resolve all Teller DB fields from 1psa first, then ~/.env as a single fallback.
         source_details = ""
         resolved = self._resolve_db_config_from_1psa()
         if not resolved:
@@ -167,13 +155,14 @@ class Settings:
                 raise RuntimeError(message)
         return resolved
 
+    #R880: Preserve backward-compatible password helper behavior for existing call sites.
     def _resolve_teller_db_password(self) -> str:
         # Backward-compatible helper retained for tests and call sites that patch this method.
         resolved = self._resolve_teller_db_config()
         return str(resolved["password"])
 
     def _resolve_db_config_from_1psa(self) -> dict[str, str | int]:
-        #R005: Support configurable 1psa item-name and op:// references for DB field resolution.
+        #R885: Support configurable 1psa item-name and op:// references for DB field resolution.
         resolved: dict[str, str | int] = {}
         raw_values: dict[str, str] = {}
         secret_ref = os.environ.get("TELLER_DB_PASSWORD_1PSA_REF", "").strip()
@@ -186,6 +175,7 @@ class Settings:
                 resolved = self._coerce_db_config(raw_values)
         return resolved
 
+    #R890: Fall back to ~/.env for DB settings only when 1psa cannot produce a complete config.
     def _resolve_db_config_from_home_env(self) -> dict[str, str | int]:
         resolved: dict[str, str | int] = {}
         env_values = self._read_home_env_file()
@@ -199,6 +189,7 @@ class Settings:
             resolved = self._coerce_db_config(raw_values)
         return resolved
 
+    #R885: Resolve DB credential fields from a 1psa item or op:// reference.
     def _load_db_item_values_from_1psa(self, secret_ref: str) -> dict[str, str]:
         started_at = perf_counter()
         values: dict[str, str] = {}
@@ -226,6 +217,7 @@ class Settings:
         _startup_log(started_at, "settings-1psa-db-fields-loaded", f"source={secret_ref}")
         return values
 
+    #R885: Attempt multi-field 1psa fetch for DB credentials and parse supported output formats.
     def _load_multiple_fields_from_1psa_item(self, item_ref: str) -> dict[str, str]:
         started_at = perf_counter()
         values: dict[str, str] = {}
@@ -249,6 +241,7 @@ class Settings:
             _startup_log(started_at, "settings-1psa-multi-lookup-complete", f"item={item_ref} error={type(exc).__name__}")
         return values
 
+    #R885: Parse 1psa multi-field output in positional or key-value formats.
     def _parse_1psa_multi_output(self, output: str, fields: list[str]) -> dict[str, str]:
         values: dict[str, str] = {}
         lines = [line.strip() for line in output.splitlines() if line.strip()]
@@ -275,6 +268,7 @@ class Settings:
             values = {}
         return values
 
+    #R885: Build 1psa field references for item-name and op:// secret references.
     def _build_1psa_db_field_refs(self, secret_ref: str) -> dict[str, str]:
         refs: dict[str, str] = {}
         if secret_ref.startswith("op://"):
@@ -295,6 +289,7 @@ class Settings:
             refs["database"] = f"{validated_item}/database"
         return refs
 
+    #R890: Validate and coerce resolved DB settings, rejecting non-integer ports or missing fields.
     def _coerce_db_config(self, raw_values: Mapping[str, str]) -> dict[str, str | int]:
         port_raw = raw_values.get("port", "").strip()
         if not port_raw.isdigit():
@@ -309,6 +304,7 @@ class Settings:
             raise RuntimeError("Resolved Teller DB config is missing one or more required fields.")
         return resolved
 
+    #R890: Parse ~/.env key-value lines (including export syntax) for DB fallback fields.
     def _read_home_env_file(self) -> dict[str, str]:
         values: dict[str, str] = {}
         env_path = Path.home() / ".env"
@@ -332,12 +328,13 @@ class Settings:
         return values
 
     def _resolve_optional_api_key(self, env_value: str, item_name: str) -> str:
-        #R015: Resolve Anthropic (primary) and OpenAI (fallback) AI keys from 1psa with env-var overrides, tolerating absent items.
+        #R895: Resolve Anthropic/OpenAI API keys with env-var precedence and tolerant 1psa fallback.
         resolved = env_value.strip()
         if not resolved and item_name.strip():
             resolved = self._load_optional_secret_from_1psa(item_name.strip())
         return resolved
 
+    #R885: Validate supported 1psa secret reference formats before invoking 1psa commands.
     def _validate_1psa_secret_ref(self, secret_ref: str) -> str:
         candidate = secret_ref.strip()
         if not candidate:
@@ -355,7 +352,7 @@ class Settings:
         return candidate
 
     def _load_secret_from_1psa(self, secret_ref: str) -> str:
-        #R010: Raise clear runtime failures when 1psa cannot return a usable secret.
+        #R895: Raise explicit runtime failures when required 1psa secrets cannot be resolved.
         output = ""
         validated_ref = self._validate_1psa_secret_ref(secret_ref)
         command = ["1psa", "-p", validated_ref]
@@ -383,7 +380,7 @@ class Settings:
         return output
 
     def _load_optional_secret_from_1psa(self, secret_ref: str) -> str:
-        #R015: Optional 1psa secrets resolve to empty string when 1psa is missing, errors, or returns nothing.
+        #R895: Optional 1psa secrets resolve to empty string when 1psa is missing or returns errors.
         started_at = perf_counter()
         output = ""
         validated_ref = ""
@@ -409,6 +406,7 @@ class Settings:
             _startup_log(started_at, "settings-1psa-lookup-skipped", f"ref={secret_ref}")
         return output
 
+    #R895: Select the correct 1psa invocation style for item refs, op:// refs, and item/field refs.
     def _build_1psa_command(self, validated_ref: str) -> list[str]:
         command = ["1psa", "-p", validated_ref]
         if validated_ref.startswith("op://"):

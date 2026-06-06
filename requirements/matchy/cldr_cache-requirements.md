@@ -4,28 +4,34 @@
 
 Applies to `matchy/cldr_cache.py`.
 
-R001  Statement: Cache the CLDR English currencies JSON file locally and refresh by GitHub file freshness.
-Design: `CldrCurrenciesCache.refresh()` checks GitHub's commits API for the newest commit touching `cldr-json/cldr-numbers-full/main/en/currencies.json`, compares that SHA with local metadata, and downloads the raw JSON file only when the SHA differs or the cache file is missing.
+R560  Statement: Refresh local CLDR cache only when upstream file freshness changes.
+Design: `refresh()` reads cached SHA metadata, fetches latest commit SHA for the CLDR currencies file, and downloads/writes raw JSON + SHA metadata only when SHA differs or cache file is missing.
 Tests:
-- R001-T01: Stub the GitHub commits and raw URLs, run refresh with no local cache, and verify the JSON file and SHA metadata are written.
-- R001-T02: Stub the commits URL with the cached SHA, run refresh, and verify the raw URL is not fetched.
+- R560-T01: Stub commits/raw URLs with no local cache and verify cache body and SHA metadata are written.
+- R560-T02: Seed current cached SHA and verify refresh skips the raw download.
 
-R005  Statement: Preserve startup usability when CLDR refresh fails.
-Design: Refresh catches filesystem, invalid-payload, and `requests` failures, logs a warning, and leaves any existing cache content and metadata untouched.
+R565  Statement: Keep startup usable when CLDR refresh metadata reads or network calls fail.
+Design: `refresh()` and `_read_text()` tolerate read/network/parse failures by logging warnings and returning status that preserves existing cache files/versions.
 Tests:
-- R005-T01: Seed a local cache, make the freshness check raise a `requests` error, and verify cached content and SHA metadata remain unchanged.
+- R565-T01: Seed cache files, force refresh network failure, and verify cached body/version remain unchanged.
 
-R010  Statement: Parse cached CLDR currencies into standalone-matchable tokens.
-Design: `CldrCurrenciesCache.currency_tokens()` reads the cached CLDR `main.en.numbers.currencies`
-payload, extracts currency codes plus `symbol` and `symbol-alt-*` values, drops empty/placeholder
-symbols, and exposes a `CldrCurrencyMatcher` that matches only standalone codes/symbols in candidate
-text. Missing or malformed cache files produce an empty token set so matching remains usable offline.
+R570  Statement: Parse CLDR payloads into normalized currency code/symbol token sets.
+Design: `parse_currency_tokens()` extracts codes and symbol variants from `main.en.numbers.currencies`, normalizes case/whitespace, and drops placeholder symbols via `_clean_symbol`/`_is_placeholder_symbol`.
 Tests:
-- R010-T01: Parse sample CLDR payload and verify codes/symbols dedupe while placeholders are ignored.
-- R010-T02: Verify standalone matching accepts currency tokens and rejects substring forms.
-- R010-T03: Verify a missing or malformed cache returns an empty token set instead of raising.
+- R570-T01: Parse sample CLDR payload and verify normalized code/symbol tokens are deduplicated while placeholders are excluded.
+
+R575  Statement: Match currency codes/symbols only as standalone tokens.
+Design: `CldrCurrencyMatcher` boundary checks reject alphanumeric substring matches for both 3-letter codes and symbol tokens while still matching real standalone occurrences.
+Tests:
+- R575-T01: Verify matcher accepts standalone code/symbol occurrences and rejects embedded substring forms.
+
+R580  Statement: Expose resilient currency token/matcher loading from local cache files.
+Design: `currency_tokens()` and `currency_matcher()` parse cached CLDR data and return empty token sets when cache files are missing or malformed so downstream matching remains operational.
+Tests:
+- R580-T01: Verify missing or malformed cache files return empty token sets instead of raising.
 
 ## Changelog
 
 - 2026-06-01: Added CLDR currencies cache freshness and failure-tolerance requirements.
 - 2026-06-01: Added cached CLDR currency-token parsing and standalone matching requirements.
+- 2026-06-06: Rebased CLDR cache traceability onto shard-1 ID band R560-R580 with anchored tests.

@@ -15,6 +15,7 @@ _OUTPUT_JSON_NOTE = (
 
 
 class AiRanker:
+    #R440: Initialize Anthropic/OpenAI clients from settings so selection can use AI when keys are present.
     def __init__(self, settings: Settings):
         self._settings = settings
         self._anthropic_client = self._build_anthropic_client(settings)
@@ -22,6 +23,7 @@ class AiRanker:
         if self._anthropic_client is None:
             self._openai_client = self._build_openai_client(settings)
 
+    #R440: Construct an Anthropic client only when the key is configured and the SDK is installed.
     def _build_anthropic_client(self, settings: Settings):
         client = None
         if settings.anthropic_api_key:
@@ -32,6 +34,7 @@ class AiRanker:
                 client = None
         return client
 
+    #R440: Construct an OpenAI client as fallback when Anthropic is unavailable and OpenAI is configured.
     def _build_openai_client(self, settings: Settings):
         client = None
         if settings.openai_api_key:
@@ -42,6 +45,7 @@ class AiRanker:
                 client = None
         return client
 
+    #R440: Select no-candidate, Anthropic, OpenAI, or deterministic behavior in that priority order.
     def select(self, transaction: TransactionInput, ranked_candidates: list[RankedCandidate]) -> AiSelection:
         selection: AiSelection
         if not ranked_candidates:
@@ -61,6 +65,7 @@ class AiRanker:
             selection = self._select_deterministic(ranked_candidates)
         return selection
 
+    #R445: Report the model name the ranker plans to use so cache validity can be evaluated pre-run.
     def planned_model_name(self) -> str:
         model_name = "deterministic"
         if self._anthropic_client is not None:
@@ -69,7 +74,7 @@ class AiRanker:
             model_name = self._settings.openai_model
         return model_name
 
-    #R001: Fallback to deterministic top-candidate selection when no AI client is available.
+    #R450: Fallback to deterministic top-candidate selection when no AI client is available.
     def _select_deterministic(self, ranked_candidates: list[RankedCandidate]) -> AiSelection:
         top = ranked_candidates[:2]
         return AiSelection(
@@ -81,14 +86,13 @@ class AiRanker:
             model_name="deterministic",
         )
 
-    #R010: Include a truncated body excerpt in the AI prompt so the model can disambiguate same-day
-    #R010: same-merchant emails by their actual content (e.g., the fare amount embedded in HTML body,
-    #R010: which is not visible in Graph's bodyPreview). Body text is bounded per candidate to keep the
-    #R010: total prompt manageable across the top-10 ranked candidates.
+    #R455: Include a bounded body excerpt in the AI prompt payload so candidate disambiguation uses
+    #R455: receipt content rather than only bodyPreview.
     _BODY_TEXT_PROMPT_MAX = 2000
     _UNTRUSTED_BODY_START = "[[BEGIN_UNTRUSTED_EMAIL_BODY]]"
     _UNTRUSTED_BODY_END = "[[END_UNTRUSTED_EMAIL_BODY]]"
 
+    #R455: Build the AI prompt payload from transaction context plus top ranked candidate evidence.
     def _build_prompt_payload(
         self,
         transaction: TransactionInput,
@@ -137,10 +141,7 @@ class AiRanker:
         }
         return payload
 
-    #R010: Reduce body text to a compact, mostly-text excerpt. Strips obvious HTML markup so the AI
-    #R010: model receives readable content rather than CSS/img tags, then truncates to the configured
-    #R010: per-candidate cap (or an override when the AI ranker is shrinking the prompt on a rate-limit
-    #R010: retry). Falls back to the empty string when body_text is missing.
+    #R460: Normalize body text to readable plain text and truncate to a configured cap.
     def _extract_body_excerpt(self, body_text: str, max_chars: int | None = None) -> str:
         if not body_text:
             return ""
@@ -151,8 +152,7 @@ class AiRanker:
         limit = max_chars if max_chars is not None else self._BODY_TEXT_PROMPT_MAX
         return collapsed[: max(0, int(limit))]
 
-    #R030: Delimit body excerpts as untrusted content to reduce prompt-injection risk from embedded
-    #R030: instructions in raw email bodies.
+    #R465: Delimit untrusted body excerpts and redact embedded delimiter tokens from source content.
     def _delimit_untrusted_body_excerpt(self, excerpt: str) -> str:
         body_text = excerpt
         if self._UNTRUSTED_BODY_START in body_text:
@@ -161,11 +161,7 @@ class AiRanker:
             body_text = body_text.replace(self._UNTRUSTED_BODY_END, "[END_UNTRUSTED_EMAIL_BODY_REDACTED]")
         return f"{self._UNTRUSTED_BODY_START}\n{body_text}\n{self._UNTRUSTED_BODY_END}"
 
-    #R020: Anthropic enforces an input-tokens-per-minute organization rate limit. When the prompt
-    #R020: exceeds that limit we either need to back off (retry-after the Retry-After header) or
-    #R020: shrink the prompt for that retry. We retry up to three times with progressively shorter
-    #R020: body excerpts (full → 1000 → 500 chars) so a single noisy transaction does not abort the
-    #R020: driver's batch loop and so the next loop sees fewer pending rows on the next minute.
+    #R470: Retry Anthropic rate-limit/context-length failures with progressively smaller body excerpts.
     def _select_with_anthropic(self, transaction: TransactionInput, ranked_candidates: list[RankedCandidate]) -> AiSelection:
         import time
         from anthropic import APIStatusError, RateLimitError
@@ -200,6 +196,7 @@ class AiRanker:
                 raise
 
     @staticmethod
+    #R470: Parse Retry-After headers when present so retries honor server-provided backoff.
     def _retry_after_seconds(exc) -> float | None:
         response = getattr(exc, "response", None)
         if response is None:
@@ -215,6 +212,7 @@ class AiRanker:
                 return None
         return None
 
+    #R475: Execute the OpenAI selection path and parse the response with shared defensive JSON handling.
     def _select_with_openai(self, transaction: TransactionInput, ranked_candidates: list[RankedCandidate]) -> AiSelection:
         prompt = self._build_prompt_payload(transaction, ranked_candidates)
         response = self._openai_client.responses.create(
@@ -224,10 +222,7 @@ class AiRanker:
         text_payload = response.output_text.strip() or "{}"
         return self._parse_ai_payload(text_payload, "openai")
 
-    #R005: Parse AI JSON defensively and return safe defaults when payloads are malformed or incomplete.
-    #R015: Tolerate models (e.g., Claude) that wrap JSON in ``` markdown fences or pad it with prose
-    #R015: even when the prompt says "JSON only" — strip a single leading/trailing fence block, then
-    #R015: fall back to extracting the first balanced {...} object before declaring the payload bad.
+    #R475: Parse AI JSON defensively, tolerating fenced/prose payloads and clamping invalid confidence.
     def _parse_ai_payload(self, text_payload: str, backend: str) -> AiSelection:
         parsed: dict = {}
         candidate = self._strip_markdown_fences(text_payload)
@@ -257,8 +252,7 @@ class AiRanker:
             model_name=self._settings.anthropic_model if backend == "anthropic" else self._settings.openai_model,
         )
 
-    #R015: Strip a single leading/trailing markdown code fence (```json ... ``` or ``` ... ```) so
-    #R015: model outputs that wrap JSON in fences (Claude is a frequent offender) still parse.
+    #R475: Strip a single leading/trailing markdown code fence before JSON decoding.
     @staticmethod
     def _strip_markdown_fences(text: str) -> str:
         stripped = text.strip()
@@ -275,8 +269,7 @@ class AiRanker:
             stripped = stripped[:closing]
         return stripped.strip()
 
-    #R015: Find the first balanced JSON object in `text` so trailing prose or extra prefixes do not
-    #R015: defeat parsing. Tracks brace depth and respects string literals + backslash escapes.
+    #R475: Extract the first balanced JSON object from prose-padded model output.
     @staticmethod
     def _extract_first_json_object(text: str) -> str | None:
         start = text.find("{")

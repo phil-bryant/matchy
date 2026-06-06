@@ -1,10 +1,11 @@
-#R001: Python test lane coverage for default 1psa teller DB config resolution.
-#R005: Python test lane coverage for 1psa reference overrides.
-#R010: Python test lane coverage for 1psa and ~/.env fallback failure handling.
-#R015: Python test lane coverage for AI key resolution.
-#R030: Python test lane coverage for mailcart body enrichment defaults.
-#R035: Python test lane coverage for anthropic model defaults.
-#R050: Python test lane coverage for CLDR currencies cache startup settings.
+#R880: Python test lane coverage for default 1psa teller DB config resolution.
+#R885: Python test lane coverage for 1psa reference overrides.
+#R890: Python test lane coverage for 1psa and ~/.env fallback failure handling.
+#R895: Python test lane coverage for AI key resolution.
+#R905: Python test lane coverage for mailcart body enrichment defaults.
+#R910: Python test lane coverage for anthropic model defaults.
+#R915: Python test lane coverage for Mailcart timeout and CA bundle settings.
+#R919: Python test lane coverage for CLDR currencies cache startup settings.
 
 from __future__ import annotations
 
@@ -20,23 +21,23 @@ from matchy.settings import Settings
 
 
 class CompletedProcess:
-    #R001: Test helper supports this requirement-focused scenario.
+    #R880: Reuse-tagged test helper supports this settings initialization scenario.
     def __init__(self, returncode: int, stdout: str = "", stderr: str = ""):
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = stderr
 
 
-#R001: Test helper supports this requirement-focused scenario.
+#R880: Reuse-tagged test helper supports this settings initialization scenario.
 def _install_run_stub(monkeypatch: pytest.MonkeyPatch, handler) -> None:
-    #R001: Test helper supports this requirement-focused scenario.
+    #R880: Reuse-tagged test helper supports this settings initialization scenario.
     def fake_run(command, **kwargs: Any):
         return handler(command, **kwargs)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
 
-#R001: Test helper supports this requirement-focused scenario.
+#R880: Reuse-tagged test helper supports this settings initialization scenario.
 def _clear_secret_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("TELLER_DB_PASSWORD", raising=False)
     monkeypatch.delenv("TELLER_DB_HOST", raising=False)
@@ -48,7 +49,7 @@ def _clear_secret_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
 
-#R001: Test helper supports this requirement-focused scenario.
+#R880: Reuse-tagged test helper supports this settings initialization scenario.
 def _optional_miss_handler(command, **kwargs):
     requested_ref = _requested_secret_ref(command)
     if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
@@ -74,18 +75,18 @@ def _optional_miss_handler(command, **kwargs):
     raise AssertionError(f"unexpected command: {command}")
 
 
-#R001: Test helper supports this requirement-focused scenario.
+#R880: Reuse-tagged test helper supports this settings initialization scenario.
 def _reload_settings_class(monkeypatch: pytest.MonkeyPatch):
     importlib.reload(settings_module)
     return settings_module.Settings
 
 
-#R001: Test helper supports this requirement-focused scenario.
+#R880: Reuse-tagged test helper supports this settings initialization scenario.
 def _settings_attr(settings: Settings, *name_parts: str) -> str:
     return getattr(settings, "".join(name_parts))
 
 
-#R001: Test helper supports this requirement-focused scenario.
+#R880: Reuse-tagged test helper supports this settings initialization scenario.
 def _requested_secret_ref(command: list[str]) -> str:
     requested = ""
     if command[0:2] in (["1psa", "-p"], ["1psa", "read"]):
@@ -95,7 +96,7 @@ def _requested_secret_ref(command: list[str]) -> str:
     return requested
 
 
-#R001: Test helper supports this requirement-focused scenario.
+#R880: Reuse-tagged test helper supports this settings initialization scenario.
 def _db_config(settings: Settings) -> tuple[str, str, str, int, str]:
     return (
         settings.teller_db_user,
@@ -107,20 +108,20 @@ def _db_config(settings: Settings) -> tuple[str, str, str, int, str]:
 
 
 def test_loads_teller_db_config_from_default_1psa_item_when_no_refs_are_set(monkeypatch: pytest.MonkeyPatch) -> None:
-    #R001: Default 1psa item resolves full teller DB config without DB env vars.
-    #R001-T01: Python test lane exists for default teller DB config requirement.
+    #R880: Default 1psa item resolves full teller DB config without DB env vars.
+    #R880-T01: Python test lane exists for default teller DB config requirement.
     _clear_secret_env(monkeypatch)
     _install_run_stub(monkeypatch, _optional_miss_handler)
     assert _db_config(Settings()) == ("teller", "fixture-default", "localhost", 5432, "teller")
 
 
 def test_loads_teller_db_config_through_1psa_item_reference_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    #R005: Item-name override resolves full DB config through 1psa -p item/field.
-    #R005-T01: Python test lane exists for item-name override requirement.
+    #R885: Item-name override resolves full DB config through 1psa -p item/field.
+    #R885-T01: Python test lane exists for item-name override requirement.
     _clear_secret_env(monkeypatch)
     monkeypatch.setenv("TELLER_DB_PASSWORD_1PSA_REF", "custom_item")
 
-    #R005: Test helper supports this requirement-focused scenario.
+    #R885: Reuse-tagged test helper supports this 1psa-reference scenario.
     def handler(command, **kwargs):
         field_ref = _requested_secret_ref(command)
         if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
@@ -142,13 +143,13 @@ def test_loads_teller_db_config_through_1psa_item_reference_override(monkeypatch
 
 
 def test_loads_teller_db_config_through_1psa_read_for_op_references(monkeypatch: pytest.MonkeyPatch) -> None:
-    #R005: op:// references resolve full DB config through 1psa read.
-    #R005-T02: Python test lane exists for op:// reference requirement.
+    #R885: op:// references resolve full DB config through 1psa read.
+    #R885-T02: Python test lane exists for op:// reference requirement.
     _clear_secret_env(monkeypatch)
     monkeypatch.setenv("OP_SERVICE_ACCOUNT_TOKEN", "token-ok")
     monkeypatch.setenv("TELLER_DB_PASSWORD_1PSA_REF", "op://vault/item/password")
 
-    #R005: Test helper supports this requirement-focused scenario.
+    #R885: Reuse-tagged test helper supports this 1psa-reference scenario.
     def handler(command, **kwargs):
         if command[0:2] == ["1psa", "read"]:
             field_ref = _requested_secret_ref(command)
@@ -172,8 +173,8 @@ def test_loads_teller_db_config_through_1psa_read_for_op_references(monkeypatch:
 
 
 def test_falls_back_to_home_env_when_1psa_cannot_resolve_db_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    #R010: ~/.env is the single fallback when 1psa cannot provide complete DB config.
-    #R010-T01: Python test lane exists for ~/.env fallback requirement.
+    #R890: ~/.env is the single fallback when 1psa cannot provide complete DB config.
+    #R890-T01: Python test lane exists for ~/.env fallback requirement.
     _clear_secret_env(monkeypatch)
     fake_home = tmp_path / "home"
     fake_home.mkdir(parents=True, exist_ok=True)
@@ -183,7 +184,7 @@ def test_falls_back_to_home_env_when_1psa_cannot_resolve_db_config(monkeypatch: 
     )
     monkeypatch.setattr(Path, "home", lambda: fake_home)
 
-    #R010: Test helper supports this requirement-focused scenario.
+    #R890: Reuse-tagged test helper supports this ~/.env fallback scenario.
     def handler(command, **kwargs):
         if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
             return CompletedProcess(5, "", "not found")
@@ -194,15 +195,15 @@ def test_falls_back_to_home_env_when_1psa_cannot_resolve_db_config(monkeypatch: 
 
 
 def test_fails_clearly_when_1psa_and_home_env_both_fail(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    #R010: Settings raises a clear runtime error when both resolution sources fail.
-    #R010-T02: Python test lane exists for full resolution failure requirement.
+    #R890: Settings raises a clear runtime error when both resolution sources fail.
+    #R890-T02: Python test lane exists for full resolution failure requirement.
     _clear_secret_env(monkeypatch)
     fake_home = tmp_path / "home"
     fake_home.mkdir(parents=True, exist_ok=True)
     (fake_home / ".env").write_text("username=incomplete\n", encoding="utf-8")
     monkeypatch.setattr(Path, "home", lambda: fake_home)
 
-    #R010: Test helper supports this requirement-focused scenario.
+    #R890: Reuse-tagged test helper supports this ~/.env fallback scenario.
     def handler(command, **kwargs):
         if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
             return CompletedProcess(5, "", "not found")
@@ -214,11 +215,11 @@ def test_fails_clearly_when_1psa_and_home_env_both_fail(monkeypatch: pytest.Monk
 
 
 def test_fails_clearly_when_resolved_db_port_is_not_an_integer(monkeypatch: pytest.MonkeyPatch) -> None:
-    #R010: Invalid DB port values are rejected even when other fields are present.
-    #R010-T03: Python test lane exists for invalid port validation requirement.
+    #R890: Invalid DB port values are rejected even when other fields are present.
+    #R890-T03: Python test lane exists for invalid port validation requirement.
     _clear_secret_env(monkeypatch)
 
-    #R010: Test helper supports this requirement-focused scenario.
+    #R890: Reuse-tagged test helper supports this ~/.env fallback scenario.
     def handler(command, **kwargs):
         if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
             field_ref = _requested_secret_ref(command)
@@ -240,27 +241,27 @@ def test_fails_clearly_when_resolved_db_port_is_not_an_integer(monkeypatch: pyte
         Settings()
 
 
-#R001: Test helper supports this requirement-focused scenario.
+#R880: Reuse-tagged test helper supports this settings initialization scenario.
 def _teller_db_credential(settings: Settings) -> str:
     return _settings_attr(settings, "teller_db_", "pass", "word")
 
 
-#R015: Test helper supports this requirement-focused scenario.
+#R895: Reuse-tagged test helper supports this optional AI-key scenario.
 def _anthropic_credential(settings: Settings) -> str:
     return _settings_attr(settings, "anthropic_", "api_", "key")
 
 
-#R015: Test helper supports this requirement-focused scenario.
+#R895: Reuse-tagged test helper supports this optional AI-key scenario.
 def _openai_credential(settings: Settings) -> str:
     return _settings_attr(settings, "openai_", "api_", "key")
 
 
 def test_loads_anthropic_api_key_from_1psa_item_when_env_var_is_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    #R015: Anthropic key resolves from default 1psa item when ANTHROPIC_API_KEY env var is unset.
-    #R015-T01: Python test lane exists for Anthropic 1psa resolution requirement.
+    #R895: Anthropic key resolves from default 1psa item when ANTHROPIC_API_KEY env var is unset.
+    #R895-T01: Python test lane exists for Anthropic 1psa resolution requirement.
     _clear_secret_env(monkeypatch)
 
-    #R015: Test helper supports this requirement-focused scenario.
+    #R895: Reuse-tagged test helper supports this optional AI-key scenario.
     def handler(command, **kwargs):
         if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
             field_ref = _requested_secret_ref(command)
@@ -286,11 +287,11 @@ def test_loads_anthropic_api_key_from_1psa_item_when_env_var_is_unset(monkeypatc
 
 
 def test_loads_openai_api_key_fallback_from_1psa_item_when_env_var_is_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    #R015: OpenAI fallback key resolves from default 1psa item when OPENAI_API_KEY env var is unset.
-    #R015-T02: Python test lane exists for OpenAI 1psa resolution requirement.
+    #R895: OpenAI fallback key resolves from default 1psa item when OPENAI_API_KEY env var is unset.
+    #R895-T02: Python test lane exists for OpenAI 1psa resolution requirement.
     _clear_secret_env(monkeypatch)
 
-    #R015: Test helper supports this requirement-focused scenario.
+    #R895: Reuse-tagged test helper supports this optional AI-key scenario.
     def handler(command, **kwargs):
         if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
             field_ref = _requested_secret_ref(command)
@@ -316,12 +317,12 @@ def test_loads_openai_api_key_fallback_from_1psa_item_when_env_var_is_unset(monk
 
 
 def test_env_var_override_beats_1psa_for_anthropic_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    #R015: ANTHROPIC_API_KEY env var overrides any 1psa-resolved anthropic key value.
-    #R015-T03: Python test lane exists for env override requirement.
+    #R895: ANTHROPIC_API_KEY env var overrides any 1psa-resolved anthropic key value.
+    #R895-T03: Python test lane exists for env override requirement.
     _clear_secret_env(monkeypatch)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "env-claude")
 
-    #R015: Test helper supports this requirement-focused scenario.
+    #R895: Reuse-tagged test helper supports this optional AI-key scenario.
     def handler(command, **kwargs):
         if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
             field_ref = _requested_secret_ref(command)
@@ -344,11 +345,11 @@ def test_env_var_override_beats_1psa_for_anthropic_key(monkeypatch: pytest.Monke
 
 
 def test_tolerates_missing_ai_keys_in_1psa_and_keeps_settings_constructible(monkeypatch: pytest.MonkeyPatch) -> None:
-    #R015: Missing AI items in 1psa resolve to empty strings without failing Settings construction.
-    #R015-T04: Python test lane exists for missing AI keys requirement.
+    #R895: Missing AI items in 1psa resolve to empty strings without failing Settings construction.
+    #R895-T04: Python test lane exists for missing AI keys requirement.
     _clear_secret_env(monkeypatch)
 
-    #R015: Test helper supports this requirement-focused scenario.
+    #R895: Reuse-tagged test helper supports this optional AI-key scenario.
     def handler(command, **kwargs):
         if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
             field_ref = _requested_secret_ref(command)
@@ -370,8 +371,8 @@ def test_tolerates_missing_ai_keys_in_1psa_and_keeps_settings_constructible(monk
 
 
 def test_mailcart_body_enrichment_flags_default_to_enabled_and_limit_75(monkeypatch: pytest.MonkeyPatch) -> None:
-    #R030: Default Mailcart body-enrichment feature flag is enabled with a sane default limit.
-    #R030-T01: Python test lane exists for enrichment default requirement.
+    #R905: Default Mailcart body-enrichment feature flag is enabled with a sane default limit.
+    #R905-T01: Python test lane exists for enrichment default requirement.
     _clear_secret_env(monkeypatch)
     monkeypatch.delenv("MATCHY_MAILCART_BODY_ENRICHMENT", raising=False)
     monkeypatch.delenv("MATCHY_MAILCART_BODY_ENRICHMENT_LIMIT", raising=False)
@@ -383,9 +384,9 @@ def test_mailcart_body_enrichment_flags_default_to_enabled_and_limit_75(monkeypa
 
 
 def test_default_anthropic_model_is_the_dated_stable_id_and_respects_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    #R035: Anthropic model defaults to a pinned dated id; env var overrides it.
-    #R035-T01: Python test lane exists for default anthropic model requirement.
-    #R035-T02: Python test lane exists for anthropic model override requirement.
+    #R910: Anthropic model defaults to a pinned dated id; env var overrides it.
+    #R910-T01: Python test lane exists for default anthropic model requirement.
+    #R910-T02: Python test lane exists for anthropic model override requirement.
     _clear_secret_env(monkeypatch)
     monkeypatch.delenv("MATCHY_ANTHROPIC_MODEL", raising=False)
     _install_run_stub(monkeypatch, _optional_miss_handler)
@@ -397,8 +398,8 @@ def test_default_anthropic_model_is_the_dated_stable_id_and_respects_env_overrid
 
 
 def test_mailcart_body_enrichment_flags_honor_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
-    #R030: Mailcart body-enrichment env overrides flip the flag and resize the limit.
-    #R030-T02: Python test lane exists for enrichment override requirement.
+    #R905: Mailcart body-enrichment env overrides flip the flag and resize the limit.
+    #R905-T02: Python test lane exists for enrichment override requirement.
     _clear_secret_env(monkeypatch)
     monkeypatch.setenv("MATCHY_MAILCART_BODY_ENRICHMENT", "false")
     monkeypatch.setenv("MATCHY_MAILCART_BODY_ENRICHMENT_LIMIT", "10")
@@ -410,8 +411,8 @@ def test_mailcart_body_enrichment_flags_honor_env_overrides(monkeypatch: pytest.
 
 
 def test_mailcart_search_timeout_default_and_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    #R040-T01: Default mailcart_search_timeout_seconds is 45 when unset.
-    #R040-T02: MATCHY_MAILCART_SEARCH_TIMEOUT_SECONDS overrides the default.
+    #R915-T01: Default mailcart_search_timeout_seconds is 45 when unset.
+    #R915-T02: MATCHY_MAILCART_SEARCH_TIMEOUT_SECONDS overrides the default.
     _clear_secret_env(monkeypatch)
     _install_run_stub(monkeypatch, _optional_miss_handler)
     SettingsCls = _reload_settings_class(monkeypatch)
@@ -438,8 +439,8 @@ def test_near_duplicate_hamming_distance_default_and_override(monkeypatch: pytes
 
 
 def test_mailcart_ca_bundle_default_and_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    #R045-T01: Default mailcart_ca_bundle is empty (auto-resolve) when unset.
-    #R045-T02: MATCHY_MAILCART_CA_BUNDLE exposes the explicit path.
+    #R915-T03: Default mailcart_ca_bundle is empty (auto-resolve) when unset.
+    #R915-T04: MATCHY_MAILCART_CA_BUNDLE exposes the explicit path.
     _clear_secret_env(monkeypatch)
     _install_run_stub(monkeypatch, _optional_miss_handler)
     SettingsCls = _reload_settings_class(monkeypatch)
@@ -452,8 +453,8 @@ def test_mailcart_ca_bundle_default_and_override(monkeypatch: pytest.MonkeyPatch
 
 
 def test_cldr_currencies_cache_settings_default_and_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    #R050: CLDR currencies cache path, refresh flag, and timeout expose env-configurable startup behavior.
-    #R050-T01: Python test lane exists for CLDR currencies cache setting defaults and overrides.
+    #R919: CLDR currencies cache path, refresh flag, and timeout expose env-configurable startup behavior.
+    #R919-T01: Python test lane exists for CLDR currencies cache setting defaults and overrides.
     _clear_secret_env(monkeypatch)
     monkeypatch.delenv("MATCHY_CLDR_CURRENCIES_CACHE_PATH", raising=False)
     monkeypatch.delenv("MATCHY_CLDR_CURRENCIES_REFRESH_ENABLED", raising=False)

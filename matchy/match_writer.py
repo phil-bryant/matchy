@@ -8,10 +8,8 @@ from .models import AiSelection, RankedCandidate
 
 
 class MatchWriterMixin:
-    #R030: Persist subject/sender/preview into cached_* columns at candidate-insert time so
-    #R030: downstream UIs (Teller's Match & Classify candidates pane) can render without paying
-    #R030: another per-message Mailcart round-trip per row. Matchy already pulls this metadata
-    #R030: from Mailcart (search response + body enrichment) so persisting it is free at this point.
+    #R680: Persist subject/sender/preview into cached_* columns at candidate-insert time so
+    #R680: downstream UIs can render candidate rows without extra Mailcart fetches.
     def insert_candidates(self, session, match_run_id: int, transaction_id: str, candidates: list[RankedCandidate], ai_selected_ids: set[str]) -> None:
         for ranked in candidates:
             preview = ranked.candidate.preview or ranked.candidate.body_text[:240] if ranked.candidate.body_text else ranked.candidate.preview
@@ -63,6 +61,7 @@ class MatchWriterMixin:
                 },
             )
 
+    #R685: Detect whether a candidate email already has an active match row.
     def has_active_match(self, session, email_message_id: str) -> bool:
         return bool(
             session.execute(
@@ -79,6 +78,7 @@ class MatchWriterMixin:
             ).fetchone()
         )
 
+    #R690: Persist AI selection outcomes into transaction_email_match rows and run status updates.
     def persist_ai_result(
         self,
         session,
@@ -238,6 +238,7 @@ class MatchWriterMixin:
         self._update_run_status(session, run_id, "needs_review" if state == "ai_candidate_uncertain" else "succeeded")
         return selected
 
+    #R695: Deactivate all active match rows for a transaction before replacing or confirming matches.
     def deactivate_active_match(self, session, transaction_id: str) -> None:
         session.execute(
             text(
@@ -250,6 +251,7 @@ class MatchWriterMixin:
             {"transaction_id": transaction_id},
         )
 
+    #R700: Insert and return a human-confirmed match row with optional note metadata.
     def insert_human_confirmed_match(self, session, transaction_id: str, email_message_id: str, note: str | None) -> int:
         now = datetime.now(tz=timezone.utc)
         explanation = {"note": note} if note else {}

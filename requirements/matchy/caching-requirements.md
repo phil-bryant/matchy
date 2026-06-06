@@ -13,6 +13,22 @@ Tests:
 - R020-T02: Change the candidate id set and verify `match_transaction` proceeds to a full AI evaluation that creates a new `match_run` row.
 - R020-T03: Seed a prior `failed` run and verify the cache check refuses the short-circuit so transient errors retry.
 
+R520  Statement: Materialize ranked candidates into cache rows that preserve scoring and cached metadata fields.
+Design: `_ranked_candidate_cache_rows` serializes each ranked candidate into a row containing message id, received timestamp, score, reasons, cached subject/sender/snippet, and unmatched-priority marker for stable cache comparisons.
+Tests:
+- R520-T01: Build ranked candidates with metadata/reasons and verify `_ranked_candidate_cache_rows` emits expected normalized cache-row keys.
+
+R525  Statement: Fingerprint candidate cache rows deterministically independent of row order.
+Design: `_candidate_set_hash` normalizes row fields, sorts rows by stable keys, and hashes JSON lines with fixed float formatting so equivalent payloads produce identical hashes regardless of order.
+Tests:
+- R525-T01: Hash identical candidate rows in different orders and verify resulting hashes are equal.
+
+R530  Statement: Provide deterministic fallback fingerprinting from candidate message ids.
+Design: `_candidate_message_id_hash` sorts message ids, hashes newline-delimited values, and returns SHA-256 digest for compatibility with older cache summaries.
+Tests:
+- R530-T01: Hash the same message ids in different input orders and verify digest equality.
+
 ## Changelog
 
 - 2026-06-05: Extracted R020 (Postgres-backed AI-skip cache and candidate fingerprinting) from `service.py` into `caching.py`/`CachingMixin`.
+- 2026-06-06: Added shard-1 cache helper requirements R520/R525/R530 with anchored tests.

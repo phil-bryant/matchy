@@ -1,9 +1,11 @@
-#R001: Python test lane coverage for deterministic AI fallback.
-#R005: Python test lane coverage for malformed JSON parsing.
-#R010: Python test lane coverage for body excerpt extraction.
-#R015: Python test lane coverage for markdown fence parsing.
-#R020: Python test lane coverage for Anthropic 429 retry behavior.
-#R030: Python test lane coverage for untrusted-body delimiter handling.
+#R440: Python test lane coverage for backend selection order and no-candidate handling.
+#R445: Python test lane coverage for planned model reporting.
+#R450: Python test lane coverage for deterministic AI fallback.
+#R455: Python test lane coverage for prompt payload construction.
+#R460: Python test lane coverage for body excerpt extraction.
+#R465: Python test lane coverage for untrusted-body delimiter handling.
+#R470: Python test lane coverage for Anthropic retry-with-shrink behavior.
+#R475: Python test lane coverage for defensive AI payload parsing.
 
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -14,8 +16,10 @@ from matchy.settings import Settings
 
 
 def test_ai_ranker_deterministic_fallback_is_used_when_no_ai_keys_exist() -> None:
-    #R001: Deterministic fallback path is used with no AI clients.
-    #R001-T01: Python test lane exists for deterministic fallback requirement.
+    #R440: select chooses deterministic path when no AI backend is configured.
+    #R440-T01: Python test lane exists for backend-selection fallback requirement.
+    #R450: Deterministic fallback path is used with no AI clients.
+    #R450-T01: Python test lane exists for deterministic fallback requirement.
     ranker = AiRanker(Settings(anthropic_api_key="", openai_api_key=""))
     txn = TransactionInput("tx", "acc", Decimal("10.00"), datetime.now(timezone.utc), "coffee")
     candidates = [
@@ -27,9 +31,32 @@ def test_ai_ranker_deterministic_fallback_is_used_when_no_ai_keys_exist() -> Non
     assert "deterministic fallback" in selection.rationale
 
 
+def test_ai_ranker_select_returns_explicit_no_candidates_response() -> None:
+    #R440: Empty candidate sets return explicit no-candidates response metadata.
+    #R440-T02: Python test lane exists for no-candidates selection behavior.
+    ranker = AiRanker(Settings(anthropic_api_key="", openai_api_key=""))
+    txn = TransactionInput("tx", "acc", Decimal("10.00"), datetime.now(timezone.utc), "coffee")
+    selection = ranker.select(txn, [])
+    assert selection.backend == "none"
+    assert selection.model_name == "none:no_candidates"
+    assert selection.selected_message_ids == []
+
+
+def test_ai_ranker_planned_model_name_tracks_available_client() -> None:
+    #R445: planned_model_name reflects whichever AI backend is available to the ranker.
+    #R445-T01: Python test lane exists for planned model reporting requirement.
+    ranker = AiRanker(Settings(anthropic_api_key="", openai_api_key="", anthropic_model="claude-sonnet-4-5", openai_model="gpt-4.1-mini"))
+    assert ranker.planned_model_name() == "deterministic"
+    ranker._anthropic_client = object()
+    assert ranker.planned_model_name() == "claude-sonnet-4-5"
+    ranker._anthropic_client = None
+    ranker._openai_client = object()
+    assert ranker.planned_model_name() == "gpt-4.1-mini"
+
+
 def test_ai_ranker_parse_returns_safe_defaults_for_malformed_json() -> None:
-    #R005: Malformed AI payloads produce safe default selections.
-    #R005-T01: Python test lane exists for malformed JSON requirement.
+    #R475: Malformed AI payloads produce safe default selections.
+    #R475-T01: Python test lane exists for malformed JSON requirement.
     ranker = AiRanker(Settings(anthropic_api_key="", openai_api_key=""))
     selection = ranker._parse_ai_payload("{bad", "anthropic")
     assert selection.selected_message_ids == []
@@ -38,6 +65,8 @@ def test_ai_ranker_parse_returns_safe_defaults_for_malformed_json() -> None:
 
 
 def test_ai_ranker_parse_clamps_out_of_range_confidence_values() -> None:
+    #R475: Confidence values are clamped into [0, 1] and invalid values fall back to 0.0.
+    #R475: Plain reuse tag for scaffolding coverage on this helper-heavy parser test.
     ranker = AiRanker(Settings(anthropic_api_key="", openai_api_key=""))
     above_one_raw = '{"selected_message_ids":[],"confidence":4.2,"uncertain":false}'
     below_zero_raw = '{"selected_message_ids":[],"confidence":-0.4,"uncertain":false}'
@@ -51,8 +80,8 @@ def test_ai_ranker_parse_clamps_out_of_range_confidence_values() -> None:
 
 
 def test_ai_ranker_extracts_markup_free_body_excerpt_for_ai_prompt() -> None:
-    #R010: _extract_body_excerpt strips HTML, collapses whitespace, and truncates the result.
-    #R010-T01: Python test lane exists for body excerpt requirement.
+    #R460: _extract_body_excerpt strips HTML, collapses whitespace, and truncates the result.
+    #R460-T01: Python test lane exists for body excerpt requirement.
     ranker = AiRanker(Settings(anthropic_api_key="", openai_api_key=""))
     html = '<html><head><style>.x{}</style></head><body>  <p>Fare <strong>$35.99</strong></p>  <script>x()</script>  thanks  </body></html>'
     excerpt = ranker._extract_body_excerpt(html)
@@ -68,8 +97,8 @@ def test_ai_ranker_extracts_markup_free_body_excerpt_for_ai_prompt() -> None:
 
 
 def test_ai_ranker_parser_tolerates_markdown_json_fences_from_claude() -> None:
-    #R015: Parse tolerates ```json ... ``` markdown fences and prose padding.
-    #R015-T01: Python test lane exists for markdown fence parsing requirement.
+    #R475: Parser tolerates ```json ... ``` markdown fences and prose padding.
+    #R475-T02: Python test lane exists for fenced JSON parsing requirement.
     ranker = AiRanker(Settings(anthropic_api_key="", openai_api_key=""))
     raw = '```json\n{"selected_message_ids":["m_correct"],"confidence":0.95,"uncertain":false,"rationale":"matches by amount"}\n```'
     selection = ranker._parse_ai_payload(raw, "anthropic")
@@ -80,8 +109,8 @@ def test_ai_ranker_parser_tolerates_markdown_json_fences_from_claude() -> None:
 
 
 def test_ai_ranker_parser_extracts_json_object_from_surrounding_prose() -> None:
-    #R015: Parse extracts the first balanced JSON object from prose-padded output.
-    #R015-T02: Python test lane exists for prose-padded JSON requirement.
+    #R475: Parser extracts the first balanced JSON object from prose-padded output.
+    #R475-T03: Python test lane exists for prose-padded JSON requirement.
     ranker = AiRanker(Settings(anthropic_api_key="", openai_api_key=""))
     raw = 'Here is my answer: {"selected_message_ids":["m1","m2"],"confidence":0.7,"uncertain":true,"rationale":"two emails"} let me know.'
     selection = ranker._parse_ai_payload(raw, "anthropic")
@@ -90,8 +119,8 @@ def test_ai_ranker_parser_extracts_json_object_from_surrounding_prose() -> None:
 
 
 def test_ai_ranker_retries_with_shrunken_body_excerpt_after_anthropic_429() -> None:
-    #R020: Anthropic 429 triggers a retry with a smaller body excerpt cap.
-    #R020-T01: Python test lane exists for Anthropic 429 retry requirement.
+    #R470: Anthropic 429 triggers a retry with a smaller body excerpt cap.
+    #R470-T01: Python test lane exists for Anthropic retry-with-shrink requirement.
     from anthropic import RateLimitError
 
     class FakeResponse:
@@ -99,14 +128,17 @@ def test_ai_ranker_retries_with_shrunken_body_excerpt_after_anthropic_429() -> N
         status_code = 429
 
     class FakeRateLimit(RateLimitError):
+        #R470: Plain reuse tag for exception scaffolding used by retry-path tests.
         def __init__(self):
             Exception.__init__(self, "rate limited")
             self.message = "rate limited"
             self.response = FakeResponse()
 
     class FakeMsg:
+        #R470: Plain reuse tag for response-wrapper scaffolding used by retry-path tests.
         def __init__(self, text):
             class Block:
+                #R470: Plain reuse tag for response block scaffolding used by retry-path tests.
                 def __init__(self, t):
                     self.type = "text"
                     self.text = t
@@ -114,10 +146,12 @@ def test_ai_ranker_retries_with_shrunken_body_excerpt_after_anthropic_429() -> N
             self.content = [Block(text)]
 
     class FakeMessages:
+        #R470: Plain reuse tag for fake Anthropic messages client scaffolding.
         def __init__(self, responses):
             self.responses = responses
             self.calls = []
 
+        #R470: Plain reuse tag for fake create-call scaffolding.
         def create(self, **kwargs):
             self.calls.append(kwargs)
             item = self.responses.pop(0)
@@ -126,6 +160,7 @@ def test_ai_ranker_retries_with_shrunken_body_excerpt_after_anthropic_429() -> N
             return item
 
     class FakeClient:
+        #R470: Plain reuse tag for fake Anthropic client scaffolding.
         def __init__(self, responses):
             self.messages = FakeMessages(responses)
 
@@ -143,8 +178,8 @@ def test_ai_ranker_retries_with_shrunken_body_excerpt_after_anthropic_429() -> N
 
 
 def test_ai_ranker_prompt_payload_exposes_body_excerpt_to_the_ai_model() -> None:
-    #R010: Prompt payload includes a body_excerpt field for each candidate so the AI can disambiguate.
-    #R010-T02: Python test lane exists for prompt payload body_excerpt requirement.
+    #R455: Prompt payload includes a body_excerpt field for each candidate so the AI can disambiguate.
+    #R455-T01: Python test lane exists for prompt payload body_excerpt requirement.
     ranker = AiRanker(Settings(anthropic_api_key="", openai_api_key=""))
     txn = TransactionInput("txn1", "acc", Decimal("35.99"), datetime(2026, 5, 5, tzinfo=timezone.utc), "LYFT", "")
     cand = EmailCandidate("m1", "Your ride", "preview", datetime(2026, 5, 5, tzinfo=timezone.utc), "x@y", "<p>Fare $35.99</p>")
@@ -158,8 +193,8 @@ def test_ai_ranker_prompt_payload_exposes_body_excerpt_to_the_ai_model() -> None
 
 
 def test_ai_ranker_prompt_payload_redacts_embedded_delimiter_tokens_from_body_excerpt() -> None:
-    #R030: Prompt payload wraps body excerpts as untrusted content and redacts embedded delimiter tokens.
-    #R030-T01: Python test lane exists for untrusted-body delimiter/redaction requirement.
+    #R465: Prompt payload wraps body excerpts as untrusted content and redacts embedded delimiter tokens.
+    #R465-T01: Python test lane exists for untrusted-body delimiter/redaction requirement.
     ranker = AiRanker(Settings(anthropic_api_key="", openai_api_key=""))
     txn = TransactionInput("txn1", "acc", Decimal("35.99"), datetime(2026, 5, 5, tzinfo=timezone.utc), "LYFT", "")
     dangerous = (

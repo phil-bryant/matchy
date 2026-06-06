@@ -4,37 +4,48 @@
 
 Applies to `matchy/ai_ranker.py`.
 
-R001  Statement: Provide deterministic fallback selection when no AI client is available.
-Design: When Anthropic and OpenAI clients are unavailable, select from the top ranked candidates using score threshold and fallback rationale.
+R440  Statement: Initialize and select AI backends in deterministic priority order.
+Design: `AiRanker` builds Anthropic/OpenAI clients only when keys and SDKs are available, then `select` chooses no-candidate handling, Anthropic, OpenAI, or deterministic fallback in that order.
 Tests:
-- R001-T01: Construct `AiRanker` with no API keys and verify fallback selection is used.
+- R440-T01: Construct `AiRanker` without AI keys and verify deterministic selection path is chosen from `select`.
+- R440-T02: Call `select` with an empty candidate list and verify it returns the explicit no-candidates response.
 
-R005  Statement: Parse AI JSON payloads defensively with safe defaults.
-Design: Decode model payloads into `AiSelection`, defaulting missing/invalid fields to safe values when parsing fails.
+R445  Statement: Report the planned model name before evaluation so cache checks can compare model identity.
+Design: `planned_model_name` returns Anthropic model when Anthropic client exists, OpenAI model when only OpenAI exists, and `deterministic` when neither client is configured.
 Tests:
-- R005-T01: Parse malformed JSON and verify empty selection with zero confidence and uncertainty.
+- R445-T01: Toggle available clients and verify `planned_model_name` returns Anthropic, OpenAI, or deterministic as appropriate.
 
-R010  Statement: Include a truncated email body excerpt in the AI prompt payload so the model can disambiguate same-day same-merchant candidates by their actual content.
-Design: `_build_prompt_payload` adds a `body_excerpt` field to each candidate row, populated by `_extract_body_excerpt` which strips HTML markup (including `<script>`/`<style>` blocks), collapses whitespace, and truncates to `_BODY_TEXT_PROMPT_MAX` (default 2000) characters. Empty `body_text` produces an empty excerpt without raising.
+R450  Statement: Provide deterministic top-candidate fallback when no AI backend is available.
+Design: `_select_deterministic` selects top scored candidates meeting threshold, preserves confidence/uncertain outputs, and emits deterministic rationale/backend metadata.
 Tests:
-- R010-T01: Provide a candidate whose `body_text` contains HTML markup including the transaction amount and verify the excerpt is markup-free, whitespace-collapsed, and bounded by `_BODY_TEXT_PROMPT_MAX`.
-- R010-T02: Provide an empty `body_text` and verify the extractor returns the empty string without error.
+- R450-T01: Verify deterministic fallback returns scored candidate ids and deterministic rationale.
 
-R020  Statement: Retry-with-shrink on Anthropic rate-limit and context-length errors.
-Design: `_select_with_anthropic` retries up to three times when Anthropic raises `RateLimitError` (HTTP 429) or an `APIStatusError` whose message references "too long"/"max_tokens"/"context". Each retry rebuilds the prompt with a progressively smaller `body_excerpt_cap` (None → 1000 → 500 chars), honoring the upstream `Retry-After` header (capped at 60 s) before retrying. After exhausting the retry budget the final exception propagates so the outer service can record a `failed` run and let the next driver loop try again.
+R455  Statement: Build prompt payloads that expose bounded candidate evidence for AI disambiguation.
+Design: `_build_prompt_payload` emits top candidate rows including normalized `body_excerpt` and explicit output schema/rules so model output is constrained and comparable.
 Tests:
-- R020-T01: Stub the Anthropic client to raise `RateLimitError` then return a valid payload and verify `_select_with_anthropic` returns the parsed selection after shrinking the body excerpt.
+- R455-T01: Build prompt payload and verify each candidate row includes wrapped `body_excerpt` and expected schema keys.
 
-R030  Statement: Delimit body excerpts as untrusted payload to reduce prompt-injection risk from email-body instructions.
-Design: `_delimit_untrusted_body_excerpt` wraps every candidate body excerpt between fixed boundary tokens (`[[BEGIN_UNTRUSTED_EMAIL_BODY]]` / `[[END_UNTRUSTED_EMAIL_BODY]]`) and redacts any embedded copies of those boundary tokens from source content before wrapping.
+R460  Statement: Normalize raw email body text into compact plain-text excerpts for prompts.
+Design: `_extract_body_excerpt` strips script/style blocks and tags, collapses whitespace, and truncates to configured caps; missing body text yields empty string.
 Tests:
-- R030-T01: Build a prompt payload from a candidate body containing embedded delimiter tokens and verify boundary tokens are redacted in-content while the wrapped excerpt still uses the canonical outer delimiters.
+- R460-T01: Verify HTML-rich body text is normalized and truncated to `_BODY_TEXT_PROMPT_MAX`.
 
-R015  Statement: Tolerate models that wrap JSON output in markdown fences or pad it with prose.
-Design: `_parse_ai_payload` strips a single leading/trailing ```` ``` ```` fence (with or without a `json` language hint) via `_strip_markdown_fences`, then if `json.loads` still fails, attempts to extract the first balanced `{...}` object via `_extract_first_json_object` (which respects string literals and backslash escapes). Only when both attempts fail does the parser fall back to the default empty-selection AiSelection.
+R465  Statement: Delimit body excerpts as untrusted content and redact embedded delimiter tokens.
+Design: `_delimit_untrusted_body_excerpt` replaces embedded delimiter tokens with redacted sentinels and wraps the final excerpt between canonical begin/end markers.
 Tests:
-- R015-T01: Feed `_parse_ai_payload` a Claude-style ```` ```json\n{...}\n``` ```` payload and verify the selected ids, confidence, and rationale come from the inner JSON.
-- R015-T02: Feed `_parse_ai_payload` a JSON object surrounded by leading/trailing prose and verify the embedded object is still parsed.
+- R465-T01: Verify embedded delimiter tokens are redacted while outer canonical delimiters remain intact.
+
+R470  Statement: Retry Anthropic failures with bounded backoff and prompt shrinking.
+Design: `_select_with_anthropic` retries up to three attempts with smaller body excerpt caps for rate-limit/context errors and honors `Retry-After` when provided by `_retry_after_seconds`.
+Tests:
+- R470-T01: Stub Anthropic to raise a rate limit once and verify retry succeeds on the next shrunken attempt.
+
+R475  Statement: Parse OpenAI/Anthropic text payloads defensively into safe `AiSelection` objects.
+Design: `_select_with_openai` delegates to `_parse_ai_payload`; parser strips markdown fences, extracts balanced JSON from prose, clamps confidence to `[0,1]`, and falls back safely on malformed payloads.
+Tests:
+- R475-T01: Parse malformed JSON and verify safe defaults.
+- R475-T02: Parse fenced JSON payload and verify structured values are retained.
+- R475-T03: Parse prose-padded JSON and verify balanced object extraction succeeds.
 
 ## Changelog
 
@@ -43,3 +54,4 @@ Tests:
 - 2026-05-19: Added R015 fence-tolerant + object-extraction JSON parsing so Claude responses wrapped in ```` ``` ```` fences (the observed default behavior) are no longer silently dropped.
 - 2026-05-19: Added R020 retry-with-shrink so Anthropic 429s during a matchy batch no longer abort the batch and instead shrink the prompt for that transaction before re-trying.
 - 2026-06-04: Added R030 untrusted-body delimiter handling so prompt payloads isolate email-body content and redact embedded delimiter tokens.
+- 2026-06-06: Rebased AI ranker traceability onto shard-1 ID band R440-R475 with anchored tests.

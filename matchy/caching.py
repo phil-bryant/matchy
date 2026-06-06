@@ -16,6 +16,7 @@ _CACHE_HIT_STATUSES = frozenset({"succeeded", "needs_review", "no_candidates"})
 
 
 class CachingMixin:
+    #R520: Normalize ranked candidates into cache rows containing score, reasons, and cached metadata.
     def _ranked_candidate_cache_rows(self, ranked_candidates) -> list[dict]:
         rows: list[dict] = []
         for ranked in ranked_candidates:
@@ -102,7 +103,7 @@ class CachingMixin:
             "state": active.get("state") if active else None,
         }
 
-    #R020: Deterministic, order-independent fingerprint of rank/scoring-relevant candidate payload.
+    #R525: Compute an order-independent fingerprint of full candidate cache rows.
     @staticmethod
     def _candidate_set_hash(candidate_cache_rows: list[dict]) -> str:
         digest = hashlib.sha256()
@@ -129,6 +130,7 @@ class CachingMixin:
             digest.update(b"\n")
         return digest.hexdigest()
 
+    #R530: Compute a deterministic fallback hash from sorted candidate message ids.
     @staticmethod
     def _candidate_message_id_hash(message_ids: list[str]) -> str:
         digest = hashlib.sha256()

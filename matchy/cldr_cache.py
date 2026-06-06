@@ -16,6 +16,7 @@ _PLACEHOLDER_SYMBOLS = frozenset({"¤"})
 
 
 class CldrCurrencyMatcher:
+    #R575: Build standalone matcher state from normalized code/symbol tokens.
     def __init__(self, tokens: frozenset[str]):
         clean_tokens = frozenset(token.strip() for token in tokens if token.strip())
         self.tokens = clean_tokens
@@ -23,7 +24,7 @@ class CldrCurrencyMatcher:
         symbols = (token for token in clean_tokens if not (token.isalpha() and len(token) == 3))
         self._symbols = tuple(sorted(symbols, key=len, reverse=True))
 
-    #R010: Match only standalone currency codes/symbols so substrings like xUSDx do not scope candidates.
+    #R575: Match only standalone currency codes/symbols so substrings like xUSDx do not scope candidates.
     def contains_standalone_currency(self, text: str) -> bool:
         value = text or ""
         matched = False
@@ -39,6 +40,7 @@ class CldrCurrencyMatcher:
         return matched
 
     @staticmethod
+    #R575: Detect standalone symbol occurrences by scanning positions and validating token boundaries.
     def _symbol_occurs_standalone(symbol: str, text: str) -> bool:
         found = False
         start = 0
@@ -52,6 +54,7 @@ class CldrCurrencyMatcher:
         return found
 
     @staticmethod
+    #R575: Require non-letter boundaries around symbol tokens to reject embedded substring matches.
     def _symbol_at_position_is_standalone(symbol: str, text: str, position: int) -> bool:
         left = text[position - 1] if position > 0 else ""
         right_index = position + len(symbol)
@@ -71,13 +74,14 @@ class CldrCurrenciesCache:
         "?sha=main&path=cldr-json/cldr-numbers-full/main/en/currencies.json&per_page=1"
     )
 
+    #R560: Configure local cache paths and network timeout for CLDR refresh operations.
     def __init__(self, settings: Settings):
         self._cache_path = Path(settings.cldr_currencies_cache_path).expanduser()
         self._version_path = self._cache_path.with_suffix(self._cache_path.suffix + ".sha")
         self._timeout_seconds = int(settings.cldr_currencies_refresh_timeout_seconds or 5)
 
-    #R001: Cache the CLDR en/currencies.json file locally and refresh only when GitHub reports a new file commit.
-    #R005: Treat refresh failures as startup warnings so an existing cache can keep the app usable offline.
+    #R560: Refresh local CLDR cache only when the GitHub file commit changes or the cache file is missing.
+    #R565: Treat refresh failures as warnings so existing cache state remains usable offline.
     def refresh(self) -> dict[str, object]:
         cached_version = self._read_text(self._version_path)
         status: dict[str, object] = {"cache_path": str(self._cache_path), "version": cached_version, "updated": False}
@@ -91,10 +95,11 @@ class CldrCurrenciesCache:
             LOGGER.warning("cldr currencies cache refresh skipped path=%s error=%s", self._cache_path, exc)
         return status
 
-    #R010: Parse cached CLDR currency codes and symbols for standalone candidate text matching.
+    #R580: Build a matcher from cached CLDR tokens for standalone currency detection.
     def currency_matcher(self) -> CldrCurrencyMatcher:
         return CldrCurrencyMatcher(self.currency_tokens())
 
+    #R580: Read and parse cached CLDR tokens, returning an empty set when cache content is missing/invalid.
     def currency_tokens(self) -> frozenset[str]:
         tokens: frozenset[str] = frozenset()
         try:
@@ -105,6 +110,7 @@ class CldrCurrenciesCache:
         return tokens
 
     @staticmethod
+    #R570: Extract normalized currency codes and clean symbol variants from CLDR payload structure.
     def parse_currency_tokens(payload: dict) -> frozenset[str]:
         tokens: set[str] = set()
         currencies = CldrCurrenciesCache._currencies_section(payload)
@@ -121,6 +127,7 @@ class CldrCurrenciesCache:
         return frozenset(tokens)
 
     @staticmethod
+    #R570: Locate CLDR `main.en.numbers.currencies` payload section defensively.
     def _currencies_section(payload: dict) -> dict:
         section = {}
         if isinstance(payload, dict):
@@ -133,6 +140,7 @@ class CldrCurrenciesCache:
         return section
 
     @staticmethod
+    #R570: Normalize symbol values and drop placeholders before tokenization.
     def _clean_symbol(value) -> str:
         symbol = str(value or "").strip()
         if CldrCurrenciesCache._is_placeholder_symbol(symbol):
@@ -140,12 +148,14 @@ class CldrCurrenciesCache:
         return symbol
 
     @staticmethod
+    #R570: Classify placeholder symbols (`¤`, arrows, non-currency punctuation) as unusable tokens.
     def _is_placeholder_symbol(symbol: str) -> bool:
         placeholder = (not symbol) or symbol in _PLACEHOLDER_SYMBOLS or symbol.startswith("↑")
         if len(symbol) == 1 and not placeholder:
             placeholder = unicodedata.category(symbol) != "Sc" and not symbol.isalnum()
         return placeholder
 
+    #R560: Read the latest CLDR currencies file commit SHA from GitHub's commits API.
     def _latest_version(self) -> str:
         response = requests.get(
             self.COMMITS_URL,
@@ -161,6 +171,7 @@ class CldrCurrenciesCache:
             raise ValueError("GitHub commits API did not return a file commit sha")
         return version
 
+    #R560: Download CLDR currencies JSON and validate it is parseable before writing cache files.
     def _download_body(self) -> str:
         response = requests.get(self.RAW_URL, timeout=self._timeout_seconds)
         response.raise_for_status()
@@ -168,11 +179,13 @@ class CldrCurrenciesCache:
         json.loads(body)
         return body
 
+    #R560: Persist refreshed CLDR payload and version metadata atomically.
     def _write_cache(self, body: str, version: str) -> None:
         self._ensure_cache_dir()
         self._write_file(self._cache_path, body)
         self._write_file(self._version_path, version + "\n")
 
+    #R560: Ensure cache directories exist and apply expected permissions to newly-created folders.
     def _ensure_cache_dir(self) -> None:
         missing_dirs: list[Path] = []
         current = self._cache_path.parent
@@ -184,6 +197,7 @@ class CldrCurrenciesCache:
             os.chmod(path, 0o770)  # nosec B103 # nosemgrep
 
     @staticmethod
+    #R560: Write files via temp-path replace to avoid partial cache writes.
     def _write_file(path: Path, content: str) -> None:
         temp_path = path.with_name("." + path.name + ".tmp")
         temp_path.write_text(content, encoding="utf-8")
@@ -192,6 +206,7 @@ class CldrCurrenciesCache:
         os.chmod(path, 0o660)  # nosec B103 # nosemgrep
 
     @staticmethod
+    #R565: Read text metadata defensively, returning empty string when the file cannot be read.
     def _read_text(path: Path) -> str:
         value = ""
         try:
