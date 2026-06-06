@@ -1,8 +1,8 @@
-# Matchy Scoring Requirements
+# Matchy Scoring Core Requirements
 
 ## Scope
 
-Applies to `matchy/scoring.py` and `matchy/scoring_core.py`.
+Applies to `matchy/scoring_core.py`.
 
 R001  Statement: Normalize text for token overlap scoring.
 Design: Lowercase and strip non-alphanumeric characters before tokenization so overlap scoring is punctuation-insensitive.
@@ -130,8 +130,6 @@ R047  Statement: `rank_candidates` blends BM25 relevance and amount reconciliati
 Design: Build the candidate corpus once, compute document frequencies and average document length, score each candidate's BM25 relevance and subset-sum reconciliation, add them to the clamped weighted sum, and always emit `bm25_relevance` and `amount_reconciliation` reason keys.
 Tests:
 - R047-T01: Ranked candidates expose bounded BM25 and reconciliation reason keys (`tests/py/test_scoring.py`).
-- R047-T02: A candidate sharing a distinctive merchant token outranks an unrelated one (`tests/py/test_scoring.py`).
-- R047-T03: Subset-sum reconciliation lifts a multi-item receipt totaling the transaction amount (`tests/py/test_scoring.py`).
 
 R760  Statement: `_decimal_to_cents` quantizes decimal values to integer cents with half-up rounding.
 Design: Convert decimal monetary values to two-decimal precision and return integer-cent values, falling back to `None`

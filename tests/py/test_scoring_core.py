@@ -24,7 +24,9 @@ def email_candidate(subject: str = "", preview: str = "", body_text: str = "") -
 
 
 def test_normalized_text_lowercases_input() -> None:
+    #R001-T01: Normalization lowercases text before downstream token extraction.
     #R010-T01: Mixed case input becomes lowercase.
+    #R005-T01: Core helper outputs remain deterministic for downstream rank-order composition.
     assert scoring_core.normalized_text("HeLLo") == "hello"
 
 
@@ -395,19 +397,42 @@ def test_amount_reconciliation_score_includes_one_cent_line_items() -> None:
 
 def test_decimal_to_cents_uses_half_up_rounding_at_half_cent() -> None:
     #R020: Cents normalization rounds half-up (0.005 -> 1 cent), not banker's rounding.
+    #R760-T01: Decimal-to-cents conversion uses half-up quantization at cent precision.
     assert scoring_core._decimal_to_cents(Decimal("0.005")) == 1
     assert scoring_core._decimal_to_cents(Decimal("0.015")) == 2
 
 
 def test_decimal_to_cents_scales_by_exactly_one_hundred() -> None:
     #R020: A whole-dollar value converts to exactly 100 cents per dollar.
+    #R760-T02: Decimal-to-cents conversion scales whole-dollar values to integer cents.
     assert scoring_core._decimal_to_cents(Decimal("1.00")) == 100
     assert scoring_core._decimal_to_cents(Decimal("3.50")) == 350
 
 
 def test_decimal_to_cents_returns_none_for_unquantizable_value() -> None:
     #R020: A value too large to quantize at cent precision resolves to None rather than a cents value.
+    #R760-T03: Decimal-to-cents conversion returns None for invalid/unquantizable values.
     assert scoring_core._decimal_to_cents(Decimal("1E1000")) is None
+
+
+def test_extract_money_cents_parses_decimal_and_grouped_amount_tokens() -> None:
+    #R761-T01: Money-token extraction normalizes decimal, grouped, and signed values into integer-cent amounts.
+    text = "total $1,234.56, adjustment -7.00, tip 0.99, invalid 12.345"
+    extracted = scoring_core._extract_money_cents(text)
+    assert 123456 in extracted
+    assert 700 in extracted
+    assert 99 in extracted
+    assert 1234 not in extracted
+
+
+def test_bm25_and_reconciliation_helpers_return_bounded_blend_inputs() -> None:
+    #R047-T01: BM25 and reconciliation helpers return bounded values suitable for scorer blending.
+    candidate = email_candidate(subject="Item A $3.00", preview="Item B $7.00", body_text="coffee receipt")
+    bm25_raw = scoring_core.bm25_score("coffee", "coffee receipt", corpus_size=1, document_frequency_map={"coffee": 1}, average_document_length=2.0)
+    bm25_value = scoring_core.bm25_relevance(bm25_raw)
+    reconciliation = scoring_core.amount_reconciliation_score(Decimal("10.00"), candidate)
+    assert 0.0 <= bm25_value <= 1.0
+    assert reconciliation in {0.0, 1.0}
 
 
 def test_amount_hint_score_returns_zero_when_target_cents_unresolvable() -> None:

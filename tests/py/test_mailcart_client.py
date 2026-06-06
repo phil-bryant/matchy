@@ -144,6 +144,7 @@ def test_mailcart_client_resolves_explicit_ca_bundle_override(tmp_path, monkeypa
 
 def test_mailcart_client_passes_ca_bundle_to_search_request(tmp_path, monkeypatch) -> None:
     #R045: The resolved CA bundle is forwarded as the requests verify argument.
+    #R642-T01: _request_get forwards verify/timeout/headers through search_candidates transport calls.
     ca_file = tmp_path / "custom-ca.pem"
     ca_file.write_text("dummy", encoding="utf-8")
     monkeypatch.delenv("REQUESTS_CA_BUNDLE", raising=False)
@@ -178,6 +179,7 @@ def test_mailcart_client_passes_ca_bundle_to_search_request(tmp_path, monkeypatc
 
 def test_mailcart_client_rejects_non_https_base_url() -> None:
     #R015-T01: Mailcart client must fail fast when base URL is not https.
+    #R640-T01: Mailcart client must fail fast when base URL is not https.
     settings = SimpleNamespace(
         mailcart_service_base_url="http://127.0.0.1:8788",
         mailcart_service_token="",
@@ -322,3 +324,53 @@ def test_mailcart_client_startup_preflight_failure_includes_transport_context(tm
             raise AssertionError("expected RuntimeError from startup preflight")
     finally:
         module.requests.get = original
+
+
+def test_mailcart_client_build_url_normalizes_leading_slash() -> None:
+    #R641-T01: _build_url prepends a slash for relative paths and preserves absolute-path inputs.
+    client = MailcartClient(Settings())
+    assert client._build_url("v1/messages/search") == "https://127.0.0.1:8788/v1/messages/search"
+    assert client._build_url("/v1/messages/search") == "https://127.0.0.1:8788/v1/messages/search"
+
+
+def test_mailcart_client_move_to_matchy_returns_true_only_for_success_status(monkeypatch) -> None:
+    #R643-T01: _request_post sends JSON folder payload with shared timeout/header/verify transport policy.
+    #R644-T01: move_to_matchy returns True for HTTP 200/204 and False for non-success responses.
+    calls = []
+
+    class Response:
+        #R644: Plain reuse tag for response scaffolding in move-to-matchy transport checks.
+        def __init__(self, status_code: int):
+            self.status_code = status_code
+
+    #R643: Plain reuse tag for POST transport scaffolding in move-to-matchy checks.
+    def fake_post(url, **kwargs):
+        calls.append((url, kwargs))
+        if len(calls) == 1:
+            return Response(200)
+        if len(calls) == 2:
+            return Response(204)
+        return Response(500)
+
+    original = module.requests.post
+    module.requests.post = fake_post
+    try:
+        client = MailcartClient(Settings())
+        assert client.move_to_matchy("msg_ok_200") is True
+        assert client.move_to_matchy("msg_ok_204") is True
+        assert client.move_to_matchy("msg_fail") is False
+    finally:
+        module.requests.post = original
+    first_url, first_kwargs = calls[0]
+    assert first_url.endswith("/v1/messages/msg_ok_200/move")
+    assert first_kwargs["json"] == {"folder_name": "matchy"}
+    assert first_kwargs["timeout"] == 20
+
+
+def test_mailcart_client_parse_datetime_handles_blank_zulu_and_naive_values() -> None:
+    #R645-T01: _parse_datetime defaults blanks to now-UTC and normalizes Z/naive timestamps into timezone-aware datetimes.
+    client = MailcartClient(Settings())
+    blank = client._parse_datetime("")
+    assert blank.tzinfo is not None
+    assert client._parse_datetime("2026-05-01T10:30:00Z").tzinfo is not None
+    assert client._parse_datetime("2026-05-01T10:30:00").tzinfo is not None

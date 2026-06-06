@@ -26,6 +26,7 @@ class EnrichmentMixin:
             result = self._apply_body_enrichment(candidates, enrich_count, payload_by_id)
         return result
 
+    #R600: Derive enrichment execution settings only when enrichment is enabled, candidates exist, and get_message is callable.
     def _body_enrichment_config(self, candidates: list[EmailCandidate]):
         config = None
         enabled = bool(getattr(self._settings, "mailcart_body_enrichment_enabled", False))
@@ -40,6 +41,7 @@ class EnrichmentMixin:
                 config = (get_message, enrich_count, timeout_seconds, max_workers, per_message_timeout)
         return config
 
+    #R605: Preserve first-seen ordering while deduplicating candidate message ids within the configured enrichment window.
     def _unique_message_ids(self, candidates: list[EmailCandidate], enrich_count: int) -> list[str]:
         message_ids: list[str] = []
         for index in range(enrich_count):
@@ -48,6 +50,7 @@ class EnrichmentMixin:
                 message_ids.append(message_id)
         return message_ids
 
+    #R610: Fetch message payloads concurrently, keeping successful rows and tolerating per-message failures or overall timeout.
     def _fetch_message_payloads(self, get_message, message_ids, transaction_id,
                                 max_workers, timeout_seconds, per_message_timeout) -> dict[str, dict]:
         payload_by_id: dict[str, dict] = {}
@@ -73,6 +76,7 @@ class EnrichmentMixin:
                 )
         return payload_by_id
 
+    #R615: Prefer text_body, then html_body, then body_text when extracting enrichment body content from a message payload.
     def _enrichment_body_text(self, payload) -> str:
         body_text = ""
         if payload:
@@ -83,6 +87,7 @@ class EnrichmentMixin:
             )
         return body_text
 
+    #R620: Apply enriched body payloads to the configured prefix of candidates while leaving unmatched rows unchanged.
     def _apply_body_enrichment(self, candidates, enrich_count, payload_by_id) -> list[EmailCandidate]:
         enriched: list[EmailCandidate] = []
         for index in range(enrich_count):

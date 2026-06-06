@@ -37,6 +37,7 @@ def amount_hint_score(amount: Decimal, candidate: EmailCandidate) -> float:
     return 0.0
 
 
+ #R760: Quantize Decimal values to cent precision using half-up rounding and return integer cents, or None on invalid input.
 def _decimal_to_cents(value: Decimal) -> int | None:
     try:
         quantized = value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -45,6 +46,7 @@ def _decimal_to_cents(value: Decimal) -> int | None:
     return int((quantized * 100).to_integral_value(rounding=ROUND_HALF_UP))
 
 
+ #R761: Extract money-like numeric tokens from text and normalize each parsed value into integer cents.
 def _extract_money_cents(text: str) -> set[int]:
     cents: set[int] = set()
     pattern = re.compile(

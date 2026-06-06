@@ -13,6 +13,9 @@ from matchy.service import MatchService
 def test_service_enriches_candidate_bodies_with_full_mailcart_message_body_before_scoring() -> None:
     #R015: _enrich_candidate_bodies replaces body_text with full Mailcart body and tolerates per-id failures.
     #R015-T01: Python test lane exists for body enrichment requirement.
+    #R610-T01: Message payload fetch failures are tolerated while successful payloads are still applied.
+    #R615-T01: Enrichment body extraction prefers available text/html/body fields in payload order.
+    #R620-T01: Body enrichment rewrites configured candidate rows and leaves unresolved rows unchanged.
     class FakeClient:
         #R015: Test helper supports this requirement-focused scenario.
         def __init__(self):
@@ -47,6 +50,7 @@ def test_service_enriches_candidate_bodies_with_full_mailcart_message_body_befor
 
 def test_service_enrichment_fetches_duplicate_message_ids_only_once() -> None:
     #R015: Duplicate candidate message_ids should not trigger duplicate get_message fetches.
+    #R605-T01: Enrichment deduplicates message ids before dispatching Mailcart fetches.
     class FakeClient:
         #R015: Test helper supports this requirement-focused scenario.
         def __init__(self):
@@ -82,6 +86,7 @@ def test_service_enrichment_fetches_duplicate_message_ids_only_once() -> None:
 def test_service_skips_body_enrichment_when_feature_flag_is_disabled() -> None:
     #R015: Enrichment is gated by mailcart_body_enrichment_enabled.
     #R015-T02: Python test lane exists for enrichment flag requirement.
+    #R600-T01: Enrichment configuration short-circuits when the feature flag is disabled.
     class FakeClient:
         #R015: Test helper supports this requirement-focused scenario.
         def __init__(self):

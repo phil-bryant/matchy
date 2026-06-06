@@ -21,6 +21,7 @@ def _resolve(names: list[str], default: str) -> str:
     return resolved
 
 
+#R400: Resolve the mkcert local root CA path for Mailcart TLS trust and return an empty value when unavailable.
 # Resolve mkcert root CA for Mailcart TLS verification when DAST runs against localhost HTTPS stubs.
 def _resolve_mkcert_root_ca() -> str:
     resolved = ""

@@ -82,6 +82,7 @@ class SearchMixin:
                 return []
             raise
 
+    #R800: Skip Mailcart search work while a transient-failure cooldown window remains active.
     def _mailcart_in_cooldown(self, transaction_id: str) -> bool:
         now = monotonic()
         unavailable_until = float(getattr(self, "_mailcart_unavailable_until_monotonic", 0.0) or 0.0)
@@ -94,6 +95,7 @@ class SearchMixin:
             return True
         return False
 
+    #R801: Classify connection and HTTP 5xx request failures as transient Mailcart errors eligible for cooldown.
     def _is_transient_mailcart_error(self, exc: Exception) -> bool:
         if isinstance(exc, requests.exceptions.ConnectionError):
             return True
@@ -107,6 +109,7 @@ class SearchMixin:
             return status_code >= 500
         return False
 
+    #R802: Start a monotonic cooldown window after transient Mailcart failures so subsequent searches back off briefly.
     def _mark_mailcart_temporarily_unavailable(self, transaction_id: str) -> None:
         cooldown_seconds = int(getattr(self, "_mailcart_failure_cooldown_seconds", 15) or 15)
         if cooldown_seconds > 0:
@@ -117,6 +120,7 @@ class SearchMixin:
                 f"transaction_id={transaction_id} cooldown_seconds={cooldown_seconds}",
             )
 
+    #R803: Derive deterministic search terms from counterparty/description text by filtering short, numeric, and duplicate tokens.
     def _extract_search_terms(self, description: str, counterparty_name: str) -> list[str]:
         ordered_tokens: list[str] = []
         seen: set[str] = set()
@@ -138,6 +142,7 @@ class SearchMixin:
                     return ordered_tokens
         return ordered_tokens
 
+    #R804: Build scoped Mailcart queries for each term/field combination, optionally appending the transaction date window suffix.
     def _build_scoped_queries(
         self,
         terms: list[str],
@@ -154,6 +159,7 @@ class SearchMixin:
                 scoped_queries.append(f"{field}:{term}{date_window}")
         return scoped_queries
 
+    #R805: Emit an inclusive from/to date window suffix around the transaction date using configured search window days.
     def _date_window_suffix(self, txn_date) -> str:
         window_days = int(getattr(self._settings, "mailcart_search_date_window_days", 45) or 45)
         if window_days <= 0:

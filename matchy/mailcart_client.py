@@ -32,6 +32,7 @@ class MailcartClient:
         self._startup_healthcheck_timeout_seconds = configured_health_timeout if configured_health_timeout > 0 else 2
 
     @staticmethod
+    #R640: Enforce an HTTPS Mailcart base URL with a non-empty host:port component before any network calls.
     def _validate_base_url(base_url: str) -> None:
         parsed = urlparse(base_url)
         if parsed.scheme.lower() != "https":
@@ -78,6 +79,7 @@ class MailcartClient:
             pass
         return True
 
+    #R641: Normalize relative and absolute paths into full Mailcart endpoint URLs rooted at the configured base.
     def _build_url(self, path: str) -> str:
         normalized_path = path if path.startswith("/") else f"/{path}"
         return f"{self._base}{normalized_path}"
@@ -88,6 +90,7 @@ class MailcartClient:
         verify_repr = self._verify if isinstance(self._verify, str) else "default-cert-store"
         return f"base_url={self._base} verify={verify_repr}"
 
+    #R642: Execute Mailcart GET requests with shared URL/header/TLS verification policy and caller-provided timeout/params.
     def _request_get(self, path: str, *, timeout: int, params: dict | None = None) -> requests.Response:
         return requests.get(
             self._build_url(path),
@@ -97,6 +100,7 @@ class MailcartClient:
             verify=self._verify,
         )
 
+    #R643: Execute Mailcart POST requests with shared URL/header/TLS verification policy and JSON payload encoding.
     def _request_post(self, path: str, *, timeout: int, payload: dict) -> requests.Response:
         return requests.post(
             self._build_url(path),
@@ -194,6 +198,7 @@ class MailcartClient:
         payload = response.json()
         return payload if isinstance(payload, dict) else {}
 
+    #R644: Move a message into the matchy folder and report success only for HTTP 200/204 responses.
     def move_to_matchy(self, message_id: str) -> bool:
         response = self._request_post(
             f"/v1/messages/{message_id}/move",
@@ -204,6 +209,7 @@ class MailcartClient:
             return True
         return False
 
+    #R645: Parse Mailcart datetime values, defaulting to current UTC for blank values and attaching UTC when timezone is missing.
     def _parse_datetime(self, value: str) -> datetime:
         if not value:
             return datetime.now(tz=timezone.utc)

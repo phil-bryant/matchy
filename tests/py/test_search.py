@@ -7,6 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
+import requests
 from matchy.models import EmailCandidate, TransactionInput
 from matchy.service import MatchService
 
@@ -20,6 +21,10 @@ import matchy_mailcart_api as mailcart_api  # noqa: E402
 def test_service_query_builders_emit_scoped_tokens_with_date_bounds() -> None:
     #R005: Query helpers produce deterministic scoped query strings.
     #R005-T01: Python test lane exists for query builder requirement.
+    #R803: Query helpers produce deterministic scoped query strings.
+    #R803-T01: Python test lane exists for search-term extraction requirement.
+    #R804-T01: Python test lane exists for scoped-query construction requirement.
+    #R805-T01: Python test lane exists for date-window suffix requirement.
     service = object.__new__(MatchService)
     service._settings = SimpleNamespace(mailcart_search_date_window_days=45)
     terms = service._extract_search_terms("Payment #1234 at DoorDash.com", "DoorDash")
@@ -126,3 +131,35 @@ def test_service_search_candidates_dedupes_preserving_order() -> None:
     c3 = EmailCandidate(message_id="m1", subject="s", preview="p", body_text="", received_at=datetime(2026, 5, 1, tzinfo=timezone.utc))
     deduped = MatchService._dedupe_candidates([c1, c2, c3], limit=10)
     assert [d.message_id for d in deduped] == ["m1", "m2"]
+
+
+def test_service_mailcart_cooldown_check_blocks_until_window_expires(monkeypatch) -> None:
+    #R800-T01: Cooldown checks block searches while unavailable-until monotonic timestamp is in the future.
+    service = object.__new__(MatchService)
+    service._mailcart_unavailable_until_monotonic = 120.0
+    monkeypatch.setattr("matchy.search.monotonic", lambda: 100.0)
+    assert service._mailcart_in_cooldown(transaction_id="txn_1") is True
+    monkeypatch.setattr("matchy.search.monotonic", lambda: 130.0)
+    assert service._mailcart_in_cooldown(transaction_id="txn_1") is False
+
+
+def test_service_transient_mailcart_error_classifier_distinguishes_5xx_and_connection_failures() -> None:
+    #R801-T01: Transient classifier returns true for connection/5xx failures and false for non-5xx cases.
+    service = object.__new__(MatchService)
+    five_hundred = Exception()
+    response = type("Resp", (), {"status_code": 500})()
+    http_error = requests.exceptions.HTTPError("boom", response=response)
+    assert service._is_transient_mailcart_error(requests.exceptions.ConnectionError("offline")) is True
+    assert service._is_transient_mailcart_error(http_error) is True
+    four_hundred = requests.exceptions.HTTPError("bad", response=type("Resp", (), {"status_code": 400})())
+    assert service._is_transient_mailcart_error(four_hundred) is False
+    assert service._is_transient_mailcart_error(five_hundred) is False
+
+
+def test_service_marks_mailcart_temporarily_unavailable_with_configured_cooldown(monkeypatch) -> None:
+    #R802-T01: Cooldown marker sets unavailable-until monotonic timestamp using configured cooldown seconds.
+    service = object.__new__(MatchService)
+    service._mailcart_failure_cooldown_seconds = 15
+    monkeypatch.setattr("matchy.search.monotonic", lambda: 200.0)
+    service._mark_mailcart_temporarily_unavailable(transaction_id="txn_1")
+    assert service._mailcart_unavailable_until_monotonic == 215.0

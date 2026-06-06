@@ -12,6 +12,7 @@ import os
 import pytest
 
 
+#R010: Integration helper constructs live match service context for pending-run flow coverage.
 def _build_live_service():
     """Construct a real MatchService or skip when live dependencies are unavailable."""
     service = None
@@ -25,6 +26,7 @@ def _build_live_service():
     return service
 
 
+#R010: Live integration test covers pending batch execution contract against real dependencies.
 def test_live_pending_batch_runs_end_to_end_against_real_services() -> None:
     """A real pending batch (or a configured transaction) returns well-formed, persisted results."""
     service = _build_live_service()

@@ -12,6 +12,7 @@ from matchy.api import create_app
 
 
 def _auth_headers(token: str = "test-matchy-api-token") -> dict[str, str]:
+    #R480: Test helper reuses configured auth header shape for startup/logging and endpoint path checks.
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -29,9 +30,11 @@ def test_api_create_app_refreshes_cldr_currencies_cache_when_enabled(monkeypatch
     calls = []
 
     class StubCache:
+        #R480: Test helper supports startup-path checks for app boot behavior.
         def __init__(self, settings):
             self._settings = settings
 
+        #R480: Test helper supports startup-path checks for app boot behavior.
         def refresh(self):
             calls.append(self._settings.cldr_currencies_cache_path)
             return {"updated": True, "version": "sha-1", "cache_path": self._settings.cldr_currencies_cache_path}
@@ -48,6 +51,7 @@ def test_api_run_endpoint_maps_unknown_transaction_to_http_404() -> None:
     #R005: ValueError from service is converted into HTTP 404.
     #R005-T01: Python test lane exists for 404 mapping requirement.
     class StubService:
+        #R490: Test helper covers run endpoint ValueError mapping behavior.
         def match_transaction(self, transaction_id, trigger_source="manual", force_rematch=False):
             raise ValueError("Unknown transaction_id: missing")
 
@@ -76,13 +80,17 @@ def test_api_run_endpoint_rejects_empty_transaction_id_with_422() -> None:
 
 
 def test_api_run_endpoint_uses_atomic_batch_matcher_when_service_supports_it() -> None:
+    #R490: Run endpoint prefers atomic batch matcher when the service exposes that capability.
+    #R490-T01: Python test lane exists for run endpoint batch-dispatch requirement.
     calls = []
 
     class StubService:
+        #R490: Test helper covers run endpoint batch dispatch behavior.
         def match_transactions_atomic(self, transaction_ids, trigger_source="manual", force_rematch=False):
             calls.append((transaction_ids, trigger_source, force_rematch))
             return [{"transaction_id": transaction_id, "run_id": 1} for transaction_id in transaction_ids]
 
+        #R490: Test helper covers run endpoint batch dispatch behavior.
         def match_transaction(self, transaction_id, trigger_source="manual", force_rematch=False):
             raise AssertionError("run endpoint should use match_transactions_atomic when available")
 
@@ -130,7 +138,10 @@ def test_api_mutating_endpoints_reject_wrong_bearer_token() -> None:
 def test_api_pending_run_endpoint_delegates_to_service_batch_matcher() -> None:
     #R010: Pending-run endpoint delegates to service batch matching with validated request fields.
     #R010-T01: Python test lane exists for pending-run endpoint requirement.
+    #R495: Pending-run endpoint delegates to service batch matching with validated request fields.
+    #R495-T01: Python test lane exists for pending-run endpoint requirement.
     class StubService:
+        #R495: Test helper covers pending endpoint delegation behavior.
         def match_pending_transactions(self, limit=100, lookback_days=14, trigger_source="auto", force_rematch=False):
             return [{"ok": True, "limit": limit, "lookback_days": lookback_days, "trigger_source": trigger_source}]
 
@@ -154,9 +165,12 @@ def test_api_pending_run_endpoint_delegates_to_service_batch_matcher() -> None:
 def test_api_confirm_endpoint_delegates_to_service_confirm() -> None:
     #R045: Confirm endpoint accepts transaction+email and delegates.
     #R045-T02: Python test lane exists for confirm API endpoint.
+    #R500: Confirm endpoint accepts transaction+email and delegates.
+    #R500-T01: Python test lane exists for confirm API endpoint.
     calls = []
 
     class StubService:
+        #R500: Test helper covers confirm endpoint delegation behavior.
         def confirm_match(self, transaction_id, email_message_id, note=None):
             calls.append((transaction_id, email_message_id, note))
             return {"status": "confirmed", "match_id": 123}
@@ -178,7 +192,10 @@ def test_api_confirm_endpoint_delegates_to_service_confirm() -> None:
 def test_api_confirm_endpoint_maps_unknown_ids_to_http_404() -> None:
     #R045: Confirm endpoint maps service ValueError to HTTP 404.
     #R045-T01: Python test lane exists for confirm endpoint 404 mapping.
+    #R500: Confirm endpoint maps service ValueError to HTTP 404.
+    #R500-T02: Python test lane exists for confirm endpoint 404 mapping.
     class StubService:
+        #R500: Test helper covers confirm endpoint ValueError mapping.
         def confirm_match(self, transaction_id, email_message_id, note=None):
             raise ValueError(f"Unknown transaction_id or email_message_id for confirmation: {transaction_id}/{email_message_id}")
 
@@ -204,3 +221,28 @@ def test_api_confirm_endpoint_rejects_note_with_null_byte() -> None:
         headers=_auth_headers(),
     )
     assert response.status_code == 422
+
+
+def test_api_startup_log_emits_when_enabled(monkeypatch, capsys) -> None:
+    #R480-T01: Startup logging emits elapsed-phase lines only when MATCHY_STARTUP_LOG=true.
+    monkeypatch.setenv("MATCHY_STARTUP_LOG", "true")
+    api._startup_log(0.0, "phase-check", "detail=x")
+    captured = capsys.readouterr().out
+    assert "phase-check" in captured
+    assert "detail=x" in captured
+
+
+def test_api_service_dependency_maps_constructor_failures_to_http_503() -> None:
+    #R485-T01: Endpoint dependency maps MatchService construction failures to HTTP 503.
+    old = api.MatchService
+    api.MatchService = lambda settings: (_ for _ in ()).throw(RuntimeError("boom"))
+    try:
+        response = TestClient(create_app()).post(
+            "/v1/matchy/runs",
+            json={"transaction_ids": ["txn_1"], "trigger_source": "manual"},
+            headers=_auth_headers(),
+        )
+        assert response.status_code == 503
+        assert response.json()["detail"] == "Match service is unavailable."
+    finally:
+        api.MatchService = old

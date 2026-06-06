@@ -17,6 +17,8 @@ from . import scoring_core
 #R044: BM25 saturation is implemented in scoring_core.bm25_relevance.
 #R045: Subset-sum reachability is implemented in scoring_core.subset_sum_reachable.
 #R046: Amount reconciliation scoring is implemented in scoring_core.amount_reconciliation_score.
+#R760: Decimal-to-cents normalization is implemented in scoring_core._decimal_to_cents.
+#R761: Money-token cent extraction is implemented in scoring_core._extract_money_cents.
  #R005: Rank candidates by weighted heuristics and return results sorted by descending score.
  #R047: Blend corpus-aware BM25 relevance and subset-sum amount reconciliation into the weighted score
  #R047: while keeping the reason payload key set stable across every ranked candidate.

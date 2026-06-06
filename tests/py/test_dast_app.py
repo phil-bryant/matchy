@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
+from types import SimpleNamespace
 
 import dast_app
 
@@ -33,3 +35,20 @@ def test_resolve_tls_overrides_take_precedence(monkeypatch) -> None:
     monkeypatch.delenv("TELLER_CLASSIFIER_TLS_CERT_FILE", raising=False)
     resolved = dast_app._resolve(["MATCHY_API_TLS_CERT_FILE", "TELLER_CLASSIFIER_TLS_CERT_FILE"], "/default/cert.pem")
     assert resolved == "/custom/cert.pem"
+
+
+def test_resolve_mkcert_root_ca_uses_home_library_path_when_present(monkeypatch, tmp_path) -> None:
+    #R400-T01: mkcert root CA resolution prefers the standard home-library location when the file exists.
+    home_root = tmp_path / "Library" / "Application Support" / "mkcert"
+    home_root.mkdir(parents=True)
+    root_ca = home_root / "rootCA.pem"
+    root_ca.write_text("pem", encoding="utf-8")
+    monkeypatch.setattr(dast_app.Path, "home", lambda: tmp_path)
+    assert dast_app._resolve_mkcert_root_ca() == str(root_ca)
+
+
+def test_resolve_mkcert_root_ca_returns_empty_when_no_location_is_available(monkeypatch, tmp_path) -> None:
+    #R400-T02: mkcert root CA resolution returns an empty value when neither home path nor mkcert command resolves a file.
+    monkeypatch.setattr(dast_app.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(dast_app.subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=1, stdout=""))
+    assert dast_app._resolve_mkcert_root_ca() == ""

@@ -47,6 +47,7 @@ class MatchRepository(MatchWriterMixin):
         finally:
             session.close()
 
+    #R720: Load a single transaction row (with optional counterparty) and normalize it into TransactionInput with UTC timestamp.
     def load_transaction(self, session, transaction_id: str) -> TransactionInput | None:
         row = session.execute(
             text(
@@ -79,6 +80,7 @@ class MatchRepository(MatchWriterMixin):
             counterparty_name=row["counterparty_name"] or "",
         )
 
+    #R721: Create a new match run row initialized to needs_review and return its generated match_run_id.
     def create_run(self, session, transaction_id: str, trigger_source: str, model_name: str, prompt_version: str) -> int:
         return int(
             session.execute(
@@ -101,6 +103,7 @@ class MatchRepository(MatchWriterMixin):
             ).scalar_one()
         )
 
+    #R722: Update an existing match run's recorded model name without mutating other run columns.
     def update_run_model_name(self, session, run_id: int, model_name: str) -> None:
         session.execute(
             text(
@@ -243,6 +246,7 @@ class MatchRepository(MatchWriterMixin):
             "ai_confidence": float(confidence) if confidence is not None else None,
         }
 
+    #R723: List active email_message_ids already attached to other transactions to prevent duplicate active matches.
     def list_active_email_ids_for_other_transactions(self, session, transaction_id: str) -> set[str]:
         rows = session.execute(
             text(
@@ -258,6 +262,7 @@ class MatchRepository(MatchWriterMixin):
         ).mappings().all()
         return {str(row["email_message_id"]) for row in rows}
 
+    #R724: Mark a match run complete with status/error metadata while stamping completed_at.
     def _update_run_status(self, session, run_id: int, status: str, error_text: str | None = None) -> None:
         session.execute(
             text(
@@ -272,5 +277,6 @@ class MatchRepository(MatchWriterMixin):
             {"status": status, "error_text": error_text, "match_run_id": run_id},
         )
 
+    #R725: Mark a match run as failed by delegating to the shared run-status update helper.
     def mark_run_failed(self, session, run_id: int, error_text: str) -> None:
         self._update_run_status(session, run_id, "failed", error_text=error_text)

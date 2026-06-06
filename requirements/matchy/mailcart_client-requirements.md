@@ -38,6 +38,38 @@ Tests:
 - R050-T02: Verify startup preflight hits `/health` and forwards the resolved TLS verify bundle + configured timeout.
 - R050-T03: Simulate startup preflight transport failure and verify the surfaced error includes base URL and verify context.
 
+R640  Statement: Enforce HTTPS Mailcart base URLs with an explicit host component.
+Design: `_validate_base_url` rejects base URLs whose parsed scheme is not `https` or whose netloc is empty.
+Tests:
+- R640-T01: Construct client with `http://...` base URL and verify initialization fails fast.
+
+R641  Statement: Normalize Mailcart request paths before URL composition.
+Design: `_build_url` prepends a leading slash when missing and concatenates the normalized path onto configured base URL.
+Tests:
+- R641-T01: Build URLs from both relative and absolute path inputs and verify canonical endpoint output.
+
+R642  Statement: Reuse shared GET transport settings for Mailcart requests.
+Design: `_request_get` always calls `requests.get` with normalized URL, auth headers, timeout, params, and resolved
+TLS verify bundle.
+Tests:
+- R642-T01: Search-path GET request forwards resolved verify bundle through transport helper.
+
+R643  Statement: Reuse shared POST transport settings for Mailcart requests.
+Design: `_request_post` always calls `requests.post` with normalized URL, auth headers, timeout, payload, and resolved
+TLS verify bundle.
+Tests:
+- R643-T01: Move endpoint POST request forwards folder payload and timeout through POST transport helper.
+
+R644  Statement: Move-message API responses are treated as success only for HTTP 200/204.
+Design: `move_to_matchy` calls the move endpoint and returns true for status 200/204; all other statuses return false.
+Tests:
+- R644-T01: Verify move-to-matchy returns true for HTTP 200/204 and false for non-success statuses.
+
+R645  Statement: Parse Mailcart datetime values into timezone-aware datetimes.
+Design: `_parse_datetime` defaults blank values to current UTC, normalizes `Z` offsets, and attaches UTC for naive values.
+Tests:
+- R645-T01: Parse blank/Z/naive datetime values and verify timezone-aware UTC outputs.
+
 ## Changelog
 
 - 2026-05-18: Added Mailcart client requirements and numbered tests.
@@ -45,3 +77,4 @@ Tests:
 - 2026-05-28: Added R015 strict HTTPS-only Mailcart base URL enforcement with fail-fast validation.
 - 2026-05-29: Added R045 explicit CA bundle resolution for mkcert localhost certificates.
 - 2026-06-03: Updated R045 with fail-fast missing-bundle handling and added R050 startup transport preflight requirements.
+- 2026-06-06: Added R640-R645 helper transport requirements while preserving existing R001/R005/R010 message API contracts.

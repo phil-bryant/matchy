@@ -18,6 +18,7 @@ SafeOptionalNote = Annotated[str, Field(pattern=r"^[^\x00]*$")]
 LOGGER = logging.getLogger(__name__)
 
 
+ #R480: Emit startup timing logs only when MATCHY_STARTUP_LOG is enabled and include optional phase details.
 def _startup_log(start_time_seconds: float, phase: str, details: str = "") -> None:
     enabled = os.environ.get("MATCHY_STARTUP_LOG", "false").strip().lower() == "true"
     if enabled:
@@ -65,6 +66,7 @@ def create_app() -> FastAPI:
         _startup_log(startup_started_at, "cldr-currencies-cache-refreshed", detail)
     service: MatchService | None = None
 
+    #R485: Lazily initialize MatchService once and map constructor failures to HTTP 503 for API callers.
     def _service() -> MatchService:
         nonlocal service
         if service is None:
@@ -94,11 +96,13 @@ def create_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    #R490: Dispatch validated run requests to batch or per-id matching and map ValueError to HTTP 404.
     #R005: Translate unknown transactions from service ValueError into HTTP 404 responses.
     @app.post("/v1/matchy/runs", response_model=MatchRunResponse,
               responses={401: {"description": "Unauthorized."}, 404: {"description": "No transaction matched the supplied transaction_id."},
                          503: {"description": "API auth token is not configured."}})
     def run_matches(request: MatchRunRequest, _auth: None = Depends(_require_api_auth)) -> MatchRunResponse:
+        #R490: Run endpoint dispatches through atomic-batch matcher when available, else per-id fallback.
         service = _service()
         batch_matcher = getattr(service, "match_transactions_atomic", None)
         if callable(batch_matcher):
@@ -119,10 +123,12 @@ def create_app() -> FastAPI:
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
         return MatchRunResponse(results=rows)
 
+    #R495: Execute validated pending-run batch requests through MatchService and return delegated rows.
     #R010: Publish a pending-transaction batch endpoint for driver-triggered matching runs.
     @app.post("/v1/matchy/runs/pending", response_model=MatchRunResponse,
               responses={401: {"description": "Unauthorized."}, 503: {"description": "API auth token is not configured."}})
     def run_pending_matches(request: PendingMatchRunRequest, _auth: None = Depends(_require_api_auth)) -> MatchRunResponse:
+        #R495: Pending endpoint forwards validated batch arguments directly to MatchService.
         rows = _service().match_pending_transactions(
             limit=request.limit,
             lookback_days=request.lookback_days,
@@ -131,11 +137,13 @@ def create_app() -> FastAPI:
         )
         return MatchRunResponse(results=rows)
 
+    #R500: Delegate confirm requests with validated payloads and map service ValueError failures to HTTP 404.
     #R045: Expose a human-confirm endpoint with strict input validation and ValueError-to-404 mapping.
     @app.post("/v1/matchy/confirm", response_model=dict,
               responses={401: {"description": "Unauthorized."}, 404: {"description": "Unknown transaction or email message for confirmation."},
                          503: {"description": "API auth token is not configured."}})
     def confirm_match(request: ConfirmRequest, _auth: None = Depends(_require_api_auth)) -> dict:
+        #R500: Confirm endpoint delegates validated payloads and maps domain ValueError to HTTP 404.
         try:
             result = _service().confirm_match(
                 transaction_id=request.transaction_id,
