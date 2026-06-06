@@ -1,0 +1,25 @@
+# t04 run requirements traceability tests Wrapper Requirements
+
+## Scope
+
+Applies to `tests/t04_run_requirements_traceability_tests.sh`. Thin pointer that selects the matchy runbook profile and delegates the lane to the runner golden via the shared shim.
+
+R001  Statement: Pointer runs with secure umask and strict shell mode via the shared shim.
+Design: Source `pointer_shim.sh`, which sets `umask 007` and `set -euo pipefail` before delegation.
+Tests:
+- R001-T01: Verify the pointer sources `pointer_shim.sh`.
+
+R005  Statement: Pointer resolves runner and repo roots through the shared shim.
+Design: The sourced `pointer_shim.sh` resolves `RUNNER_HOME` and `RUNBOOK_REPO_ROOT`; the pointer locates the shim under `runner/src/scripts`.
+Tests:
+- R005-T01: Verify the pointer locates the shim under `runner/src/scripts`.
+
+R010  Statement: Pointer selects its runbook profile explicitly before delegation.
+Design: Set `RUNBOOK_PROFILE="matchy"` so the shim sources `runner/config/runbook/matchy.env` and exports `RUNBOOK_REPO_ROOT`.
+Tests:
+- R010-T01: Verify the pointer sets `RUNBOOK_PROFILE` to the matchy profile.
+
+R015  Statement: Pointer delegates execution to the mapped runner golden.
+Design: Call `delegate_golden "tests/t04_run_requirements_traceability_tests.sh" "$@"` so the shim execs the runner golden with arguments passed through unchanged.
+Tests:
+- R015-T01: Verify the pointer calls `delegate_golden "tests/t04_run_requirements_traceability_tests.sh"` with `"$@"`.
