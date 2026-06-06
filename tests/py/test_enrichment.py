@@ -14,9 +14,11 @@ def test_service_enriches_candidate_bodies_with_full_mailcart_message_body_befor
     #R015: _enrich_candidate_bodies replaces body_text with full Mailcart body and tolerates per-id failures.
     #R015-T01: Python test lane exists for body enrichment requirement.
     class FakeClient:
+        #R015: Test helper supports this requirement-focused scenario.
         def __init__(self):
             self.calls = []
 
+        #R015: Test helper supports this requirement-focused scenario.
         def get_message(self, message_id, timeout_seconds=None):
             self.calls.append(message_id)
             if message_id == "msg_ok":
@@ -46,9 +48,11 @@ def test_service_enriches_candidate_bodies_with_full_mailcart_message_body_befor
 def test_service_enrichment_fetches_duplicate_message_ids_only_once() -> None:
     #R015: Duplicate candidate message_ids should not trigger duplicate get_message fetches.
     class FakeClient:
+        #R015: Test helper supports this requirement-focused scenario.
         def __init__(self):
             self.calls = []
 
+        #R015: Test helper supports this requirement-focused scenario.
         def get_message(self, message_id, timeout_seconds=None):
             self.calls.append(message_id)
             return {"text_body": f"body-{message_id}"}
@@ -79,9 +83,11 @@ def test_service_skips_body_enrichment_when_feature_flag_is_disabled() -> None:
     #R015: Enrichment is gated by mailcart_body_enrichment_enabled.
     #R015-T02: Python test lane exists for enrichment flag requirement.
     class FakeClient:
+        #R015: Test helper supports this requirement-focused scenario.
         def __init__(self):
             self.calls = []
 
+        #R015: Test helper supports this requirement-focused scenario.
         def get_message(self, message_id, timeout_seconds=None):
             self.calls.append(message_id)
             return {"text_body": "should-not-appear"}
@@ -100,40 +106,55 @@ def test_service_filters_enriched_candidates_without_standalone_cldr_currency_be
     #R050-T01: Currency filtering runs after full-body enrichment and before ranking/AI selection.
     class FakeRepo:
         class Ctx:
+            #R050: Test helper supports this requirement-focused scenario.
             def __enter__(self):
                 return _FakeSession()
+            #R050: Test helper supports this requirement-focused scenario.
             def __exit__(self, *exc):
                 return False
+        #R050: Test helper supports this requirement-focused scenario.
         def __init__(self, txn):
             self.txn = txn
             self.candidates_inserted = None
+        #R050: Test helper supports this requirement-focused scenario.
         def session(self):
             return FakeRepo.Ctx()
+        #R050: Test helper supports this requirement-focused scenario.
         def load_transaction(self, session, transaction_id):
             return self.txn
+        #R050: Test helper supports this requirement-focused scenario.
         def read_last_run_summary(self, session, transaction_id):
             return None
+        #R050: Test helper supports this requirement-focused scenario.
         def create_run(self, **kwargs):
             return 202
+        #R050: Test helper supports this requirement-focused scenario.
         def update_run_model_name(self, **kwargs):
             pass
+        #R050: Test helper supports this requirement-focused scenario.
         def insert_candidates(self, **kwargs):
             self.candidates_inserted = kwargs["candidates"]
+        #R050: Test helper supports this requirement-focused scenario.
         def persist_ai_result(self, **kwargs):
             return list(kwargs["ai_selection"].selected_message_ids)
+        #R050: Test helper supports this requirement-focused scenario.
         def mark_run_failed(self, *a, **_k):
             pass
 
     class _FakeSession:
+        #R050: Test helper supports this requirement-focused scenario.
         def execute(self, *a, **_k):
             class R:
+                #R050: Test helper supports this requirement-focused scenario.
                 def mappings(self):
                     return self
+                #R050: Test helper supports this requirement-focused scenario.
                 def all(self):
                     return []
             return R()
 
     class FakeClient:
+        #R050: Test helper supports this requirement-focused scenario.
         def search_candidates(self, query, limit=75):
             dt = datetime(2026, 5, 5, tzinfo=timezone.utc)
             return [
@@ -141,13 +162,16 @@ def test_service_filters_enriched_candidates_without_standalone_cldr_currency_be
                 EmailCandidate("bad", "Receipt", "", dt, "x@y", ""),
                 EmailCandidate("substring", "Receipt", "", dt, "x@y", ""),
             ]
+        #R050: Test helper supports this requirement-focused scenario.
         def get_message(self, message_id, timeout_seconds=None):
             bodies = {"good": "total $35.99", "bad": "total thirty five", "substring": "code xUSDx only"}
             return {"text_body": bodies[message_id]}
 
     class FakeRanker:
+        #R050: Test helper supports this requirement-focused scenario.
         def planned_model_name(self):
             return "claude-sonnet-4-5"
+        #R050: Test helper supports this requirement-focused scenario.
         def select(self, txn, ranked):
             assert [row.candidate.message_id for row in ranked] == ["good"]
             return AiSelection(["good"], 0.95, False, "currency scoped", "anthropic", "claude-sonnet-4-5")

@@ -8,6 +8,7 @@
   #R025: Regression guard for `.build/` and `.security-reports/` ignore behavior.
   #R025-T01: .build/ and .security-reports/ guard paths remain untracked.
   tmp_path=".build/traceability-ignore-test-$$.tmp"
+#R001: cleanup removes the build ignore probe fixture after assertions complete.
   cleanup() {
     if [ -f "$tmp_path" ]; then
       trash_dir="${HOME}/.Trash/piston-gitignore-bats-$$"

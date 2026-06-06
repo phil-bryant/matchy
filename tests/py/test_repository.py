@@ -27,17 +27,21 @@ def test_repository_session_context_commits_and_rollbacks_through_fake_session()
     #R005: Session context commits success and rollbacks on failure.
     #R005-T01: Python test lane exists for session context requirement.
     class FakeSession:
+        #R005: Test helper supports this requirement-focused scenario.
         def __init__(self):
             self.commits = 0
             self.rollbacks = 0
             self.closed = 0
 
+        #R005: Test helper supports this requirement-focused scenario.
         def commit(self):
             self.commits += 1
 
+        #R005: Test helper supports this requirement-focused scenario.
         def rollback(self):
             self.rollbacks += 1
 
+        #R005: Test helper supports this requirement-focused scenario.
         def close(self):
             self.closed += 1
 
@@ -67,13 +71,16 @@ def test_repository_pending_transaction_query_returns_ordered_transaction_ids() 
     #R010: Pending transaction id discovery returns string IDs from active-unmatched lookback query.
     #R010-T01: Python test lane exists for pending id discovery requirement.
     class FakeResult:
+        #R010: Test helper supports this requirement-focused scenario.
         def mappings(self):
             return self
 
+        #R010: Test helper supports this requirement-focused scenario.
         def all(self):
             return [{"transaction_id": "txn_1"}, {"transaction_id": "txn_2"}]
 
     class FakeSession:
+        #R010: Test helper supports this requirement-focused scenario.
         def execute(self, *_args, **_kwargs):
             return FakeResult()
 
@@ -86,23 +93,29 @@ def test_repository_read_last_run_summary_returns_run_and_candidate_cache_rows()
     #R015: read_last_run_summary returns the newest run plus its persisted candidate payload rows.
     #R015-T01: Python test lane exists for last-run summary requirement.
     class FakeResult:
+        #R015: Test helper supports this requirement-focused scenario.
         def __init__(self, row=None, rows=None):
             self._row = row
             self._rows = rows or []
 
+        #R015: Test helper supports this requirement-focused scenario.
         def mappings(self):
             return self
 
+        #R015: Test helper supports this requirement-focused scenario.
         def fetchone(self):
             return self._row
 
+        #R015: Test helper supports this requirement-focused scenario.
         def all(self):
             return self._rows
 
     class FakeSession:
+        #R015: Test helper supports this requirement-focused scenario.
         def __init__(self, results):
             self._results = list(results)
 
+        #R015: Test helper supports this requirement-focused scenario.
         def execute(self, *_args, **_kwargs):
             return self._results.pop(0)
 
@@ -149,19 +162,24 @@ def test_repository_read_active_match_summary_returns_active_row_or_none() -> No
     #R015: read_active_match_summary returns the active match row metadata for cache-hit responses.
     #R015-T02: Python test lane exists for active-match summary requirement.
     class FakeResult:
+        #R015: Test helper supports this requirement-focused scenario.
         def __init__(self, row):
             self._row = row
 
+        #R015: Test helper supports this requirement-focused scenario.
         def mappings(self):
             return self
 
+        #R015: Test helper supports this requirement-focused scenario.
         def fetchone(self):
             return self._row
 
     class FakeSession:
+        #R015: Test helper supports this requirement-focused scenario.
         def __init__(self, results):
             self._results = list(results)
 
+        #R015: Test helper supports this requirement-focused scenario.
         def execute(self, *_args, **_kwargs):
             return self._results.pop(0)
 
@@ -190,16 +208,20 @@ def test_repository_pending_transaction_query_requeues_unsettled_but_skips_human
     #R010: Pending discovery re-queues AI-only no-match and uncertain rows.
     #R010-T02: Python test lane exists for re-queue SQL predicate requirement.
     class FakeResult:
+        #R010: Test helper supports this requirement-focused scenario.
         def mappings(self):
             return self
 
+        #R010: Test helper supports this requirement-focused scenario.
         def all(self):
             return []
 
     class CapturingSession:
+        #R010: Test helper supports this requirement-focused scenario.
         def __init__(self):
             self.statements = []
 
+        #R010: Test helper supports this requirement-focused scenario.
         def execute(self, statement, params=None):
             self.statements.append((str(statement), dict(params or {})))
             return FakeResult()
@@ -229,9 +251,11 @@ def test_insert_human_confirmed_match_uses_settled_human_state() -> None:
 def test_persist_ai_result_avoids_duplicate_active_email_match_insert_and_marks_needs_review() -> None:
     #R015: If selected email already has an active match elsewhere, persist a NULL-email uncertain row.
     class CapturingSession:
+        #R015: Test helper supports this requirement-focused scenario.
         def __init__(self):
             self.calls = []
 
+        #R015: Test helper supports this requirement-focused scenario.
         def execute(self, statement, params=None):
             self.calls.append((str(statement), dict(params or {})))
             return SimpleNamespace()
@@ -278,9 +302,11 @@ def test_persist_ai_result_avoids_duplicate_active_email_match_insert_and_marks_
 def test_persist_ai_result_filters_out_of_set_ai_ids_to_no_match_found() -> None:
     #R015: AI ids outside ranked candidate set are treated as unselected to avoid empty-result active-row gaps.
     class CapturingSession:
+        #R015: Test helper supports this requirement-focused scenario.
         def __init__(self):
             self.calls = []
 
+        #R015: Test helper supports this requirement-focused scenario.
         def execute(self, statement, params=None):
             self.calls.append((str(statement), dict(params or {})))
             return SimpleNamespace()

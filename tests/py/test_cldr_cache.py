@@ -21,10 +21,12 @@ class StubResponse:
         self.text = text
         self._error = error
 
+    #R001: Test helper supports this requirement-focused scenario.
     def raise_for_status(self) -> None:
         if self._error is not None:
             raise self._error
 
+    #R001: Test helper supports this requirement-focused scenario.
     def json(self):
         return self._payload
 

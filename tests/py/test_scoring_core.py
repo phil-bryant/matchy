@@ -18,6 +18,7 @@ TZ = timezone.utc
 BASE_TIME = datetime(2024, 6, 1, 12, 0, 0, tzinfo=TZ)
 
 
+#R010: Test helper supports this requirement-focused scenario.
 def email_candidate(subject: str = "", preview: str = "", body_text: str = "") -> EmailCandidate:
     return EmailCandidate("m1", subject, preview, BASE_TIME, "", body_text)
 

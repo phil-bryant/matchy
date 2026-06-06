@@ -16,15 +16,19 @@ def test_service_raises_valueerror_for_unknown_transactions() -> None:
     #R001-T01: Python test lane exists for unknown transaction requirement.
     class Repo:
         class Ctx:
+            #R001: Test helper supports this requirement-focused scenario.
             def __enter__(self):
                 return object()
 
+            #R001: Test helper supports this requirement-focused scenario.
             def __exit__(self, _exc_type, exc, _tb):
                 return False
 
+        #R001: Test helper supports this requirement-focused scenario.
         def session(self):
             return Repo.Ctx()
 
+        #R001: Test helper supports this requirement-focused scenario.
         def load_transaction(self, session, transaction_id):
             return None
 
@@ -39,14 +43,18 @@ def test_service_raises_valueerror_for_unknown_transactions() -> None:
 
 
 def test_service_match_transactions_atomic_commits_once_for_successful_batch() -> None:
+    #R300-T01: Verifies atomic batch commits once for a fully successful run.
     class Repo:
         class Ctx:
+            #R300: Test double supports atomic batch commit behavior assertions.
             def __init__(self, repo):
                 self._repo = repo
 
+            #R300: Test double supports atomic batch commit behavior assertions.
             def __enter__(self):
                 return self._repo.session_obj
 
+            #R300: Test double supports atomic batch commit behavior assertions.
             def __exit__(self, exc_type, _exc, _tb):
                 if exc_type is None:
                     self._repo.commits += 1
@@ -54,11 +62,13 @@ def test_service_match_transactions_atomic_commits_once_for_successful_batch() -
                     self._repo.rollbacks += 1
                 return False
 
+        #R300: Test double supports atomic batch commit behavior assertions.
         def __init__(self):
             self.session_obj = object()
             self.commits = 0
             self.rollbacks = 0
 
+        #R300: Test double supports atomic batch commit behavior assertions.
         def session(self):
             return Repo.Ctx(self)
 
@@ -67,6 +77,7 @@ def test_service_match_transactions_atomic_commits_once_for_successful_batch() -
     svc._repository = repo
     calls = []
 
+    #R300: Test double supports atomic batch commit behavior assertions.
     def fake_match_transaction(transaction_id, trigger_source="manual", force_rematch=False, *, session=None, record_failure=True):
         calls.append((transaction_id, trigger_source, force_rematch, session, record_failure))
         return {"transaction_id": transaction_id}
@@ -85,14 +96,18 @@ def test_service_match_transactions_atomic_commits_once_for_successful_batch() -
 
 
 def test_service_match_transactions_atomic_rolls_back_batch_on_failure() -> None:
+    #R305-T01: Verifies atomic batch rolls back and re-raises on failure.
     class Repo:
         class Ctx:
+            #R305: Test double supports atomic batch rollback behavior assertions.
             def __init__(self, repo):
                 self._repo = repo
 
+            #R305: Test double supports atomic batch rollback behavior assertions.
             def __enter__(self):
                 return self._repo.session_obj
 
+            #R305: Test double supports atomic batch rollback behavior assertions.
             def __exit__(self, exc_type, _exc, _tb):
                 if exc_type is None:
                     self._repo.commits += 1
@@ -100,11 +115,13 @@ def test_service_match_transactions_atomic_rolls_back_batch_on_failure() -> None
                     self._repo.rollbacks += 1
                 return False
 
+        #R305: Test double supports atomic batch rollback behavior assertions.
         def __init__(self):
             self.session_obj = object()
             self.commits = 0
             self.rollbacks = 0
 
+        #R305: Test double supports atomic batch rollback behavior assertions.
         def session(self):
             return Repo.Ctx(self)
 
@@ -113,6 +130,7 @@ def test_service_match_transactions_atomic_rolls_back_batch_on_failure() -> None
     svc._repository = repo
     calls = []
 
+    #R305: Test double supports atomic batch rollback behavior assertions.
     def fake_match_transaction(transaction_id, trigger_source="manual", force_rematch=False, *, session=None, record_failure=True):
         calls.append((transaction_id, session, record_failure))
         if transaction_id == "txn_2":
@@ -137,22 +155,27 @@ def test_service_match_transactions_atomic_rolls_back_batch_on_failure() -> None
 
 
 def test_service_initialization_runs_mailcart_startup_preflight_once(monkeypatch) -> None:
+    #R310-T01: Verifies startup preflight runs exactly once when enabled.
     # Constructor wiring: MatchService.__init__ triggers Mailcart startup preflight when enabled.
     import matchy.service as service_module
 
     calls = {"preflight": 0}
 
     class StubMailcartClient:
+        #R310: Test double supports startup preflight-once behavior assertions.
         def __init__(self, _settings):
             pass
 
+        #R310: Test double supports startup preflight-once behavior assertions.
         def startup_preflight_healthcheck(self):
             calls["preflight"] += 1
 
     class StubCldrCache:
+        #R310: Test double supports startup preflight-once behavior assertions.
         def __init__(self, _settings):
             pass
 
+        #R310: Test double supports startup preflight-once behavior assertions.
         def currency_matcher(self):
             return CldrCurrencyMatcher([])
 
@@ -173,21 +196,26 @@ def test_service_pending_matcher_tolerates_per_transaction_failures() -> None:
 
     class Repo:
         class Ctx:
+            #R025: Test helper supports this requirement-focused scenario.
             def __enter__(self):
                 return object()
 
+            #R025: Test helper supports this requirement-focused scenario.
             def __exit__(self, *exc):
                 return False
 
+        #R025: Test helper supports this requirement-focused scenario.
         def session(self):
             return Repo.Ctx()
 
+        #R025: Test helper supports this requirement-focused scenario.
         def list_pending_transaction_ids(self, session, limit=100, lookback_days=14):
             return ["txn_a", "txn_b", "txn_c"]
 
     service = object.__new__(MatchService)
     service._repository = Repo()
 
+    #R025: Test helper supports this requirement-focused scenario.
     def flaky_match_transaction(transaction_id, trigger_source="manual", force_rematch=False):
         if transaction_id == "txn_b":
             raise RuntimeError("anthropic 429")
@@ -208,15 +236,19 @@ def test_service_pending_matcher_loads_pending_ids_then_runs_each_transaction() 
     #R030-T01: Python test lane exists for concurrent pending matcher requirement.
     class Repo:
         class Ctx:
+            #R010: Test helper supports this requirement-focused scenario.
             def __enter__(self):
                 return object()
 
+            #R010: Test helper supports this requirement-focused scenario.
             def __exit__(self, _exc_type, exc, _tb):
                 return False
 
+        #R010: Test helper supports this requirement-focused scenario.
         def session(self):
             return Repo.Ctx()
 
+        #R010: Test helper supports this requirement-focused scenario.
         def list_pending_transaction_ids(self, session, limit=100, lookback_days=14):
             return ["txn_1", "txn_2"]
 
@@ -224,6 +256,7 @@ def test_service_pending_matcher_loads_pending_ids_then_runs_each_transaction() 
     service._repository = Repo()
     calls = []
 
+    #R010: Test helper supports this requirement-focused scenario.
     def fake_match_transaction(transaction_id, trigger_source="manual", force_rematch=False):
         calls.append((transaction_id, trigger_source))
         return {"transaction_id": transaction_id, "trigger_source": trigger_source}
@@ -241,15 +274,21 @@ def test_service_confirm_match_delegates_to_repository() -> None:
 
     class FakeRepo:
         class Ctx:
+            #R045: Test helper supports this requirement-focused scenario.
             def __enter__(self): return object()
+            #R045: Test helper supports this requirement-focused scenario.
             def __exit__(self, *a): return False
+        #R045: Test helper supports this requirement-focused scenario.
         def session(self): return FakeRepo.Ctx()
+        #R045: Test helper supports this requirement-focused scenario.
         def deactivate_active_match(self, _s, txn): calls.append(("deact", txn))
+        #R045: Test helper supports this requirement-focused scenario.
         def insert_human_confirmed_match(self, _s, txn, eml, note):
             calls.append(("insert", txn, eml, note))
             return 321
 
     class FakeMailcartClient:
+        #R045: Test helper supports this requirement-focused scenario.
         def move_to_matchy(self, message_id):
             moved.append(message_id)
             return True

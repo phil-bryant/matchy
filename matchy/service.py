@@ -26,6 +26,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class MatchService(SearchMixin, EnrichmentMixin, NearDuplicateMixin, CachingMixin, EmailMoveMixin):
+    #R310: Run Mailcart startup preflight exactly once during initialization when enabled.
     def __init__(self, settings: Settings):
         self._settings = settings
         self._repository = MatchRepository(settings)
@@ -134,6 +135,8 @@ class MatchService(SearchMixin, EnrichmentMixin, NearDuplicateMixin, CachingMixi
             "skipped": False,
         }
 
+    #R300: Commit the shared repository unit-of-work once after a fully successful atomic batch.
+    #R305: Roll back the shared session and re-raise when any atomic batch entry fails.
     def match_transactions_atomic(
         self,
         transaction_ids: list[str],

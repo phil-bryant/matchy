@@ -32,6 +32,7 @@ REASON_KEYS = frozenset(
 )
 
 
+#R010: Test helper supports this requirement-focused scenario.
 def fuzz_settings() -> hypothesis_settings:
     max_examples = int(os.environ.get("HYPOTHESIS_MAX_EXAMPLES", "50"))
     deadline_ms = int(os.environ.get("HYPOTHESIS_DEADLINE", "200"))
@@ -39,6 +40,7 @@ def fuzz_settings() -> hypothesis_settings:
 
 
 @st.composite
+#R001: Test helper supports this requirement-focused scenario.
 def fuzz_text(draw: st.DrawFn) -> str:
     return draw(
         st.one_of(
@@ -50,6 +52,7 @@ def fuzz_text(draw: st.DrawFn) -> str:
 
 
 @st.composite
+#R001: Test helper supports this requirement-focused scenario.
 def fuzz_datetime(draw: st.DrawFn) -> datetime:
     base = datetime(2018, 1, 1, tzinfo=TZ)
     offset_hours = draw(st.integers(min_value=-24 * 400, max_value=24 * 400))
@@ -57,6 +60,7 @@ def fuzz_datetime(draw: st.DrawFn) -> datetime:
 
 
 @st.composite
+#R001: Test helper supports this requirement-focused scenario.
 def fuzz_amount(draw: st.DrawFn) -> Decimal:
     raw = draw(
         st.decimals(
@@ -71,6 +75,7 @@ def fuzz_amount(draw: st.DrawFn) -> Decimal:
 
 
 @st.composite
+#R001: Test helper supports this requirement-focused scenario.
 def email_candidate(draw: st.DrawFn, index: int) -> EmailCandidate:
     return EmailCandidate(
         f"m{index}",
@@ -83,12 +88,14 @@ def email_candidate(draw: st.DrawFn, index: int) -> EmailCandidate:
 
 
 @st.composite
+#R001: Test helper supports this requirement-focused scenario.
 def email_candidates(draw: st.DrawFn) -> list[EmailCandidate]:
     count = draw(st.integers(min_value=0, max_value=8))
     return [draw(email_candidate(index)) for index in range(count)]
 
 
 @st.composite
+#R001: Test helper supports this requirement-focused scenario.
 def transaction_input(draw: st.DrawFn) -> TransactionInput:
     return TransactionInput(
         draw(st.text(min_size=1, max_size=16, alphabet="abcdefghijklmnopqrstuvwxyz0123456789")),

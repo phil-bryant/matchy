@@ -35,6 +35,22 @@ Design: `confirm_match` in MatchService deactivates any prior active match for t
 Tests:
 - R045-T01: Verify `confirm_match` deactivates the prior active row, inserts the human-confirmed row, and returns the match_id (delegation test in test_service.py).
 
+
+R300  Statement: `match_transactions_atomic` commits the shared repository unit-of-work exactly once for a fully-successful batch, threading one session into every per-transaction call with `record_failure=False`.
+Design: `match_transactions_atomic` opens one shared repository session and passes it into each `match_transaction` call, committing only once at the end when all entries succeed.
+Tests:
+- R300-T01: Stub repository commit/rollback counters and verify one commit, zero rollbacks, shared session threading, and `record_failure=False` for each entry.
+
+R305  Statement: `match_transactions_atomic` rolls back the shared session and re-raises when any per-transaction match raises.
+Design: Any exception raised while processing an atomic batch bubbles out of the repository session context, forcing rollback semantics and preventing partial commits.
+Tests:
+- R305-T01: Inject a failing transaction in the batch and verify zero commits, one rollback, and propagated exception.
+
+R310  Statement: `MatchService.__init__` runs the Mailcart startup preflight healthcheck exactly once when `mailcart_startup_healthcheck_enabled` is true.
+Design: During initialization, service construction creates one Mailcart client and conditionally performs exactly one startup preflight check before request handling.
+Tests:
+- R310-T01: Build service with startup healthcheck enabled and stub collaborators to verify a single preflight invocation.
+
 ## Changelog
 
 - 2026-05-18: Added service requirements coverage for missing transaction and query construction behavior.
@@ -45,3 +61,4 @@ Tests:
 - 2026-06-01: Added R050 CLDR currency-token candidate filtering before ranking and AI selection.
 - 2026-06-04: Added R060 optional post-selection Mailcart move behavior gated by write+move flags.
 - 2026-06-05: Decomposed the service god-module; R005/R015/R020/R040/R050/R055/R060 moved with their code to dedicated modules (search, enrichment, caching, near_duplicate, email_move). `service.py` now owns only R001/R010/R025/R030/R045 orchestration.
+- 2026-06-06: Added R300/R305/R310 for atomic batch commit/rollback behavior and startup preflight-once orchestration.

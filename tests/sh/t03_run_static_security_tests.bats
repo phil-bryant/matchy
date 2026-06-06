@@ -2,6 +2,7 @@
 # Thin pointer contract tests for tests/t03_run_static_security_tests.sh.
 # Fully offline: they inspect the pointer's wiring text only and never execute the delegated lane.
 
+#R001: Bats setup resolves repo root and pointer path for offline pointer-contract tests.
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd -P)"
   POINTER="${REPO_ROOT}/tests/t03_run_static_security_tests.sh"

@@ -2,6 +2,7 @@
 # Contract tests for the opt-in matchy LIVE integration lane (tests/t11_run_live_integration_tests.sh).
 # These run fully offline: they assert the lane's skip/probe/opt-in behavior, never live services.
 
+#R001: Bats setup resolves repo root and pointer path for offline pointer-contract tests.
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd -P)"
   LANE="${REPO_ROOT}/tests/t11_run_live_integration_tests.sh"

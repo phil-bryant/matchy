@@ -20,19 +20,23 @@ from matchy.settings import Settings
 
 
 class CompletedProcess:
+    #R001: Test helper supports this requirement-focused scenario.
     def __init__(self, returncode: int, stdout: str = "", stderr: str = ""):
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = stderr
 
 
+#R001: Test helper supports this requirement-focused scenario.
 def _install_run_stub(monkeypatch: pytest.MonkeyPatch, handler) -> None:
+    #R001: Test helper supports this requirement-focused scenario.
     def fake_run(command, **kwargs: Any):
         return handler(command, **kwargs)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
 
+#R001: Test helper supports this requirement-focused scenario.
 def _clear_secret_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("TELLER_DB_PASSWORD", raising=False)
     monkeypatch.delenv("TELLER_DB_HOST", raising=False)
@@ -44,6 +48,7 @@ def _clear_secret_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
 
+#R001: Test helper supports this requirement-focused scenario.
 def _optional_miss_handler(command, **kwargs):
     requested_ref = _requested_secret_ref(command)
     if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
@@ -69,15 +74,18 @@ def _optional_miss_handler(command, **kwargs):
     raise AssertionError(f"unexpected command: {command}")
 
 
+#R001: Test helper supports this requirement-focused scenario.
 def _reload_settings_class(monkeypatch: pytest.MonkeyPatch):
     importlib.reload(settings_module)
     return settings_module.Settings
 
 
+#R001: Test helper supports this requirement-focused scenario.
 def _settings_attr(settings: Settings, *name_parts: str) -> str:
     return getattr(settings, "".join(name_parts))
 
 
+#R001: Test helper supports this requirement-focused scenario.
 def _requested_secret_ref(command: list[str]) -> str:
     requested = ""
     if command[0:2] in (["1psa", "-p"], ["1psa", "read"]):
@@ -87,6 +95,7 @@ def _requested_secret_ref(command: list[str]) -> str:
     return requested
 
 
+#R001: Test helper supports this requirement-focused scenario.
 def _db_config(settings: Settings) -> tuple[str, str, str, int, str]:
     return (
         settings.teller_db_user,
@@ -111,6 +120,7 @@ def test_loads_teller_db_config_through_1psa_item_reference_override(monkeypatch
     _clear_secret_env(monkeypatch)
     monkeypatch.setenv("TELLER_DB_PASSWORD_1PSA_REF", "custom_item")
 
+    #R005: Test helper supports this requirement-focused scenario.
     def handler(command, **kwargs):
         field_ref = _requested_secret_ref(command)
         if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
@@ -138,6 +148,7 @@ def test_loads_teller_db_config_through_1psa_read_for_op_references(monkeypatch:
     monkeypatch.setenv("OP_SERVICE_ACCOUNT_TOKEN", "token-ok")
     monkeypatch.setenv("TELLER_DB_PASSWORD_1PSA_REF", "op://vault/item/password")
 
+    #R005: Test helper supports this requirement-focused scenario.
     def handler(command, **kwargs):
         if command[0:2] == ["1psa", "read"]:
             field_ref = _requested_secret_ref(command)
@@ -172,6 +183,7 @@ def test_falls_back_to_home_env_when_1psa_cannot_resolve_db_config(monkeypatch: 
     )
     monkeypatch.setattr(Path, "home", lambda: fake_home)
 
+    #R010: Test helper supports this requirement-focused scenario.
     def handler(command, **kwargs):
         if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
             return CompletedProcess(5, "", "not found")
@@ -190,6 +202,7 @@ def test_fails_clearly_when_1psa_and_home_env_both_fail(monkeypatch: pytest.Monk
     (fake_home / ".env").write_text("username=incomplete\n", encoding="utf-8")
     monkeypatch.setattr(Path, "home", lambda: fake_home)
 
+    #R010: Test helper supports this requirement-focused scenario.
     def handler(command, **kwargs):
         if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
             return CompletedProcess(5, "", "not found")
@@ -205,6 +218,7 @@ def test_fails_clearly_when_resolved_db_port_is_not_an_integer(monkeypatch: pyte
     #R010-T03: Python test lane exists for invalid port validation requirement.
     _clear_secret_env(monkeypatch)
 
+    #R010: Test helper supports this requirement-focused scenario.
     def handler(command, **kwargs):
         if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
             field_ref = _requested_secret_ref(command)
@@ -226,14 +240,17 @@ def test_fails_clearly_when_resolved_db_port_is_not_an_integer(monkeypatch: pyte
         Settings()
 
 
+#R001: Test helper supports this requirement-focused scenario.
 def _teller_db_credential(settings: Settings) -> str:
     return _settings_attr(settings, "teller_db_", "pass", "word")
 
 
+#R015: Test helper supports this requirement-focused scenario.
 def _anthropic_credential(settings: Settings) -> str:
     return _settings_attr(settings, "anthropic_", "api_", "key")
 
 
+#R015: Test helper supports this requirement-focused scenario.
 def _openai_credential(settings: Settings) -> str:
     return _settings_attr(settings, "openai_", "api_", "key")
 
@@ -243,6 +260,7 @@ def test_loads_anthropic_api_key_from_1psa_item_when_env_var_is_unset(monkeypatc
     #R015-T01: Python test lane exists for Anthropic 1psa resolution requirement.
     _clear_secret_env(monkeypatch)
 
+    #R015: Test helper supports this requirement-focused scenario.
     def handler(command, **kwargs):
         if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
             field_ref = _requested_secret_ref(command)
@@ -272,6 +290,7 @@ def test_loads_openai_api_key_fallback_from_1psa_item_when_env_var_is_unset(monk
     #R015-T02: Python test lane exists for OpenAI 1psa resolution requirement.
     _clear_secret_env(monkeypatch)
 
+    #R015: Test helper supports this requirement-focused scenario.
     def handler(command, **kwargs):
         if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
             field_ref = _requested_secret_ref(command)
@@ -302,6 +321,7 @@ def test_env_var_override_beats_1psa_for_anthropic_key(monkeypatch: pytest.Monke
     _clear_secret_env(monkeypatch)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "env-claude")
 
+    #R015: Test helper supports this requirement-focused scenario.
     def handler(command, **kwargs):
         if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
             field_ref = _requested_secret_ref(command)
@@ -328,6 +348,7 @@ def test_tolerates_missing_ai_keys_in_1psa_and_keeps_settings_constructible(monk
     #R015-T04: Python test lane exists for missing AI keys requirement.
     _clear_secret_env(monkeypatch)
 
+    #R015: Test helper supports this requirement-focused scenario.
     def handler(command, **kwargs):
         if command[0:2] in (["1psa", "-p"], ["1psa", "-f"], ["1psa", "read"]):
             field_ref = _requested_secret_ref(command)

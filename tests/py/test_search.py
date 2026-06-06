@@ -45,9 +45,11 @@ def test_service_query_builders_emit_scoped_tokens_with_date_bounds() -> None:
 def test_service_emits_mailcart_scoped_queries_that_pass_parser_contract() -> None:
     #R005: Every emitted query must satisfy mailcart's scoped-query parser contract.
     class FakeClient:
+        #R005: Test helper supports this requirement-focused scenario.
         def __init__(self):
             self.queries = []
 
+        #R005: Test helper supports this requirement-focused scenario.
         def search_candidates(self, query, limit=75):
             self.queries.append(query)
             return []
@@ -77,19 +79,24 @@ def test_service_search_candidates_early_stops_on_first_success() -> None:
     #R040-T01: _search_candidates stops at the first tier that returns results.
     class Repo:
         class Ctx:
+            #R040: Test helper supports this requirement-focused scenario.
             def __enter__(self):
                 return object()
 
+            #R040: Test helper supports this requirement-focused scenario.
             def __exit__(self, *exc):
                 return False
 
+        #R040: Test helper supports this requirement-focused scenario.
         def session(self):
             return Repo.Ctx()
 
     class FakeClient:
+        #R040: Test helper supports this requirement-focused scenario.
         def __init__(self):
             self.queries: list[str] = []
 
+        #R040: Test helper supports this requirement-focused scenario.
         def search_candidates(self, query: str, limit: int = 75):
             self.queries.append(query)
             # Return a hit on any non-empty query to simulate first-tier success

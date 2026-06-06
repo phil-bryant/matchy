@@ -24,9 +24,11 @@ def test_mailcart_client_search_filters_rows_missing_message_ids() -> None:
     class Response:
         status_code = 200
 
+        #R005: Test helper supports this requirement-focused scenario.
         def raise_for_status(self):
             return None
 
+        #R005: Test helper supports this requirement-focused scenario.
         def json(self):
             return {"messages": [
                 {"message_id": "m1", "subject": "a", "preview": "b", "received_at": "2024-01-01T00:00:00Z"},
@@ -47,19 +49,23 @@ def test_mailcart_client_get_message_returns_payload_dict_and_handles_404() -> N
     #R010: get_message proxies single-message envelopes and tolerates 404 misses.
     #R010-T01: Python test lane exists for get_message payload requirement.
     class Response:
+        #R010: Test helper supports this requirement-focused scenario.
         def __init__(self, status_code, payload=None):
             self.status_code = status_code
             self._payload = payload or {}
 
+        #R010: Test helper supports this requirement-focused scenario.
         def raise_for_status(self):
             if self.status_code >= 400:
                 raise RuntimeError(f"upstream {self.status_code}")
 
+        #R010: Test helper supports this requirement-focused scenario.
         def json(self):
             return self._payload
 
     calls = []
 
+    #R010: Test helper supports this requirement-focused scenario.
     def fake_get(url, **kwargs):
         calls.append(url)
         if url.endswith("/v1/messages/msg_ok"):
@@ -89,19 +95,23 @@ def test_mailcart_client_get_message_retries_once_for_502_then_succeeds() -> Non
     #R010: get_message retries transient 502 once before returning payload.
     #R010-T02: Python test lane exists for get_message 404 requirement.
     class Response:
+        #R010: Test helper supports this requirement-focused scenario.
         def __init__(self, status_code, payload=None):
             self.status_code = status_code
             self._payload = payload or {}
 
+        #R010: Test helper supports this requirement-focused scenario.
         def raise_for_status(self):
             if self.status_code >= 400:
                 raise RuntimeError(f"upstream {self.status_code}")
 
+        #R010: Test helper supports this requirement-focused scenario.
         def json(self):
             return self._payload
 
     calls = []
 
+    #R010: Test helper supports this requirement-focused scenario.
     def fake_get(url, timeout=None, **kwargs):
         calls.append((url, timeout))
         if len(calls) == 1:
@@ -143,12 +153,15 @@ def test_mailcart_client_passes_ca_bundle_to_search_request(tmp_path, monkeypatc
     class Response:
         status_code = 200
 
+        #R045: Test helper supports this requirement-focused scenario.
         def raise_for_status(self):
             return None
 
+        #R045: Test helper supports this requirement-focused scenario.
         def json(self):
             return {"messages": []}
 
+    #R045: Test helper supports this requirement-focused scenario.
     def fake_get(*_args, **kwargs):
         captured["verify"] = kwargs.get("verify")
         return Response()
@@ -222,16 +235,20 @@ def test_mailcart_client_match_service_runs_startup_preflight_once(monkeypatch) 
     calls = {"preflight": 0}
 
     class StubMailcartClient:
+        #R050: Test helper supports this requirement-focused scenario.
         def __init__(self, _settings):
             pass
 
+        #R050: Test helper supports this requirement-focused scenario.
         def startup_preflight_healthcheck(self):
             calls["preflight"] += 1
 
     class StubCldrCache:
+        #R050: Test helper supports this requirement-focused scenario.
         def __init__(self, _settings):
             pass
 
+        #R050: Test helper supports this requirement-focused scenario.
         def currency_matcher(self):
             return object()
 
@@ -253,9 +270,11 @@ def test_mailcart_client_startup_preflight_passes_verify_and_timeout(tmp_path) -
     class Response:
         status_code = 200
 
+        #R050: Test helper supports this requirement-focused scenario.
         def raise_for_status(self):
             return None
 
+    #R050: Test helper supports this requirement-focused scenario.
     def fake_get(url, **kwargs):
         captured["url"] = url
         captured["verify"] = kwargs.get("verify")
@@ -284,6 +303,7 @@ def test_mailcart_client_startup_preflight_failure_includes_transport_context(tm
     ca_file = tmp_path / "custom-ca.pem"
     ca_file.write_text("dummy", encoding="utf-8")
 
+    #R050: Test helper supports this requirement-focused scenario.
     def fake_get(*_args, **_kwargs):
         raise module.requests.exceptions.ConnectionError("Connection aborted")
 
