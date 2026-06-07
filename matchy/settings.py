@@ -122,6 +122,11 @@ class Settings:
             "matchy_api_auth_token",
             os.environ.get("MATCHY_API_AUTH_TOKEN", self.matchy_api_auth_token).strip(),
         )
+        object.__setattr__(
+            self,
+            "write_enabled",
+            os.environ.get("MATCHY_WRITE_ENABLED", str(self.write_enabled)).strip().lower() == "true",
+        )
         resolve_db_started_at = perf_counter()
         teller_db_config = self._resolve_teller_db_config()
         _startup_log(startup_started_at, "settings-db-config-resolved", f"phase_elapsed={perf_counter() - resolve_db_started_at:7.3f}s")

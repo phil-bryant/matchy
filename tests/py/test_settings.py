@@ -438,6 +438,19 @@ def test_near_duplicate_hamming_distance_default_and_override(monkeypatch: pytes
     assert settings2.near_duplicate_max_hamming_distance == 7
 
 
+def test_write_enabled_honors_runtime_env_without_module_reload(monkeypatch: pytest.MonkeyPatch) -> None:
+    #R055: write_enabled follows current env values during Settings() initialization.
+    #R055-T06: MATCHY_WRITE_ENABLED toggles should apply without module reload.
+    _clear_secret_env(monkeypatch)
+    _install_run_stub(monkeypatch, _optional_miss_handler)
+    monkeypatch.setenv("MATCHY_WRITE_ENABLED", "false")
+    settings_disabled = Settings()
+    assert settings_disabled.write_enabled is False
+    monkeypatch.setenv("MATCHY_WRITE_ENABLED", "true")
+    settings_enabled = Settings()
+    assert settings_enabled.write_enabled is True
+
+
 def test_mailcart_ca_bundle_default_and_override(monkeypatch: pytest.MonkeyPatch) -> None:
     #R915-T03: Default mailcart_ca_bundle is empty (auto-resolve) when unset.
     #R915-T04: MATCHY_MAILCART_CA_BUNDLE exposes the explicit path.
