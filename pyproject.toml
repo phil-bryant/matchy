@@ -19,6 +19,17 @@ dependencies = [
 [tool.setuptools]
 packages = ["matchy"]
 
+[tool.coverage.run]
+branch = true
+relative_files = true
+source = ["matchy"]
+data_file = "artifacts/coverage/.coverage"
+
+[tool.coverage.report]
+show_missing = true
+omit = ["tests/*"]
+precision = 2
+
 [tool.mutmut]
 paths_to_mutate = ["matchy/"]
 only_mutate = ["matchy/scoring_core.py", "matchy/models.py"]
