@@ -32,11 +32,14 @@ Tests:
 - R045-T02: Stub service success and verify `/v1/matchy/confirm` delegates transaction, message id, and note.
 - R045-T03: Submit a note containing a null byte and verify `/v1/matchy/confirm` returns 422.
 
-R055  Statement: Protect mutating run/confirm endpoints with a shared Bearer token.
-Design: Require `Authorization: Bearer <token>` for `POST /v1/matchy/runs`, `/v1/matchy/runs/pending`, and `/v1/matchy/confirm`, where `<token>` matches `MATCHY_API_AUTH_TOKEN`.
+R055  Statement: Protect and throttle mutating run/confirm endpoints at the API boundary.
+Design: Require auth for `POST /v1/matchy/runs`, `/v1/matchy/runs/pending`, and `/v1/matchy/confirm` using `MATCHY_API_AUTH_TOKEN` via either `Authorization: Bearer <token>` or write-token header aliases (`X-Matchy-Write-Token`/`X-Teller-Write-Token`). Enforce `MATCHY_WRITE_ENABLED=true` before mutating operations and apply per-endpoint in-process rate limiting to reject bursts with HTTP 429, with deployment knobs via `MATCHY_MUTATION_RATE_LIMIT_MAX_REQUESTS` and `MATCHY_MUTATION_RATE_LIMIT_WINDOW_SECONDS`.
 Tests:
 - R055-T01: Call each mutating endpoint without an Authorization header and verify HTTP 401.
 - R055-T02: Call a mutating endpoint with an invalid bearer token and verify HTTP 401.
+- R055-T03: Call a mutating endpoint with `X-Matchy-Write-Token` and verify auth succeeds.
+- R055-T04: Set `MATCHY_WRITE_ENABLED=false` and verify mutating endpoints return HTTP 503.
+- R055-T05: Burst-call a mutating endpoint and verify HTTP 429 is returned after the configured window threshold.
 
 R480  Statement: Emit startup timing logs only when explicit startup logging is enabled.
 Design: `_startup_log` checks `MATCHY_STARTUP_LOG` and prints a single elapsed-phase line (including optional details)
@@ -77,3 +80,4 @@ Tests:
 - 2026-06-03: Added run/confirm request validation and explicit confirm endpoint requirements.
 - 2026-06-04: Added R055 Bearer-auth requirement for mutating API endpoints.
 - 2026-06-06: Added R480-R500 startup/service-dispatch requirements and anchored tests for run/pending/confirm helper paths.
+- 2026-06-07: Expanded R055 with write-token header aliases, write-enable gating, and mutating endpoint rate limiting.

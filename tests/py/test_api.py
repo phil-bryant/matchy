@@ -16,6 +16,11 @@ def _auth_headers(token: str = "test-matchy-api-token") -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _write_token_headers(token: str = "test-matchy-api-token") -> dict[str, str]:
+    #R055: Test helper supports write-token header auth paths used by DAST profiles.
+    return {"X-Matchy-Write-Token": token}
+
+
 def test_api_health_endpoint_returns_status_ok() -> None:
     #R001: Health endpoint returns deterministic status payload.
     #R001-T01: Python test lane exists for health endpoint requirement.
@@ -64,6 +69,7 @@ def test_api_run_endpoint_maps_unknown_transaction_to_http_404() -> None:
             headers=_auth_headers(),
         )
         assert response.status_code == 404
+        assert response.json().get("detail") == "No transaction matched the supplied transaction_id."
     finally:
         api.MatchService = old
 
@@ -133,6 +139,76 @@ def test_api_mutating_endpoints_reject_wrong_bearer_token() -> None:
         headers=_auth_headers(token="wrong-token"),
     )
     assert response.status_code == 401
+
+
+def test_api_mutating_endpoints_accept_write_token_header_alias() -> None:
+    #R055-T03: Mutating endpoints accept write-token header aliases for scanner compatibility.
+    class StubService:
+        #R495: Test helper covers pending endpoint delegation behavior.
+        def match_pending_transactions(self, limit=100, lookback_days=14, trigger_source="auto", force_rematch=False):
+            return [{"ok": True}]
+
+    old = api.MatchService
+    api.MatchService = lambda settings: StubService()
+    try:
+        response = TestClient(create_app()).post(
+            "/v1/matchy/runs/pending",
+            json={"limit": 7, "lookback_days": 3, "trigger_source": "auto"},
+            headers=_write_token_headers(),
+        )
+        assert response.status_code == 200
+    finally:
+        api.MatchService = old
+
+
+def test_api_mutating_endpoints_respect_matchy_write_enabled_flag(monkeypatch) -> None:
+    #R055-T04: Mutating endpoints fail closed when MATCHY_WRITE_ENABLED=false.
+    monkeypatch.setenv("MATCHY_WRITE_ENABLED", "false")
+    response = TestClient(create_app()).post(
+        "/v1/matchy/runs",
+        json={"transaction_ids": ["txn_1"], "trigger_source": "manual"},
+        headers=_auth_headers(),
+    )
+    assert response.status_code == 503
+    assert "MATCHY_WRITE_ENABLED=false" in response.json().get("detail", "")
+
+
+def test_api_mutating_endpoints_apply_rate_limit_window(monkeypatch) -> None:
+    #R055-T05: Mutating endpoints enforce request-rate throttling.
+    monkeypatch.setenv("MATCHY_MUTATION_RATE_LIMIT_MAX_REQUESTS", "3")
+    monkeypatch.setenv("MATCHY_MUTATION_RATE_LIMIT_WINDOW_SECONDS", "60")
+
+    class StubService:
+        #R495: Test helper covers pending endpoint delegation behavior.
+        def match_pending_transactions(self, limit=100, lookback_days=14, trigger_source="auto", force_rematch=False):
+            return [{"ok": True}]
+
+    old = api.MatchService
+    api.MatchService = lambda settings: StubService()
+    try:
+        client = TestClient(create_app())
+        for _ in range(3):
+            response = client.post(
+                "/v1/matchy/runs/pending",
+                json={"limit": 7, "lookback_days": 3, "trigger_source": "auto"},
+                headers=_auth_headers(),
+            )
+            assert response.status_code == 200
+        blocked = client.post(
+            "/v1/matchy/runs/pending",
+            json={"limit": 7, "lookback_days": 3, "trigger_source": "auto"},
+            headers=_auth_headers(),
+        )
+        assert blocked.status_code == 429
+    finally:
+        api.MatchService = old
+
+
+def test_api_openapi_docs_are_disabled_by_default() -> None:
+    #R001: OpenAPI/docs endpoints are not exposed unless explicitly enabled.
+    client = TestClient(create_app())
+    assert client.get("/openapi.json").status_code == 404
+    assert client.get("/docs").status_code == 404
 
 
 def test_api_pending_run_endpoint_delegates_to_service_batch_matcher() -> None:
@@ -208,6 +284,7 @@ def test_api_confirm_endpoint_maps_unknown_ids_to_http_404() -> None:
             headers=_auth_headers(),
         )
         assert response.status_code == 404
+        assert response.json().get("detail") == "Unknown transaction or email message for confirmation."
     finally:
         api.MatchService = old
 

@@ -1,0 +1,70 @@
+{
+  "binaries": [
+    {
+      "id": "python3",
+      "command": "python3",
+      "required": true,
+      "version_args": [
+        "--version"
+      ],
+      "version_pattern": "(\\d+(?:\\.\\d+){1,2})",
+      "min_version": "3.11.0",
+      "allowed_sha256": []
+    },
+    {
+      "id": "1psa",
+      "command": "1psa",
+      "required": false,
+      "version_args": [
+        "--version"
+      ],
+      "version_pattern": "(\\d+(?:\\.\\d+){1,2})",
+      "min_version": null,
+      "allowed_sha256": []
+    },
+    {
+      "id": "semgrep",
+      "command": "semgrep",
+      "required": false,
+      "version_args": [
+        "--version"
+      ],
+      "version_pattern": "(\\d+(?:\\.\\d+){1,2})",
+      "min_version": null,
+      "allowed_sha256": []
+    },
+    {
+      "id": "bandit",
+      "command": "bandit",
+      "required": false,
+      "version_args": [
+        "--version"
+      ],
+      "version_pattern": "(\\d+(?:\\.\\d+){1,2})",
+      "min_version": null,
+      "allowed_sha256": []
+    },
+    {
+      "id": "pip-audit",
+      "command": "pip-audit",
+      "required": false,
+      "version_args": [
+        "--version"
+      ],
+      "version_pattern": "(\\d+(?:\\.\\d+){1,2})",
+      "min_version": null,
+      "allowed_sha256": []
+    },
+    {
+      "id": "gitleaks",
+      "command": "gitleaks",
+      "required": false,
+      "version_args": [
+        "version"
+      ],
+      "version_pattern": "(\\d+(?:\\.\\d+){1,2})",
+      "min_version": null,
+      "allowed_sha256": []
+    }
+  ]
+}

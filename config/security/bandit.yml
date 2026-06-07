@@ -1,0 +1,8 @@
+exclude_dirs:
+  - tests
+  - archive
+  - matchy-venv
+  - artifacts/venv/security
+  - .venv
+skips:
+  - B101

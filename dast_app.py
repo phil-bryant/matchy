@@ -61,6 +61,10 @@ def main() -> None:
         fallback_api_auth = _resolve(["TELLER_CLASSIFIER_WRITE_TOKEN", "DAST_WRITE_TOKEN"], "")
         if fallback_api_auth:
             os.environ["MATCHY_API_AUTH_TOKEN"] = fallback_api_auth
+    if not os.environ.get("MATCHY_ENABLE_API_DOCS", "").strip():
+        os.environ["MATCHY_ENABLE_API_DOCS"] = "true"
+    if not os.environ.get("MATCHY_MUTATION_RATE_LIMIT_MAX_REQUESTS", "").strip():
+        os.environ["MATCHY_MUTATION_RATE_LIMIT_MAX_REQUESTS"] = "1000"
     from matchy.api import create_app
     uvicorn.run(create_app(), host=host, port=port, ssl_certfile=cert, ssl_keyfile=key, log_level="warning")
 

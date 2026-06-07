@@ -1,0 +1,24 @@
+rules:
+  - id: matchy.subprocess-shell-true
+    message: Avoid subprocess with shell=True. Use argument lists with explicit binaries.
+    severity: ERROR
+    languages:
+      - python
+    metadata:
+      category: security
+      cwe:
+        - "CWE-78: OS Command Injection"
+      confidence: HIGH
+    pattern: subprocess.$FUNC(..., shell=True, ...)
+
+  - id: matchy.http-exception-detail-from-exc
+    message: Avoid returning raw exception strings in HTTPException details.
+    severity: ERROR
+    languages:
+      - python
+    metadata:
+      category: security
+      cwe:
+        - "CWE-209: Information Exposure Through an Error Message"
+      confidence: HIGH
+    pattern: HTTPException(..., detail=str($EXC), ...)
