@@ -27,7 +27,7 @@ and FileVault (`t10`) lanes stay local. It is kept correct and manually runnable
    - `~/.env` fallback supports the same keys (`username`, `password`, `host`, `port`, `database`) or mapped keys (`TELLER_DB_USER`, `TELLER_DB_PASSWORD`, `TELLER_DB_HOST`, `TELLER_DB_PORT`, `TELLER_DB_NAME`).
    - `MAILCART_SERVICE_BASE_URL` (must be HTTPS, for example `https://127.0.0.1:8788`)
    - `MAILCART_SERVICE_TOKEN` (optional if Mailcart is running without auth)
-   - `MATCHY_API_AUTH_TOKEN` (required bearer token for write-capable Matchy API endpoints)
+  - `MATCHY_API_AUTH_TOKEN` (optional for local script runs; defaults to `matchy-local-dev-token` in `./05` + `./06`)
    - Optional TLS verify override: `MATCHY_MAILCART_CA_BUNDLE` (path to a CA/cert bundle trusted for Mailcart TLS).
    - Optional startup preflight controls:
      - `MATCHY_MAILCART_STARTUP_HEALTHCHECK` (`true`/`false`, default `true`)
@@ -37,12 +37,12 @@ and FileVault (`t10`) lanes stay local. It is kept correct and manually runnable
      - `openai_api_key` (default 1psa item; override `MATCHY_OPENAI_API_KEY_1PSA_ITEM`; env override `OPENAI_API_KEY`)
      - If neither is available, Matchy falls back to deterministic scoring only.
 3. Start API:
-   - `./08_run_matchy_api.py`
-   - `./08_run_matchy_api.py --profile` (enable startup timing/profiling logs)
+  - `./05_run_matchy_api.py`
+  - `./05_run_matchy_api.py --profile` (enable startup timing/profiling logs)
    - Options are available as CLI args (for example `--mailcart-body-enrichment-limit`, `--mailcart-body-enrichment-timeout-seconds`, `--mailcart-get-message-timeout-seconds`, `--pending-max-workers`) so local runs do not require env-var-only control.
 4. Run driver:
-   - `./09_run_matchy_driver.py --once`
-   - `./09_run_matchy_driver.py --profile` (startup + in-flight request heartbeat logs every 5s while waiting)
+  - `./06_run_matchy_driver.py --once`
+  - `./06_run_matchy_driver.py --profile` (startup + in-flight request heartbeat logs every 5s while waiting)
 
 ## Test
 
@@ -65,7 +65,7 @@ Run all CI gate scripts in parallel (completion-order PASS/FAIL lines on the ter
 ./04_run_all_tests_parallel.sh
 ```
 
-Excluded from the parallel batch: setup scripts (`01`–`03`) and integration entrypoints (`08_run_matchy_api.py`, `09_run_matchy_driver.py`).
+Excluded from the parallel batch: setup scripts (`01`–`03`) and integration entrypoints (`05_run_matchy_api.py`, `06_run_matchy_driver.py`).
 
 ## Endpoint
 
@@ -79,7 +79,7 @@ Excluded from the parallel batch: setup scripts (`01`–`03`) and integration en
     - `{"limit": 100, "lookback_days": 14, "trigger_source": "auto"}`
   - Purpose:
     - Driver-friendly endpoint that discovers active-unmatched transactions and runs matching in batch.
-  - Driver default batch size is `10` per run (`./09_run_matchy_driver.py`), with CLI arg overrides (`--limit`, `--timeout-seconds`, `--once`, etc.).
+  - Driver default batch size is `10` per run (`./06_run_matchy_driver.py`), with CLI arg overrides (`--limit`, `--timeout-seconds`, `--once`, etc.).
 - `POST /v1/matchy/confirm`
   - Body:
     - `{"transaction_id": "txn_1", "email_message_id": "msg_1", "note": "optional"}`

@@ -122,6 +122,10 @@ class Settings:
             "matchy_api_auth_token",
             os.environ.get("MATCHY_API_AUTH_TOKEN", self.matchy_api_auth_token).strip(),
         )
+        resolved_mailcart_service_token = self._resolve_mailcart_service_token()
+        object.__setattr__(self, "mailcart_service_token", resolved_mailcart_service_token)
+        if resolved_mailcart_service_token and not os.environ.get("MAILCART_SERVICE_TOKEN", "").strip():
+            os.environ["MAILCART_SERVICE_TOKEN"] = resolved_mailcart_service_token
         object.__setattr__(
             self,
             "write_enabled",
@@ -338,6 +342,21 @@ class Settings:
         if not resolved and item_name.strip():
             resolved = self._load_optional_secret_from_1psa(item_name.strip())
         return resolved
+
+    def _resolve_mailcart_service_token(self) -> str:
+        token = (os.environ.get("MAILCART_SERVICE_TOKEN", "") or self.mailcart_service_token or "").strip()
+        if token:
+            return token
+        for env_key in ("CLASSY_WRITE_TOKEN", "TELLER_CLASSIFIER_WRITE_TOKEN"):
+            candidate = os.environ.get(env_key, "").strip()
+            if candidate:
+                return candidate
+        env_values = self._read_home_env_file()
+        for env_key in ("MAILCART_SERVICE_TOKEN", "CLASSY_WRITE_TOKEN", "TELLER_CLASSIFIER_WRITE_TOKEN"):
+            candidate = env_values.get(env_key, "").strip()
+            if candidate:
+                return candidate
+        return ""
 
     #R885: Validate supported 1psa secret reference formats before invoking 1psa commands.
     def _validate_1psa_secret_ref(self, secret_ref: str) -> str:
