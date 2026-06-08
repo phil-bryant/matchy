@@ -171,7 +171,7 @@ class MatchService(SearchMixin, EnrichmentMixin, NearDuplicateMixin, CachingMixi
                 text(
                     """
                     SELECT email_message_id
-                      FROM teller.transaction_email_match
+                      FROM matchy.transaction_email_match
                      WHERE active = TRUE
                        AND email_message_id IS NOT NULL
                        AND transaction_id <> :transaction_id

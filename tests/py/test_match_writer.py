@@ -20,7 +20,7 @@ def test_insert_candidates_sql_includes_cached_metadata_columns() -> None:
 def test_has_active_match_queries_only_active_rows() -> None:
     #R685-T01: Active-match query restricts results to active rows and short-circuits existence checks.
     source = inspect.getsource(MatchRepository.has_active_match)
-    assert "FROM teller.transaction_email_match" in source
+    assert "FROM matchy.transaction_email_match" in source
     assert "active = TRUE" in source
     assert "LIMIT 1" in source
 
@@ -36,7 +36,7 @@ def test_persist_ai_result_contains_no_match_and_conflict_paths() -> None:
 def test_deactivate_active_match_sql_disables_existing_rows() -> None:
     #R695-T01: Deactivate SQL clears active rows for the transaction before replacement writes.
     source = inspect.getsource(MatchRepository.deactivate_active_match)
-    assert "UPDATE teller.transaction_email_match" in source
+    assert "UPDATE matchy.transaction_email_match" in source
     assert "active = FALSE" in source
 
 

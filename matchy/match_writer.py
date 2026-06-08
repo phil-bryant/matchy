@@ -16,7 +16,7 @@ class MatchWriterMixin:
             session.execute(
                 text(
                     """
-                    INSERT INTO teller.transaction_email_candidate (
+                    INSERT INTO matchy.transaction_email_candidate (
                         match_run_id,
                         transaction_id,
                         email_message_id,
@@ -68,7 +68,7 @@ class MatchWriterMixin:
                 text(
                     """
                     SELECT 1
-                      FROM teller.transaction_email_match
+                      FROM matchy.transaction_email_match
                      WHERE email_message_id = :email_message_id
                        AND active = TRUE
                      LIMIT 1
@@ -96,7 +96,7 @@ class MatchWriterMixin:
         session.execute(
             text(
                 """
-                UPDATE teller.transaction_email_match
+                UPDATE matchy.transaction_email_match
                    SET active = FALSE,
                        updated_at = CURRENT_TIMESTAMP
                  WHERE transaction_id = :transaction_id
@@ -110,7 +110,7 @@ class MatchWriterMixin:
             session.execute(
                 text(
                     """
-                    INSERT INTO teller.transaction_email_match (
+                    INSERT INTO matchy.transaction_email_match (
                         transaction_id,
                         email_message_id,
                         state,
@@ -157,7 +157,7 @@ class MatchWriterMixin:
             session.execute(
                 text(
                     """
-                    INSERT INTO teller.transaction_email_match (
+                    INSERT INTO matchy.transaction_email_match (
                         transaction_id,
                         email_message_id,
                         state,
@@ -199,7 +199,7 @@ class MatchWriterMixin:
             session.execute(
                 text(
                     """
-                    INSERT INTO teller.transaction_email_match (
+                    INSERT INTO matchy.transaction_email_match (
                         transaction_id,
                         email_message_id,
                         state,
@@ -243,7 +243,7 @@ class MatchWriterMixin:
         session.execute(
             text(
                 """
-                UPDATE teller.transaction_email_match
+                UPDATE matchy.transaction_email_match
                    SET active = FALSE, updated_at = CURRENT_TIMESTAMP
                  WHERE transaction_id = :transaction_id AND active = TRUE
                 """
@@ -259,7 +259,7 @@ class MatchWriterMixin:
             session.execute(
                 text(
                     """
-                    INSERT INTO teller.transaction_email_match (
+                    INSERT INTO matchy.transaction_email_match (
                         transaction_id, email_message_id, state, selected_by, selected_at, active, explanation_json
                     ) VALUES (
                         :transaction_id, :email_message_id, 'human_confirmed_ai_match', 'human', :selected_at, TRUE, CAST(:explanation AS jsonb)

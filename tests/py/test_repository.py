@@ -289,12 +289,12 @@ def test_persist_ai_result_avoids_duplicate_active_email_match_insert_and_marks_
         auto_confirm_threshold=0.9,
     )
     assert selected == []
-    status_calls = [params for sql, params in session.calls if "UPDATE teller.transaction_email_match_run" in sql]
+    status_calls = [params for sql, params in session.calls if "UPDATE matchy.transaction_email_match_run" in sql]
     assert status_calls and status_calls[-1]["status"] == "needs_review"
     uncertain_rows = [
         params
         for sql, params in session.calls
-        if "INSERT INTO teller.transaction_email_match" in sql and "'ai_candidate_uncertain'" in sql and "email_message_id" not in params
+        if "INSERT INTO matchy.transaction_email_match" in sql and "'ai_candidate_uncertain'" in sql and "email_message_id" not in params
     ]
     assert uncertain_rows and uncertain_rows[-1]["transaction_id"] == "txn_1"
 
@@ -343,10 +343,10 @@ def test_persist_ai_result_filters_out_of_set_ai_ids_to_no_match_found() -> None
     no_match_rows = [
         params
         for sql, params in session.calls
-        if "INSERT INTO teller.transaction_email_match" in sql and "'ai_no_match_found'" in sql
+        if "INSERT INTO matchy.transaction_email_match" in sql and "'ai_no_match_found'" in sql
     ]
     assert no_match_rows and no_match_rows[-1]["transaction_id"] == "txn_1"
-    status_calls = [params for sql, params in session.calls if "UPDATE teller.transaction_email_match_run" in sql]
+    status_calls = [params for sql, params in session.calls if "UPDATE matchy.transaction_email_match_run" in sql]
     assert status_calls and status_calls[-1]["status"] == "no_candidates"
 
 
@@ -414,7 +414,7 @@ def test_repository_create_run_returns_inserted_match_run_id() -> None:
     run_id = repo.create_run(session, "txn_1", "manual", "claude-sonnet-4-5", "v3")
     assert run_id == 321
     sql, params = session.calls[0]
-    assert "INSERT INTO teller.transaction_email_match_run" in sql
+    assert "INSERT INTO matchy.transaction_email_match_run" in sql
     assert params["transaction_id"] == "txn_1"
     assert params["trigger_source"] == "manual"
 
@@ -435,7 +435,7 @@ def test_repository_update_run_model_name_executes_targeted_update() -> None:
     repo = object.__new__(MatchRepository)
     repo.update_run_model_name(session, 44, "claude-sonnet-4-5")
     sql, params = session.calls[0]
-    assert "UPDATE teller.transaction_email_match_run" in sql
+    assert "UPDATE matchy.transaction_email_match_run" in sql
     assert params == {"model_name": "claude-sonnet-4-5", "match_run_id": 44}
 
 
@@ -476,7 +476,7 @@ def test_repository_update_run_status_persists_status_completion_and_error() -> 
     repo = object.__new__(MatchRepository)
     repo._update_run_status(session, 77, "failed", error_text="boom")
     sql, params = session.calls[0]
-    assert "UPDATE teller.transaction_email_match_run" in sql
+    assert "UPDATE matchy.transaction_email_match_run" in sql
     assert "completed_at = CURRENT_TIMESTAMP" in sql
     assert params == {"status": "failed", "error_text": "boom", "match_run_id": 77}
 

@@ -86,7 +86,7 @@ class MatchRepository(MatchWriterMixin):
             session.execute(
                 text(
                     """
-                    INSERT INTO teller.transaction_email_match_run (
+                    INSERT INTO matchy.transaction_email_match_run (
                         transaction_id, trigger_source, model_name, prompt_version, status
                     ) VALUES (
                         :transaction_id, :trigger_source, :model_name, :prompt_version, 'needs_review'
@@ -108,7 +108,7 @@ class MatchRepository(MatchWriterMixin):
         session.execute(
             text(
                 """
-                UPDATE teller.transaction_email_match_run
+                UPDATE matchy.transaction_email_match_run
                    SET model_name = :model_name
                  WHERE match_run_id = :match_run_id
                 """
@@ -130,12 +130,12 @@ class MatchRepository(MatchWriterMixin):
                            temr.transaction_id,
                            temr.created_at,
                            temr.completed_at
-                      FROM teller.transaction_email_match_run temr
+                      FROM matchy.transaction_email_match_run temr
                      ORDER BY temr.transaction_id, temr.match_run_id DESC
                 )
                 SELECT tt.transaction_id
                   FROM teller.transaction tt
-             LEFT JOIN teller.transaction_email_match tem
+             LEFT JOIN matchy.transaction_email_match tem
                     ON tem.transaction_id = tt.transaction_id
                    AND tem.active = TRUE
              LEFT JOIN latest_runs lr
@@ -168,7 +168,7 @@ class MatchRepository(MatchWriterMixin):
             text(
                 """
                 SELECT match_run_id, status::text AS status, model_name, prompt_version
-                  FROM teller.transaction_email_match_run
+                  FROM matchy.transaction_email_match_run
                  WHERE transaction_id = :transaction_id
                  ORDER BY match_run_id DESC
                  LIMIT 1
@@ -189,7 +189,7 @@ class MatchRepository(MatchWriterMixin):
                        cached_sender,
                        cached_snippet,
                        is_unmatched_email_priority
-                  FROM teller.transaction_email_candidate
+                  FROM matchy.transaction_email_candidate
                  WHERE match_run_id = :match_run_id
                 """
             ),
@@ -227,7 +227,7 @@ class MatchRepository(MatchWriterMixin):
                 """
                 SELECT match_id, email_message_id, state::text AS state,
                        ai_confidence, selected_by::text AS selected_by
-                  FROM teller.transaction_email_match
+                  FROM matchy.transaction_email_match
                  WHERE transaction_id = :transaction_id
                    AND active = TRUE
                  LIMIT 1
@@ -252,7 +252,7 @@ class MatchRepository(MatchWriterMixin):
             text(
                 """
                 SELECT email_message_id
-                  FROM teller.transaction_email_match
+                  FROM matchy.transaction_email_match
                  WHERE active = TRUE
                    AND email_message_id IS NOT NULL
                    AND transaction_id <> :transaction_id
@@ -267,7 +267,7 @@ class MatchRepository(MatchWriterMixin):
         session.execute(
             text(
                 """
-                UPDATE teller.transaction_email_match_run
+                UPDATE matchy.transaction_email_match_run
                    SET status = :status,
                        completed_at = CURRENT_TIMESTAMP,
                        error_text = :error_text
