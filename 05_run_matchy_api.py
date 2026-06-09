@@ -13,6 +13,7 @@ DEFAULT_PORT = 8790
 DEFAULT_API_AUTH_TOKEN = "matchy-local-dev-token"
 
 
+#R005: Port guard checks deterministic host/port occupancy before startup.
 def _is_port_in_use(host: str, port: int) -> bool:
     in_use = False
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -24,6 +25,7 @@ def _is_port_in_use(host: str, port: int) -> bool:
     return in_use
 
 
+#R005: Health probe confirms reusable Matchy process on the guarded bind target.
 def _is_matchy_healthy(host: str, port: int) -> bool:
     healthy = False
     connection: http.client.HTTPConnection | None = None
@@ -59,6 +61,7 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+#R005: CLI overrides map to env vars consumed by Matchy runtime settings.
 def _apply_argument_overrides(args: argparse.Namespace) -> None:
     if args.mailcart_body_enrichment is not None:
         os.environ["MATCHY_MAILCART_BODY_ENRICHMENT"] = args.mailcart_body_enrichment
@@ -74,6 +77,7 @@ def _apply_argument_overrides(args: argparse.Namespace) -> None:
         os.environ["MATCHY_PENDING_MAX_WORKERS"] = str(args.pending_max_workers)
 
 
+#R010: Startup profiling log emission is gated by the --profile flag.
 def _startup_log(start_time_seconds: float, phase: str, details: str = "", profile_enabled: bool = False) -> None:
     if profile_enabled:
         elapsed_seconds = perf_counter() - start_time_seconds

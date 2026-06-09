@@ -9,11 +9,15 @@ from matchy.mailcart_client import MailcartClient
 from matchy.settings import Settings
 
 
-def test_mailcart_client_headers_include_optional_bearer_token() -> None:
+def test_mailcart_client_headers_include_optional_bearer_token(monkeypatch) -> None:
     #R001: Authorization header appears only when token is configured.
     #R001-T01: Python test lane exists for authorization header requirement.
-    with_token = MailcartClient(Settings(mailcart_service_token="tok"))
+    monkeypatch.delenv("MAILCART_SERVICE_TOKEN", raising=False)
+    monkeypatch.delenv("CLASSY_WRITE_TOKEN", raising=False)
+    monkeypatch.delenv("TELLER_CLASSIFIER_WRITE_TOKEN", raising=False)
+    monkeypatch.setattr(Settings, "_read_home_env_file", lambda self: {})
     without_token = MailcartClient(Settings(mailcart_service_token=""))
+    with_token = MailcartClient(Settings(mailcart_service_token="tok"))
     assert "Authorization" in with_token._headers()
     assert "Authorization" not in without_token._headers()
 

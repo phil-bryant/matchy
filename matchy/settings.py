@@ -343,6 +343,7 @@ class Settings:
             resolved = self._load_optional_secret_from_1psa(item_name.strip())
         return resolved
 
+    #R880: Resolve Mailcart service token with env precedence and ~/.env fallback for startup wiring.
     def _resolve_mailcart_service_token(self) -> str:
         token = (os.environ.get("MAILCART_SERVICE_TOKEN", "") or self.mailcart_service_token or "").strip()
         if token:

@@ -1,9 +1,9 @@
 #!/usr/bin/env bats
-# Numbered traceability tags: #R001-T01 #R005-T01 #R010-T01 #R010-T02 #R010-T03
 
 load "helpers/common.bash"
 
 setup() {
+  #R001: Test fixture setup supports one-shot driver entrypoint checks.
   setup_shell_test
   create_repo_fixture
   copy_script_to_fixture "06_run_matchy_driver.py"
@@ -30,12 +30,12 @@ class _Response:
     def json(self):
         return json_mod.loads(self._body)
 
-def post(url, json=None, timeout=0):
+def post(url, json=None, timeout=0, headers=None):
     sleep_seconds = float(os.environ.get("MATCHY_TEST_POST_SLEEP_SECONDS", "0").strip() or "0")
     if sleep_seconds > 0:
         time.sleep(sleep_seconds)
     payload = json or {}
-    record = {"url": url, "method": "POST", "timeout": timeout, "payload": payload}
+    record = {"url": url, "method": "POST", "timeout": timeout, "payload": payload, "headers": headers or {}}
     if _CALLS_FILE:
         with open(_CALLS_FILE, "a", encoding="utf-8") as handle:
             handle.write(json_mod.dumps(record) + "\n")
@@ -44,6 +44,7 @@ EOF
 }
 
 teardown() {
+  #R001: Test fixture teardown keeps driver shell tests isolated.
   teardown_shell_test
 }
 
@@ -58,6 +59,7 @@ teardown() {
   [[ "$output" == *"driver_run=1 status=ok"* ]]
   [[ "$output" == *"batch_size=1 selected_messages=2"* ]]
   #R010: Profiling logs are off unless --profile is passed.
+  #R010-T01: One-shot run without --profile does not emit startup profiling lines.
   [[ "$output" != *"[matchy-driver-startup +"* ]]
   [ -f "${MATCHY_TEST_CALLS_FILE}" ]
   local calls_text
@@ -72,6 +74,7 @@ teardown() {
 
 @test "driver --profile emits startup timing logs" {
   #R010: --profile enables startup timing logs for driver initialization phases.
+  #R010-T02: One-shot run with --profile emits startup profiling lines.
   run env PYTHONPATH="${FIXTURE_ROOT}" MATCHY_DRIVER_ONCE="true" python3 "${FIXTURE_ROOT}/06_run_matchy_driver.py" --profile
   [ "$status" -eq 0 ]
   [[ "$output" == *"[matchy-driver-startup +"* ]]
@@ -80,6 +83,7 @@ teardown() {
 
 @test "driver --profile emits waiting heartbeat while request is in flight" {
   #R010: --profile surfaces in-flight wait heartbeats during long pending-run HTTP calls.
+  #R010-T03: Delayed pending call emits run-waiting heartbeat logs under --profile.
   run env PYTHONPATH="${FIXTURE_ROOT}" MATCHY_DRIVER_ONCE="true" MATCHY_TEST_POST_SLEEP_SECONDS="6" python3 "${FIXTURE_ROOT}/06_run_matchy_driver.py" --profile
   [ "$status" -eq 0 ]
   [[ "$output" == *"run-waiting"* ]]

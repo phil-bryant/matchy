@@ -19,6 +19,7 @@ DEFAULT_API_AUTH_TOKEN = "matchy-local-dev-token"
 _ALLOWED_API_HOSTS = frozenset({"127.0.0.1", "localhost"})
 
 
+#R010: Driver startup profiling log emission is gated by the --profile flag.
 def _startup_log(start_time_seconds: float, phase: str, details: str = "", profile_enabled: bool = False) -> None:
     if profile_enabled:
         elapsed_seconds = perf_counter() - start_time_seconds
@@ -26,6 +27,7 @@ def _startup_log(start_time_seconds: float, phase: str, details: str = "", profi
         print(f"[matchy-driver-startup +{elapsed_seconds:7.3f}s] {phase}{suffix}", flush=True)
 
 
+#R005: Integer env parsing enforces deterministic defaults and minimum bounds.
 def _env_int(name: str, default_value: int, min_value: int) -> int:
     value = default_value
     raw = os.environ.get(name, str(default_value)).strip()
@@ -38,6 +40,7 @@ def _env_int(name: str, default_value: int, min_value: int) -> int:
     return value
 
 
+#R005: Boolean env parsing normalizes common true/false string forms.
 def _env_bool(name: str, default_value: bool) -> bool:
     value = default_value
     raw = os.environ.get(name, "true" if default_value else "false").strip().lower()
@@ -48,6 +51,7 @@ def _env_bool(name: str, default_value: bool) -> bool:
     return value
 
 
+#R005: API base URL validation keeps the driver scoped to allowed loopback hosts.
 def _validated_api_base_url(raw: str) -> str:
     candidate = raw.strip() or DEFAULT_API_BASE_URL
     parsed = urlparse(candidate)
@@ -59,6 +63,7 @@ def _validated_api_base_url(raw: str) -> str:
     return candidate.rstrip("/")
 
 
+#R005: One pending-run POST sends deterministic payload/timeout/auth settings.
 def _post_pending_run(
     api_base_url: str,
     limit: int,
@@ -83,6 +88,7 @@ def _post_pending_run(
     return response_payload
 
 
+#R010: Profile heartbeat logs surface in-flight pending-run wait time.
 def _post_pending_run_with_profile_heartbeat(
     api_base_url: str,
     limit: int,
@@ -145,6 +151,7 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+#R005: Selected-message counting summarizes pending-run batch output rows.
 def _count_selected_messages(results: list[dict]) -> int:
     total = 0
     for row in results:
