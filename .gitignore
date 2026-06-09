@@ -25,3 +25,5 @@ __pycache__/
 .ruff_cache/
 #R045: Ignore Finder metadata files at repository root and nested paths.
 .DS_Store
+.07_run_all_tests_parallel.lock
+mutants
