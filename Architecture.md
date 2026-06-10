@@ -2,7 +2,7 @@
 
 Matchy is the matching engine of the eggnest workspace. It starts from a Teller bank transaction, finds
 candidate Outlook emails through Mailcart, ranks them with deterministic scoring plus an AI ranker, and persists
-the run, candidates, and match decision back into the Teller database.
+run/candidate/match state into the `matchy` schema of the shared Teller-managed database.
 
 The cross-repo system landscape is canonical in the eggnest root [`../Architecture.md`](../Architecture.md);
 this document covers matchy's internal architecture. Operator-facing run/test/endpoint instructions live in
@@ -15,7 +15,7 @@ this document covers matchy's internal architecture. Operator-facing run/test/en
 ## Ownership
 
 - Matchy owns transaction-to-email matching orchestration, deterministic scoring, AI ranking, and the
-  match/candidate/run persistence in the `teller.*` schema.
+  match/candidate/run persistence in the `matchy.*` schema.
 - Matchy owns BM25/TF-IDF-style relevance heuristics and the AI prompt contract (`PROMPT_VERSION`).
 - Matchy depends on Mailcart for email candidates (HTTPS) and on the Teller DB for source transactions and
   match persistence (SQL). It does not own either store.
@@ -39,9 +39,9 @@ this document covers matchy's internal architecture. Operator-facing run/test/en
 |  +----------------------------------------------------------+                                     |
 |  |                      TELLER DB                           |                                     |
 |  | - Source transactions: teller.transaction               |                                     |
-|  | - Run table: teller.transaction_email_match_run          |                                     |
-|  | - Candidates: teller.transaction_email_candidate         |                                     |
-|  | - Match: teller.transaction_email_match                  |                                     |
+|  | - Run table: matchy.transaction_email_match_run          |                                     |
+|  | - Candidates: matchy.transaction_email_candidate         |                                     |
+|  | - Match: matchy.transaction_email_match                  |                                     |
 |  +----------------------------------------------------------+                                     |
 +---------------------------------------------------------------------------------------------------+
 
@@ -84,7 +84,7 @@ TRIGGER FLOW
 |-----------|----------------|
 | `api.py` | FastAPI factory + Pydantic request/response models; lazily builds `MatchService` |
 | `service.py` | Orchestrates the per-transaction pipeline and the pending-batch executor |
-| `repository.py` | Raw SQL via SQLAlchemy `text()` against `teller.*` run/candidate/match tables |
+| `repository.py` | Raw SQL via SQLAlchemy `text()` against `matchy.*` run/candidate/match tables (plus teller.transaction reads) |
 | `mailcart_client.py` | HTTPS client for Mailcart search/get/move (TLS, mkcert CA resolution) |
 | `scoring.py` / `scoring_core.py` | Deterministic weighted ranker; pure helpers are mutation-tested |
 | `ai_ranker.py` | AI selection chain with deterministic fallback; owns `PROMPT_VERSION` |
@@ -149,14 +149,14 @@ limits. `PROMPT_VERSION` (currently `v3`) participates in cache invalidation. Co
 
 ## Persistence
 
-`MatchRepository` reads and writes `teller.*` tables with raw SQL:
+`MatchRepository` reads and writes `matchy.*` tables with raw SQL:
 
 | Table | Role |
 |-------|------|
 | `teller.transaction` | Source transactions |
-| `teller.transaction_email_match_run` | Run metadata, status, model, prompt version |
-| `teller.transaction_email_candidate` | Scored candidates + cached subject/sender/snippet |
-| `teller.transaction_email_match` | Active match state per transaction |
+| `matchy.transaction_email_match_run` | Run metadata, status, model, prompt version |
+| `matchy.transaction_email_candidate` | Scored candidates + cached subject/sender/snippet |
+| `matchy.transaction_email_match` | Active match state per transaction |
 
 Run statuses: `needs_review`, `succeeded`, `no_candidates`, `failed`. Match states include
 `ai_match_confident`, `ai_candidate_uncertain`, `ai_no_match_found`, `human_confirmed_ai_match`. "Pending" work is
@@ -179,7 +179,7 @@ Two verification layers exist:
 |---------|-------|
 | Application | Python 3.10+ |
 | HTTP API | FastAPI, Pydantic, Uvicorn, Starlette |
-| DB access | SQLAlchemy 2.x, psycopg2-binary (PostgreSQL `teller` schema) |
+| DB access | SQLAlchemy 2.x, psycopg2-binary (PostgreSQL `teller` + `matchy` schemas) |
 | Email client | requests (Mailcart HTTPS) |
 | AI | anthropic, openai (optional; deterministic fallback) |
 | Tests | pytest, Hypothesis (properties + fuzz), mutmut (mutation), Bats (shell contracts) |

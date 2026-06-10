@@ -30,7 +30,7 @@ Design: `match_pending_transactions` uses a bounded worker pool (`MATCHY_PENDING
 Tests:
 - R030-T01: Stub pending id discovery and verify `match_pending_transactions` invokes all discovered ids and returns deterministic ordered rows.
 
-R045  Statement: Provide a human confirm path so the UI Confirm button can persist a human selection without triggering state transition conflicts on `teller.transaction_email_match`.
+R045  Statement: Provide a human confirm path so the UI Confirm button can persist a human selection without triggering state transition conflicts on `matchy.transaction_email_match`.
 Design: `confirm_match` in MatchService deactivates any prior active match for the transaction then inserts a new row with state='human_confirmed_ai_match', selected_by='human', delegating to the repository's `deactivate_active_match` and `insert_human_confirmed_match`. Foreign-key violations on client-supplied ids surface as a domain `ValueError` (HTTP 404 at the API).
 Tests:
 - R045-T01: Verify `confirm_match` deactivates the prior active row, inserts the human-confirmed row, and returns the match_id (delegation test in test_service.py).

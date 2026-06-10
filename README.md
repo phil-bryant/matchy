@@ -104,9 +104,9 @@ Excluded from the parallel batch: setup scripts (`01`–`03`) and integration en
 │  │                      TELLER DB                           │                                         │
 │  │                                                          │                                         │
 │  │ - Source transactions: `teller.transaction`              │                                         │
-│  │ - Match run table: `teller.transaction_email_match_run`  │                                         │
-│  │ - Candidates table: `teller.transaction_email_candidate` │                                         │
-│  │ - Match table: `teller.transaction_email_match`          │                                         │
+│  │ - Match run table: `matchy.transaction_email_match_run`  │                                         │
+│  │ - Candidates table: `matchy.transaction_email_candidate` │                                         │
+│  │ - Match table: `matchy.transaction_email_match`          │                                         │
 │  └──────────────────────────────────────────────────────────┘                                         │
 │                                                                                                       │
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘

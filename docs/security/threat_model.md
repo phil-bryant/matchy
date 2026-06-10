@@ -35,7 +35,7 @@ Matchy provides transaction-to-email matching and exposes mutating API endpoints
 
 ## Data-Flow Notes
 
-- Teller DB is system-of-record for transaction state and match artifacts.
+- Teller DB is system-of-record for transaction state (`teller.*`) and hosts match artifacts owned by `matchy.*`.
 - Mailcart provides message metadata/body data used for candidate ranking.
 - Anthropic/OpenAI receive limited scoring context based on configured ranking flow.
 
