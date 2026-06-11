@@ -2,7 +2,7 @@
 
 ## Scope
 
-Applies to `05_run_matchy_api.py`.
+Applies to `06_run_matchy_api.py`.
 
 R001  Statement: Provide an executable Python entrypoint for Matchy API startup.
 Design: Script starts with a Python shebang and imports Matchy app factory.
@@ -22,5 +22,5 @@ Tests:
 
 ## Changelog
 
-- 2026-05-12: Added requirements for `05_run_matchy_api.py` to satisfy numbered-script traceability coverage.
+- 2026-05-12: Added requirements for `06_run_matchy_api.py` to satisfy numbered-script traceability coverage.
 - 2026-05-24: Added opt-in `--profile` requirement for startup timing logs.

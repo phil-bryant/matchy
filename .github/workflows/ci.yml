@@ -18,7 +18,7 @@
 #   - t06 Python unit tests
 #   - t04 requirements traceability
 # Intentionally EXCLUDED here (stay local honor-system): t01 AV, t02 dependency
-# freshness, t03 SAST, t05 shell/bats, t07 mutation, t08 fuzz, t09 DAST,
+# freshness, t04 SAST, t05 shell/bats, t08 mutation, t08 fuzz, t09 DAST,
 # t10 FileVault. matchy's lane pointers require the sibling `runner` repo, so it
 # is checked out next to matchy below.
 # =============================================================================
@@ -67,7 +67,8 @@ jobs:
         run: |
           ./02_create_venv.sh
           source ./matchy-venv/bin/activate
-          ./03_load_requirements.sh
+          ./03_prepare_supply_chain_integrity.sh
+          ./04_load_requirements.sh
 
       - name: Code quality (t00)
         working-directory: matchy

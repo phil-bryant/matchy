@@ -7,11 +7,11 @@ Matchy starts from Teller transactions and finds candidate Outlook emails, then 
 CI is **implemented but intentionally disabled for automatic runs** until the `v1.0` customer release. A GitHub
 Actions workflow exists at `.github/workflows/ci.yml`, but it is **manual-dispatch-only**
 (`on: workflow_dispatch`) — it does **not** trigger on `push`, `pull_request`, or `schedule`. Pre-release, the
-enforcement mechanism is the local numbered test lanes (`tests/tNN_*.sh` + `./04_run_all_tests_parallel.sh`),
+enforcement mechanism is the local numbered test lanes (`tests/tNN_*.sh` + `./05_run_all_tests_parallel.sh`),
 not GitHub-hosted CI: this is a solo project and red X's on every push are noise rather than signal. matchy is
 pure-Python FastAPI, so the workflow runs a high-coverage Linux-portable subset (code quality `t00` + Python
 unit `t06` + requirements traceability `t04`, delegating to the shared `runner` goldens); the AV (`t01`),
-dependency-freshness (`t02`), SAST (`t03`), shell/Bats (`t05`), mutation (`t07`), fuzz (`t08`), DAST (`t09`),
+dependency-freshness (`t02`), SAST (`t04`), shell/Bats (`t05`), mutation (`t08`), fuzz (`t08`), DAST (`t09`),
 and FileVault (`t10`) lanes stay local. It is kept correct and manually runnable so it can be wired to
 `push`/`pull_request` as the project approaches `v1.0`. This matches the workspace-wide policy in
 [`teller`'s README](../teller/README.md#pre-release-cicd-policy).
@@ -37,12 +37,12 @@ and FileVault (`t10`) lanes stay local. It is kept correct and manually runnable
      - `openai_api_key` (default 1psa item; override `MATCHY_OPENAI_API_KEY_1PSA_ITEM`; env override `OPENAI_API_KEY`)
      - If neither is available, Matchy falls back to deterministic scoring only.
 3. Start API:
-  - `./05_run_matchy_api.py`
-  - `./05_run_matchy_api.py --profile` (enable startup timing/profiling logs)
+  - `./06_run_matchy_api.py`
+  - `./06_run_matchy_api.py --profile` (enable startup timing/profiling logs)
    - Options are available as CLI args (for example `--mailcart-body-enrichment-limit`, `--mailcart-body-enrichment-timeout-seconds`, `--mailcart-get-message-timeout-seconds`, `--pending-max-workers`) so local runs do not require env-var-only control.
 4. Run driver:
-  - `./06_run_matchy_driver.py --once`
-  - `./06_run_matchy_driver.py --profile` (startup + in-flight request heartbeat logs every 5s while waiting)
+  - `./07_run_matchy_driver.py --once`
+  - `./07_run_matchy_driver.py --profile` (startup + in-flight request heartbeat logs every 5s while waiting)
 
 ## Test
 
@@ -51,7 +51,8 @@ Run unit tests (pytest for application modules, then Bats for numbered shell scr
 ```bash
 ./02_create_venv.sh
 activate
-./03_load_requirements.sh
+./03_prepare_supply_chain_integrity.sh
+./04_load_requirements.sh
 ./05_run_unit_tests.sh
 ./11_run_fuzz.sh
 ./10_run_mutation_tests.sh   # mutmut on scoring_core + models; 90% score gate
@@ -62,12 +63,12 @@ activate
 Run all CI gate scripts in parallel (completion-order PASS/FAIL lines on the terminal; full output per script in `.parallel-checks-reports/<script-stem>.log`):
 
 ```bash
-./04_run_all_tests_parallel.sh
+./05_run_all_tests_parallel.sh
 ```
 
-Excluded from the parallel batch: setup scripts (`01`–`03`) and integration entrypoints (`05_run_matchy_api.py`, `06_run_matchy_driver.py`).
+Excluded from the parallel batch: setup scripts (`01`–`04`) and integration entrypoints (`06_run_matchy_api.py`, `07_run_matchy_driver.py`).
 
-Use `./07_clean_generated_files.sh` to clear generated artifacts between runs (moves outputs to `~/.Trash`).
+Use `./08_clean_generated_files.sh` to clear generated artifacts between runs (moves outputs to `~/.Trash`).
 
 ## Endpoint
 
@@ -81,7 +82,7 @@ Use `./07_clean_generated_files.sh` to clear generated artifacts between runs (m
     - `{"limit": 100, "lookback_days": 14, "trigger_source": "auto"}`
   - Purpose:
     - Driver-friendly endpoint that discovers active-unmatched transactions and runs matching in batch.
-  - Driver default batch size is `10` per run (`./06_run_matchy_driver.py`), with CLI arg overrides (`--limit`, `--timeout-seconds`, `--once`, etc.).
+  - Driver default batch size is `10` per run (`./07_run_matchy_driver.py`), with CLI arg overrides (`--limit`, `--timeout-seconds`, `--once`, etc.).
 - `POST /v1/matchy/confirm`
   - Body:
     - `{"transaction_id": "txn_1", "email_message_id": "msg_1", "note": "optional"}`

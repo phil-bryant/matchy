@@ -1,8 +1,8 @@
-# 04 Run All Tests Parallel Wrapper Requirements
+# 08 Clean Generated Files Wrapper Requirements
 
 ## Scope
 
-Applies to `04_run_all_tests_parallel.sh`.
+Applies to `08_clean_generated_files.sh`.
 
 R001  Statement: Pointer runs with secure umask and strict shell mode via the shared shim.
 Design: Source `src/scripts/pointer_shim.sh`, which sets `umask 007` and `set -euo pipefail` before delegation.
@@ -20,7 +20,6 @@ Tests:
 - R010-T01: Verify the pointer sets `RUNBOOK_PROFILE` to the repo profile.
 
 R015  Statement: Pointer delegates execution to the mapped runner golden.
-Design: Call `delegate_golden "07_run_all_tests_parallel.sh" "$@"` so the shim execs `${RUNNER_HOME}/07_run_all_tests_parallel.sh` with arguments passed through unchanged.
+Design: Call `delegate_golden "96_clean_generated_files.sh" "$@"` so the shim execs `${RUNNER_HOME}/96_clean_generated_files.sh` with arguments passed through unchanged.
 Tests:
-- R015-T01: Verify the pointer calls `delegate_golden "07_run_all_tests_parallel.sh"` with `"$@"`.
-- R015-T02: Verify the pointer relies on argument passthrough and adds no local `--no-ui`/`--no-mutation`/`--no-av` filtering.
+- R015-T01: Verify the pointer calls `delegate_golden "96_clean_generated_files.sh"` with `"$@"`.

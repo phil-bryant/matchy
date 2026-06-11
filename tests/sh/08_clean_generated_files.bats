@@ -2,7 +2,7 @@
 
 #R001: shard-3 function tag
 src() {
-  printf '%s' "${RUNBOOK_REPO_ROOT}/07_clean_generated_files.sh"
+  printf '%s' "${RUNBOOK_REPO_ROOT}/08_clean_generated_files.sh"
 }
 
 @test "centralizes umask/strict mode via the shared pointer shim" {

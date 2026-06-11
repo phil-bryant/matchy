@@ -1,11 +1,11 @@
-# t03 run static security tests Wrapper Requirements
+# 04 Load Requirements Wrapper Requirements
 
 ## Scope
 
-Applies to `tests/t03_run_static_security_tests.sh`. Thin pointer that selects the matchy runbook profile and delegates the lane to the runner golden via the shared shim.
+Applies to `04_load_requirements.sh`.
 
 R001  Statement: Pointer runs with secure umask and strict shell mode via the shared shim.
-Design: Source `pointer_shim.sh`, which sets `umask 007` and `set -euo pipefail` before delegation.
+Design: Source `src/scripts/pointer_shim.sh`, which sets `umask 007` and `set -euo pipefail` before delegation.
 Tests:
 - R001-T01: Verify the pointer sources `pointer_shim.sh`.
 
@@ -17,9 +17,9 @@ Tests:
 R010  Statement: Pointer selects its runbook profile explicitly before delegation.
 Design: Set `RUNBOOK_PROFILE="matchy"` so the shim sources `runner/config/runbook/matchy.env` and exports `RUNBOOK_REPO_ROOT`.
 Tests:
-- R010-T01: Verify the pointer sets `RUNBOOK_PROFILE` to the matchy profile.
+- R010-T01: Verify the pointer sets `RUNBOOK_PROFILE` to the repo profile.
 
 R015  Statement: Pointer delegates execution to the mapped runner golden.
-Design: Call `delegate_golden "tests/t03_run_static_security_tests.sh" "$@"` so the shim execs the runner golden with arguments passed through unchanged.
+Design: Call `delegate_golden "src/scripts/load_requirements_generic.sh" "$@"` so the shim execs `${RUNNER_HOME}/src/scripts/load_requirements_generic.sh` with arguments passed through unchanged.
 Tests:
-- R015-T01: Verify the pointer calls `delegate_golden "tests/t03_run_static_security_tests.sh"` with `"$@"`.
+- R015-T01: Verify the pointer calls `delegate_golden "src/scripts/load_requirements_generic.sh"` with `"$@"`.

@@ -2,7 +2,7 @@
 
 ## Scope
 
-Applies to `06_run_matchy_driver.py`.
+Applies to `07_run_matchy_driver.py`.
 
 R001  Statement: Provide executable Python entrypoint for pending-match driver runs.
 Design: Script starts with Python shebang and enters a loop function from `__main__`.
@@ -23,5 +23,5 @@ Tests:
 
 ## Changelog
 
-- 2026-05-18: Added requirements for `06_run_matchy_driver.py` to automate pending transaction matching runs.
+- 2026-05-18: Added requirements for `07_run_matchy_driver.py` to automate pending transaction matching runs.
 - 2026-05-24: Added opt-in `--profile` requirement for driver startup timing logs.

@@ -2,7 +2,7 @@
 
 #R001: shard-3 function tag
 src() {
-  printf '%s' "${RUNBOOK_REPO_ROOT}/04_run_all_tests_parallel.sh"
+  printf '%s' "${RUNBOOK_REPO_ROOT}/05_run_all_tests_parallel.sh"
 }
 
 #R001: shard-3 function tag
