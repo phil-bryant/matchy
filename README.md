@@ -67,6 +67,8 @@ Run all CI gate scripts in parallel (completion-order PASS/FAIL lines on the ter
 
 Excluded from the parallel batch: setup scripts (`01`–`03`) and integration entrypoints (`05_run_matchy_api.py`, `06_run_matchy_driver.py`).
 
+Use `./07_clean_generated_files.sh` to clear generated artifacts between runs (moves outputs to `~/.Trash`).
+
 ## Endpoint
 
 - Auth header for mutating endpoints:
