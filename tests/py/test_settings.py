@@ -47,6 +47,9 @@ def _clear_secret_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("TELLER_DB_PASSWORD_1PSA_REF", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    #R882: Pin a non-sqlite profile target so credential-resolution tests stay
+    #R882: deterministic regardless of the developer's active DB profile.
+    monkeypatch.setattr("matchy.settings._teller_profile_target", lambda: "")
 
 
 #R880: Reuse-tagged test helper supports this settings initialization scenario.
@@ -105,6 +108,20 @@ def _db_config(settings: Settings) -> tuple[str, str, str, int, str]:
         settings.teller_db_port,
         settings.teller_db_name,
     )
+
+
+def test_sqlite_profile_target_skips_postgres_credential_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    #R882: SQLite profile targets need no Postgres credentials at startup.
+    #R882-T01: Python test lane exists for sqlite-target credential skip.
+    _clear_secret_env(monkeypatch)
+    monkeypatch.setattr("matchy.settings._teller_profile_target", lambda: "sqlite")
+
+    def _no_db_resolution(self):  # noqa: ANN001
+        raise AssertionError("sqlite target must not resolve postgres credentials")
+
+    monkeypatch.setattr(Settings, "_resolve_teller_db_config", _no_db_resolution)
+    settings = Settings()
+    assert _db_config(settings) == ("", "", "", 0, "")
 
 
 def test_loads_teller_db_config_from_default_1psa_item_when_no_refs_are_set(monkeypatch: pytest.MonkeyPatch) -> None:

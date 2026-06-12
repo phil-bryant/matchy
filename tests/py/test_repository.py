@@ -4,7 +4,7 @@
 #R015: Python test lane coverage for last-run and active-match summaries.
 
 from decimal import Decimal
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import inspect
 from types import SimpleNamespace
 
@@ -12,15 +12,14 @@ from matchy.models import AiSelection, EmailCandidate, RankedCandidate
 from matchy.repository import MatchRepository
 
 
-def test_repository_initialization_fails_without_teller_db_password() -> None:
-    #R001: Repository rejects missing teller_db_password.
-    #R001-T01: Python test lane exists for password requirement.
-    try:
-        MatchRepository(SimpleNamespace(teller_db_password=""))
-    except RuntimeError as exc:
-        assert "TELLER_DB_PASSWORD is required" in str(exc)
-    else:
-        raise AssertionError("expected RuntimeError")
+def test_repository_binds_to_profile_driven_teller_engine(monkeypatch) -> None:
+    #R001: Repository binds to teller's profile-driven engine (postgres or sqlite).
+    #R001-T01: Python test lane exists for profile-driven engine binding.
+    sentinel_engine = object()
+    monkeypatch.setattr("matchy.repository.get_engine", lambda: sentinel_engine)
+    repository = MatchRepository(SimpleNamespace(write_enabled=True))
+    assert repository._engine is sentinel_engine
+    assert repository._write_enabled is True
 
 
 def test_repository_session_context_commits_and_rollbacks_through_fake_session() -> None:
@@ -232,14 +231,18 @@ def test_repository_pending_transaction_query_requeues_unsettled_but_skips_human
     sql, params = session.statements[0]
     assert "ai_candidate_uncertain" in sql
     assert "ai_no_match_found" in sql
-    assert "selected_by::text = 'ai'" in sql
+    assert "CAST(tem.selected_by AS TEXT) = 'ai'" in sql
     assert "tem.match_id IS NULL" in sql
     assert "latest_runs" in sql
     assert "OR lr.transaction_id IS NULL" in sql
     assert "COALESCE(lr.completed_at, lr.created_at" in sql
     assert "human_confirmed_ai_match" not in sql
     assert "human_overrode_ai_match" not in sql
-    assert params == {"lookback_days": 14, "limit": 10}
+    #R010: Portable cutoff/epoch values are bound instead of Postgres interval math.
+    assert params["limit"] == 10
+    assert params["epoch"] == "1970-01-01 00:00:00"
+    expected_cutoff = (date.today() - timedelta(days=14)).isoformat()
+    assert params["cutoff_date"] == expected_cutoff
 
 
 def test_insert_human_confirmed_match_uses_settled_human_state() -> None:
@@ -379,7 +382,7 @@ def test_repository_load_transaction_maps_db_row_to_transaction_input_or_none() 
         "transaction_id": "txn_1",
         "account_id": "acc_1",
         "amount": Decimal("42.55"),
-        "date_ts": datetime(2026, 6, 1, 9, 30, 0),
+        "date_value": datetime(2026, 6, 1, 9, 30, 0),
         "description": "Coffee Shop",
         "counterparty_name": "Coffee Shop",
     }

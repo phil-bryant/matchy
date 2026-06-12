@@ -7,10 +7,10 @@ discovery, and the cache-read summaries). The match-persistence query family (ca
 AI-result persistence, human confirm) was extracted to the match_writer module (R030) and mixed back
 into `MatchRepository`, so the repository's public method surface is unchanged.
 
-R001  Statement: Require Teller DB password before repository initialization.
-Design: Reject initialization when `teller_db_password` is empty to prevent anonymous write attempts.
+R001  Statement: Bind the repository to teller's profile-driven database engine.
+Design: Initialization uses `teller.teller_db.get_engine()` so matchy follows the active teller DB profile (PostgreSQL or SQLite/SQLCipher) exactly like teller and classy; credential resolution belongs to the profile chain, not matchy.
 Tests:
-- R001-T01: Initialize repository with empty password and verify runtime error.
+- R001-T01: Initialize repository with a stubbed `get_engine` and verify the sessionmaker binds to the profile-driven engine.
 
 R005  Statement: Commit successful sessions and rollback failed sessions.
 Design: Session context manager commits after successful work, rolls back on exceptions, and always closes the session.
@@ -30,14 +30,16 @@ Tests:
 - R010-T02: Verify the SQL predicate includes both the `ai_candidate_uncertain` re-queue clause and the `ai_no_match_found`+`selected_by='ai'` re-queue clause so AI-only verdicts are retried while human-authoritative rows are not.
 
 R720  Statement: Map loaded transaction rows into normalized TransactionInput values.
-Design: `load_transaction` reads teller transaction/counterparty fields, converts amount to Decimal, attaches UTC to
-timestamp, and returns `None` when no transaction exists.
+Design: `load_transaction` reads teller transaction/counterparty fields, converts amount to Decimal (dividing
+integer cents by 100 on the SQLite target for backend parity), normalizes the date column from either backend's
+representation, attaches UTC to the timestamp, and returns `None` when no transaction exists.
 Tests:
 - R720-T01: Return mapped TransactionInput values for a row and `None` for missing transaction ids.
 
 R721  Statement: Create needs-review match runs and return generated run identifiers.
 Design: `create_run` inserts a `transaction_email_match_run` row with provided trigger/model/prompt values and
-initial `needs_review` status, returning `match_run_id`.
+initial `needs_review` status, returning `match_run_id` (via `RETURNING` on PostgreSQL; via
+`last_insert_rowid()` on SQLite, whose DBAPI cannot surface `INSERT..RETURNING` rows).
 Tests:
 - R721-T01: Verify inserted run returns generated run id with expected SQL parameters.
 
@@ -71,3 +73,4 @@ Tests:
 - 2026-05-27: Expanded R010 so transactions with no prior match_run are eligible regardless of lookback window, ensuring teller-visible never-run rows are backfilled.
 - 2026-06-05: Extracted R030 (cached candidate metadata on insert) and the AI-result/human-confirm write methods to `matchy/match_writer.py`; `repository.py` retains R001/R005/R010/R015.
 - 2026-06-06: Added R720-R725 repository helper requirements for transaction loading, run lifecycle writes, and active-id exclusion queries.
+- 2026-06-12: Replaced the Postgres-only psycopg2 wiring with teller's profile-driven engine (R001) and made all repository SQL dual-target (SQLite/SQLCipher + PostgreSQL) via `matchy/db_target.py`: portable window-function pending discovery, bound cutoff/epoch values, `CAST(.. AS TEXT)` enum reads, cents-to-dollars amount normalization, and `last_insert_rowid()` id reads on SQLite.

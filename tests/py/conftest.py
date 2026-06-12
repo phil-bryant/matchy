@@ -30,6 +30,10 @@ def _stub_settings_secrets(monkeypatch: pytest.MonkeyPatch, request: pytest.Fixt
         return
     monkeypatch.setenv("MATCHY_CLDR_CURRENCIES_REFRESH_ENABLED", "false")
     monkeypatch.setenv("MATCHY_API_AUTH_TOKEN", "test-matchy-api-token")
+    #R030: Pin the postgres SQL rendering for unit lanes so assertions stay
+    #R030: deterministic regardless of the developer's active DB profile.
+    monkeypatch.setattr("matchy.db_target._IS_SQLITE", False)
+    monkeypatch.setattr("matchy.settings._teller_profile_target", lambda: "")
     monkeypatch.setattr(
         "matchy.settings.Settings._resolve_teller_db_config",
         _stub_teller_db_config,

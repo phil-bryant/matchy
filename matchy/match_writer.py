@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy import text
 
+from .db_target import bind_timestamp, is_sqlite, jsonb_param, sql_for_target
 from .models import AiSelection, RankedCandidate
+
+
+#R030: Resolve owned-schema table references for the active backend target.
+def _sql(sql_text: str):
+    return text(sql_for_target(sql_text))
 
 
 class MatchWriterMixin:
@@ -14,8 +21,8 @@ class MatchWriterMixin:
         for ranked in candidates:
             preview = ranked.candidate.preview or ranked.candidate.body_text[:240] if ranked.candidate.body_text else ranked.candidate.preview
             session.execute(
-                text(
-                    """
+                _sql(
+                    f"""
                     INSERT INTO matchy.transaction_email_candidate (
                         match_run_id,
                         transaction_id,
@@ -35,7 +42,7 @@ class MatchWriterMixin:
                         :email_message_id,
                         :email_received_at,
                         :score,
-                        CAST(:reason_json AS jsonb),
+                        {jsonb_param("reason_json")},
                         :is_unmatched_email_priority,
                         :is_selected_by_ai,
                         :cached_subject,
@@ -50,9 +57,9 @@ class MatchWriterMixin:
                     "match_run_id": match_run_id,
                     "transaction_id": transaction_id,
                     "email_message_id": ranked.candidate.message_id,
-                    "email_received_at": ranked.candidate.received_at,
+                    "email_received_at": _bound_received_at(ranked.candidate.received_at),
                     "score": ranked.score,
-                    "reason_json": __import__("json").dumps(ranked.reasons),
+                    "reason_json": json.dumps(ranked.reasons),
                     "is_unmatched_email_priority": ranked.reasons.get("unmatched_email_priority", False),
                     "is_selected_by_ai": ranked.candidate.message_id in ai_selected_ids,
                     "cached_subject": (ranked.candidate.subject or None),
@@ -65,7 +72,7 @@ class MatchWriterMixin:
     def has_active_match(self, session, email_message_id: str) -> bool:
         return bool(
             session.execute(
-                text(
+                _sql(
                     """
                     SELECT 1
                       FROM matchy.transaction_email_match
@@ -94,7 +101,7 @@ class MatchWriterMixin:
         selected_ids = set(ai_selection.selected_message_ids) & candidate_message_ids
         conflict_detected = False
         session.execute(
-            text(
+            _sql(
                 """
                 UPDATE matchy.transaction_email_match
                    SET active = FALSE,
@@ -108,8 +115,8 @@ class MatchWriterMixin:
 
         if not ranked_candidates or not selected_ids:
             session.execute(
-                text(
-                    """
+                _sql(
+                    f"""
                     INSERT INTO matchy.transaction_email_match (
                         transaction_id,
                         email_message_id,
@@ -124,7 +131,7 @@ class MatchWriterMixin:
                         NULL,
                         'ai_no_match_found',
                         :ai_confidence,
-                        CAST(:explanation_json AS jsonb),
+                        {jsonb_param("explanation_json")},
                         'ai',
                         :selected_at,
                         TRUE
@@ -134,10 +141,10 @@ class MatchWriterMixin:
                 {
                     "transaction_id": transaction_id,
                     "ai_confidence": ai_selection.confidence,
-                    "explanation_json": __import__("json").dumps(
+                    "explanation_json": json.dumps(
                         {"rationale": ai_selection.rationale, "run_id": run_id}
                     ),
-                    "selected_at": now,
+                    "selected_at": bind_timestamp(now),
                 },
             )
             self._update_run_status(session, run_id, "no_candidates")
@@ -155,8 +162,8 @@ class MatchWriterMixin:
                 conflict_detected = True
                 continue
             session.execute(
-                text(
-                    """
+                _sql(
+                    f"""
                     INSERT INTO matchy.transaction_email_match (
                         transaction_id,
                         email_message_id,
@@ -171,7 +178,7 @@ class MatchWriterMixin:
                         :email_message_id,
                         :state,
                         :ai_confidence,
-                        CAST(:explanation_json AS jsonb),
+                        {jsonb_param("explanation_json")},
                         'ai',
                         :selected_at,
                         TRUE
@@ -183,22 +190,22 @@ class MatchWriterMixin:
                     "email_message_id": ranked.candidate.message_id,
                     "state": state,
                     "ai_confidence": ai_selection.confidence,
-                    "explanation_json": __import__("json").dumps(
+                    "explanation_json": json.dumps(
                         {
                             "rationale": ai_selection.rationale,
                             "deterministic_reasons": ranked.reasons,
                             "run_id": run_id,
                         }
                     ),
-                    "selected_at": now,
+                    "selected_at": bind_timestamp(now),
                 },
             )
             selected.append(ranked.candidate.message_id)
 
         if conflict_detected and not selected:
             session.execute(
-                text(
-                    """
+                _sql(
+                    f"""
                     INSERT INTO matchy.transaction_email_match (
                         transaction_id,
                         email_message_id,
@@ -213,7 +220,7 @@ class MatchWriterMixin:
                         NULL,
                         'ai_candidate_uncertain',
                         :ai_confidence,
-                        CAST(:explanation_json AS jsonb),
+                        {jsonb_param("explanation_json")},
                         'ai',
                         :selected_at,
                         TRUE
@@ -223,14 +230,14 @@ class MatchWriterMixin:
                 {
                     "transaction_id": transaction_id,
                     "ai_confidence": ai_selection.confidence,
-                    "explanation_json": __import__("json").dumps(
+                    "explanation_json": json.dumps(
                         {
                             "rationale": ai_selection.rationale,
                             "run_id": run_id,
                             "reason": "selected_email_already_has_active_match",
                         }
                     ),
-                    "selected_at": now,
+                    "selected_at": bind_timestamp(now),
                 },
             )
             state = "ai_candidate_uncertain"
@@ -241,7 +248,7 @@ class MatchWriterMixin:
     #R695: Deactivate all active match rows for a transaction before replacing or confirming matches.
     def deactivate_active_match(self, session, transaction_id: str) -> None:
         session.execute(
-            text(
+            _sql(
                 """
                 UPDATE matchy.transaction_email_match
                    SET active = FALSE, updated_at = CURRENT_TIMESTAMP
@@ -255,23 +262,30 @@ class MatchWriterMixin:
     def insert_human_confirmed_match(self, session, transaction_id: str, email_message_id: str, note: str | None) -> int:
         now = datetime.now(tz=timezone.utc)
         explanation = {"note": note} if note else {}
+        insert_sql = f"""
+            INSERT INTO matchy.transaction_email_match (
+                transaction_id, email_message_id, state, selected_by, selected_at, active, explanation_json
+            ) VALUES (
+                :transaction_id, :email_message_id, 'human_confirmed_ai_match', 'human', :selected_at, TRUE, {jsonb_param("explanation")}
+            )
+        """
+        params = {
+            "transaction_id": transaction_id,
+            "email_message_id": email_message_id,
+            "selected_at": bind_timestamp(now),
+            "explanation": json.dumps(explanation),
+        }
+        if is_sqlite():
+            #R700: pysqlcipher3 cannot surface INSERT..RETURNING rows; use last_insert_rowid().
+            session.execute(_sql(insert_sql), params)
+            return int(session.execute(text("SELECT last_insert_rowid()")).scalar_one())
         return int(
-            session.execute(
-                text(
-                    """
-                    INSERT INTO matchy.transaction_email_match (
-                        transaction_id, email_message_id, state, selected_by, selected_at, active, explanation_json
-                    ) VALUES (
-                        :transaction_id, :email_message_id, 'human_confirmed_ai_match', 'human', :selected_at, TRUE, CAST(:explanation AS jsonb)
-                    )
-                    RETURNING match_id
-                    """
-                ),
-                {
-                    "transaction_id": transaction_id,
-                    "email_message_id": email_message_id,
-                    "selected_at": now,
-                    "explanation": __import__("json").dumps(explanation),
-                },
-            ).scalar_one()
+            session.execute(_sql(insert_sql + " RETURNING match_id"), params).scalar_one()
         )
+
+
+#R680: Bind candidate received-at values safely on both backends.
+def _bound_received_at(value):
+    if isinstance(value, datetime):
+        return bind_timestamp(value)
+    return value

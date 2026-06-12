@@ -27,3 +27,7 @@ __pycache__/
 .DS_Store
 .07_run_all_tests_parallel.lock
 mutants
+config/db-profiles.json
+config/db-profiles.local.json
+.database/
+prod

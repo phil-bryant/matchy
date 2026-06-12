@@ -55,6 +55,11 @@ Design: `cldr_currencies_cache_path`, `cldr_currencies_refresh_enabled`, and `cl
 Tests:
 - R919-T01: Verify CLDR cache settings defaults and env overrides.
 
+R882  Statement: Skip Postgres credential resolution when the teller DB profile targets sqlite.
+Design: `__post_init__` resolves the active teller DB profile target via `_teller_profile_target()` (tolerant of missing teller/profile, preserving postgres-era behavior); for sqlite targets the `teller_db_*` resolution is skipped entirely because the repository binds to teller's profile-driven engine, which owns SQLCipher path/key resolution.
+Tests:
+- R882-T01: With a sqlite profile target, `Settings()` constructs without invoking `_resolve_teller_db_config`.
+
 ## Changelog
 
 - 2026-05-13: Added 1psa-backed Teller DB password resolution requirements for `matchy/settings.py`.
@@ -70,3 +75,4 @@ Tests:
 - 2026-05-29: Added R040 Mailcart search timeout and R045 explicit CA bundle settings.
 - 2026-06-01: Added R050 CLDR currencies cache startup settings.
 - 2026-06-06: Rebased settings traceability onto shard-1 ID band R880-R919 with anchored tests.
+- 2026-06-12: Added R882 sqlite-profile credential skip; matchy now follows the teller DB profile chain (postgres or sqlite) through the repository engine.

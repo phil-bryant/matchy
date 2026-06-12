@@ -36,3 +36,4 @@ Tests:
 
 - 2026-06-05: Extracted R030 (cached candidate metadata on insert) plus the AI-result/human-confirm write methods from `repository.py` into `match_writer.py`/`MatchWriterMixin`.
 - 2026-06-06: Rebased match-writer traceability onto shard-1 ID band R680-R700 with anchored tests.
+- 2026-06-12: Made all writer SQL dual-target via `matchy/db_target.py`: jsonb casts collapse to plain text binds on SQLite, timestamps bind as ISO text on SQLite, and the human-confirm insert reads `last_insert_rowid()` on SQLite where the DBAPI cannot surface `INSERT..RETURNING` rows.

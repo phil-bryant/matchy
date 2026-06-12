@@ -13,6 +13,16 @@ _ONEPSA_ITEM_FIELD_REF_PATTERN = re.compile(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
 _ONEPSA_OP_REF_PATTERN = re.compile(r"^op://[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 
 
+#R882: Resolve the active teller DB profile target for backend-aware startup.
+def _teller_profile_target() -> str:
+    try:
+        from teller.teller_db_profile import resolve_profile
+
+        return resolve_profile().target
+    except Exception:  # noqa: BLE001 - missing teller/profile keeps postgres-era behavior
+        return ""
+
+
 #R880: Emit optional startup phase timing logs when MATCHY_STARTUP_LOG is enabled.
 def _startup_log(start_time_seconds: float, phase: str, details: str = "") -> None:
     enabled = os.environ.get("MATCHY_STARTUP_LOG", "false").strip().lower() == "true"
@@ -132,13 +142,19 @@ class Settings:
             os.environ.get("MATCHY_WRITE_ENABLED", str(self.write_enabled)).strip().lower() == "true",
         )
         resolve_db_started_at = perf_counter()
-        teller_db_config = self._resolve_teller_db_config()
-        _startup_log(startup_started_at, "settings-db-config-resolved", f"phase_elapsed={perf_counter() - resolve_db_started_at:7.3f}s")
-        object.__setattr__(self, "teller_db_host", teller_db_config["host"])
-        object.__setattr__(self, "teller_db_port", teller_db_config["port"])
-        object.__setattr__(self, "teller_db_name", teller_db_config["database"])
-        object.__setattr__(self, "teller_db_user", teller_db_config["username"])
-        object.__setattr__(self, "teller_db_password", teller_db_config["password"])
+        #R882: SQLite profile targets need no Postgres credentials; the repository
+        #R882: binds to teller's profile-driven engine, which resolves the
+        #R882: SQLCipher path/key itself.
+        if _teller_profile_target() == "sqlite":
+            _startup_log(startup_started_at, "settings-db-config-skipped", "target=sqlite")
+        else:
+            teller_db_config = self._resolve_teller_db_config()
+            _startup_log(startup_started_at, "settings-db-config-resolved", f"phase_elapsed={perf_counter() - resolve_db_started_at:7.3f}s")
+            object.__setattr__(self, "teller_db_host", teller_db_config["host"])
+            object.__setattr__(self, "teller_db_port", teller_db_config["port"])
+            object.__setattr__(self, "teller_db_name", teller_db_config["database"])
+            object.__setattr__(self, "teller_db_user", teller_db_config["username"])
+            object.__setattr__(self, "teller_db_password", teller_db_config["password"])
         anthropic_started_at = perf_counter()
         object.__setattr__(self, "anthropic_api_key", self._resolve_optional_api_key(self.anthropic_api_key, self.anthropic_api_key_item))
         _startup_log(startup_started_at, "settings-anthropic-key-resolved", f"phase_elapsed={perf_counter() - anthropic_started_at:7.3f}s")
