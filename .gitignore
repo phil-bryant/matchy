@@ -31,3 +31,8 @@ config/db-profiles.json
 config/db-profiles.local.json
 .database/
 prod
+#R050: Ignore compiled binaries per workspace baseline.
+bin/*
+#R055: Ignore generated C++ core build trees (cmake/make output).
+src/core/build/
+src/core/build-*/

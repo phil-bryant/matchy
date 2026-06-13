@@ -163,6 +163,37 @@ Run statuses: `needs_review`, `succeeded`, `no_candidates`, `failed`. Match stat
 transactions in the lookback window without a settled active match (re-queues uncertain and AI-declared
 no-match states, but not human-settled states).
 
+## C++ Core Migration (matchycore)
+
+Matchy is mid-migration from Python to a C++20 core, following the completed `../classy` migration and the
+in-flight `../teller` one. The Python stack above remains authoritative and untouched until Python/C++ oracle
+parity is green; the C++ core is built and tested alongside it. The portable core lives under
+[`src/core/`](src/core/) (`include/matchycore/*.hpp`, `src/*.cpp`, `tests/` Catch2, `tools/`, `oracle/`,
+`CMakeLists.txt`) and is driven by a thin root [`Makefile`](Makefile) plus numbered lanes.
+
+| Python module | C++ replacement |
+|---------------|-----------------|
+| `scoring_core.py`, `scoring.py`, `models.py` | `src/scoring.cpp`, `include/matchycore/{scoring,models}.hpp` |
+| `near_duplicate.py` | `src/near_duplicate.cpp` |
+| `cldr_cache.py` | `src/cldr.cpp` |
+| `mailcart_client.py`, `search.py`, `enrichment.py` | `src/{mailcart,search,enrichment}.cpp` |
+| `ai_ranker.py` (Anthropic -> OpenAI -> deterministic, prompt `v3`) | `src/ai_ranker.cpp` |
+| `settings.py`, `repository.py`, `match_writer.py`, `db_target.py`, `caching.py` | `src/{settings,repository,match_writer,caching}.cpp` over `libtellercore` |
+| `service.py` + `email_move.py` (mixins) | `src/match_service.cpp` (one composed class) |
+| `api.py` + `06_run_matchy_api.py` | `tools/matchy_api.cpp` (cpp-httplib server on :8790) |
+| `07_run_matchy_driver.py` | `tools/matchy_driver.cpp` |
+| Python/C++ parity harness | `tools/oracle_runner.cpp` + `oracle/compare_oracle.py` |
+
+Build/test entrypoints: `make core` (cmake, C++20, `-Wall -Wextra -Wpedantic -Werror`), `make test` (t15
+Catch2 units), `make sanitize` (t16 ASan+UBSan), `make parity` (t17 Python/C++ oracle diff), `make run`
+(launch the C++ API), `make driver`. Dependencies are vendored via CMake FetchContent (nlohmann/json,
+cpp-httplib + OpenSSL, Catch2); SQLCipher/libpq arrive transitively through `libtellercore`.
+
+The DB layer (`repository`/`match_writer`/`caching`/`settings`) and the DB-coupled tools link the sibling
+`../teller` C++ core (`libtellercore`) for profile resolution, the SQLCipher/Postgres backends, and 1psa
+secrets, rather than forking a private DB layer. That layer is therefore gated on teller's C++ core building
+with a stable public header API.
+
 ## Engine-Level Tests vs Live Service
 
 Two verification layers exist:
@@ -177,7 +208,8 @@ Two verification layers exist:
 
 | Concern | Stack |
 |---------|-------|
-| Application | Python 3.10+ |
+| Application | Python 3.10+ (authoritative); C++20 core (`src/core/`) mid-migration |
+| C++ build | CMake + thin root Makefile; Catch2 units, ASan/UBSan, oracle parity (t15-t17) |
 | HTTP API | FastAPI, Pydantic, Uvicorn, Starlette |
 | DB access | SQLAlchemy 2.x, psycopg2-binary (PostgreSQL `teller` + `matchy` schemas) |
 | Email client | requests (Mailcart HTTPS) |
@@ -188,5 +220,7 @@ Two verification layers exist:
 | Secrets | 1psa CLI + `~/.env` fallback |
 
 Quality lanes (`05` unit, `06` security, `07` AV, `10` mutation, `11` fuzz, `12` parallel batch, `tNN_*`
-lanes) are runner pointers configured by `../runner/config/runbook/matchy.env`. There is no Makefile or Docker;
-all setup is via the numbered runbook scripts.
+lanes) are runner pointers configured by `../runner/config/runbook/matchy.env`. Python setup is via the
+numbered runbook scripts. The matchy-owned C++ core adds a thin root `Makefile` and self-contained lanes
+`tests/t15_run_cpp_core_unit_tests.sh`, `tests/t16_run_cpp_core_sanitizer_tests.sh`, and
+`tests/t17_run_python_cpp_oracle_parity_test.sh`. There is no Docker.

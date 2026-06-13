@@ -70,6 +70,27 @@ Excluded from the parallel batch: setup scripts (`01`–`04`) and integration en
 
 Use `./08_clean_generated_files.sh` to clear generated artifacts between runs (moves outputs to `~/.Trash`).
 
+## C++ core (in-progress migration)
+
+Matchy is migrating its engine to a C++20 core under [`src/core/`](src/core/) (`matchycore`), following the
+completed `../classy` migration and the in-flight `../teller` one. The Python stack stays authoritative until
+Python/C++ oracle parity is green; both run side by side. Build/test via the thin root `Makefile`:
+
+```bash
+make core      # build libmatchycore + matchy_api/matchy_driver/matchy_oracle_runner (cmake, C++20)
+make test      # t15: Catch2 unit suite
+make sanitize  # t16: rebuild under ASan+UBSan and rerun the suite
+make parity    # t17: diff matchy's Python reference vs the C++ core over oracle/scenarios.json
+make run       # build + launch the C++ matchy API on :8790 (REST contract preserved)
+make driver    # build + run the C++ pending-run driver once
+```
+
+The C++ API (`tools/matchy_api.cpp`) and driver (`tools/matchy_driver.cpp`) preserve the existing REST
+contract and CLI behavior, so the driver and the classy stack keep working unchanged. The DB layer and the
+DB-coupled binaries link the sibling `../teller` C++ core (`libtellercore`) for profile/SQLCipher/Postgres/1psa
+support instead of forking a private DB layer; that layer is gated on teller's C++ core building with a stable
+public header API.
+
 ## Endpoint
 
 - Auth header for mutating endpoints:

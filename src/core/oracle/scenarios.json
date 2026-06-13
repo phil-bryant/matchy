@@ -1,0 +1,158 @@
+{
+  "_comment": "Python/C++ parity scenarios for matchy's deterministic logic (M6). Each scenario runs the named op through both matchy's Python reference (compare_oracle.py) and matchy_oracle_runner, then diffs the normalized JSON. Inputs use clean, fully-determined values so the candidate-set hash is byte-identical across implementations.",
+  "scenarios": [
+    {
+      "name": "rank_single_strong_match",
+      "op": "rank",
+      "payload": {
+        "transaction": {
+          "transaction_id": "txn-1",
+          "account_id": "acct-1",
+          "amount": "-10.50",
+          "date": "2024-06-01T12:00:00",
+          "description": "BLUE BOTTLE COFFEE purchase",
+          "counterparty_name": "Blue Bottle Coffee"
+        },
+        "candidates": [
+          {
+            "message_id": "m1",
+            "subject": "Your Blue Bottle Coffee receipt",
+            "preview": "Thanks for your order total 10.50",
+            "received_at": "2024-06-01T13:00:00",
+            "sender": "receipts@bluebottle.com",
+            "body_text": "Order confirmation for Blue Bottle Coffee. Total charged $10.50 today."
+          },
+          {
+            "message_id": "m2",
+            "subject": "Newsletter from Cloud Hosting",
+            "preview": "Monthly product updates and tips",
+            "received_at": "2024-05-20T09:00:00",
+            "sender": "news@cloudhosting.example",
+            "body_text": "Unrelated marketing content about hosting plans."
+          }
+        ],
+        "already_matched_ids": []
+      }
+    },
+    {
+      "name": "rank_with_prior_match_penalty",
+      "op": "rank",
+      "payload": {
+        "transaction": {
+          "transaction_id": "txn-2",
+          "account_id": "acct-1",
+          "amount": "-20.30",
+          "date": "2024-06-02T08:00:00",
+          "description": "CLOUD HOSTING LLC subscription",
+          "counterparty_name": "Cloud Hosting LLC"
+        },
+        "candidates": [
+          {
+            "message_id": "m10",
+            "subject": "Cloud Hosting LLC invoice",
+            "preview": "Subscription renewal total 20.30",
+            "received_at": "2024-06-02T08:30:00",
+            "sender": "billing@cloudhosting.example",
+            "body_text": "Your Cloud Hosting subscription renewed. Amount due 20.30."
+          },
+          {
+            "message_id": "m11",
+            "subject": "Cloud Hosting LLC invoice copy",
+            "preview": "Subscription renewal total 20.30",
+            "received_at": "2024-06-02T08:31:00",
+            "sender": "billing@cloudhosting.example",
+            "body_text": "Your Cloud Hosting subscription renewed. Amount due 20.30."
+          }
+        ],
+        "already_matched_ids": ["m11"]
+      }
+    },
+    {
+      "name": "rank_reconciliation_subset_sum",
+      "op": "rank",
+      "payload": {
+        "transaction": {
+          "transaction_id": "txn-3",
+          "account_id": "acct-1",
+          "amount": "-30.00",
+          "date": "2024-06-03T15:00:00",
+          "description": "WIDGETS INTERNATIONAL order",
+          "counterparty_name": "Widgets International"
+        },
+        "candidates": [
+          {
+            "message_id": "m20",
+            "subject": "Widgets International order receipt",
+            "preview": "Items: 12.00 and 18.00 shipped",
+            "received_at": "2024-06-03T16:00:00",
+            "sender": "orders@widgets.example",
+            "body_text": "Line items 12.00 plus 18.00 for your order at Widgets International."
+          }
+        ],
+        "already_matched_ids": []
+      }
+    },
+    {
+      "name": "collapse_duplicates_disabled",
+      "op": "collapse",
+      "payload": {
+        "max_distance": 0,
+        "candidates": [
+          {"message_id": "a", "subject": "Receipt one", "preview": "same body here", "received_at": "2024-06-01T12:00:00"},
+          {"message_id": "b", "subject": "Receipt one", "preview": "same body here", "received_at": "2024-06-01T12:00:00"}
+        ]
+      }
+    },
+    {
+      "name": "collapse_duplicates_enabled",
+      "op": "collapse",
+      "payload": {
+        "max_distance": 3,
+        "candidates": [
+          {"message_id": "a", "subject": "Blue Bottle Coffee receipt total amount", "preview": "thanks for your coffee order today", "received_at": "2024-06-01T12:00:00", "body_text": "your blue bottle coffee order receipt total amount charged"},
+          {"message_id": "b", "subject": "Blue Bottle Coffee receipt total amount", "preview": "thanks for your coffee order today", "received_at": "2024-06-01T12:05:00", "body_text": "your blue bottle coffee order receipt total amount charged"},
+          {"message_id": "c", "subject": "Completely different airline booking confirmation", "preview": "your flight itinerary departure gate seat", "received_at": "2024-06-01T18:00:00", "body_text": "airline booking confirmation itinerary departure gate seat number"}
+        ]
+      }
+    },
+    {
+      "name": "simhash_receipt_text",
+      "op": "simhash",
+      "payload": {"text": "Blue Bottle Coffee order receipt total amount charged today"}
+    },
+    {
+      "name": "simhash_empty_text",
+      "op": "simhash",
+      "payload": {"text": ""}
+    },
+    {
+      "name": "cldr_tokens_basic_payload",
+      "op": "cldr_tokens",
+      "payload": {
+        "payload": {
+          "main": {
+            "en": {
+              "numbers": {
+                "currencies": {
+                  "USD": {"symbol": "$", "displayName": "US Dollar"},
+                  "EUR": {"symbol": "\u20ac", "symbol-alt-narrow": "\u20ac"},
+                  "XXX": {"symbol": "\u00a4", "displayName": "Unknown Currency"}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "cldr_match_standalone_present",
+      "op": "cldr_match",
+      "payload": {"tokens": ["USD", "EUR", "$", "\u20ac"], "text": "Your charge of $25.00 USD posted today"}
+    },
+    {
+      "name": "cldr_match_embedded_absent",
+      "op": "cldr_match",
+      "payload": {"tokens": ["USD", "EUR", "$", "\u20ac"], "text": "discussion about abcUSDxyz embedded tokens"}
+    }
+  ]
+}
