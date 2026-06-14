@@ -8,7 +8,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 CORE_DIR="${REPO_ROOT}/src/core"
 BUILD_DIR="${CORE_DIR}/build"
 
+#R001: Configure and build the matchy-owned C++ core in RelWithDebInfo.
 cmake -S "${CORE_DIR}" -B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE=RelWithDebInfo >/dev/null
 cmake --build "${BUILD_DIR}" -j "$(sysctl -n hw.ncpu)" >/dev/null
+#R005: Run the Catch2 C++ core unit suite.
 "${BUILD_DIR}/matchycore_tests"
 echo "t15: C++ core unit tests passed"
