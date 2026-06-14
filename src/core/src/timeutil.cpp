@@ -5,6 +5,7 @@
 namespace matchycore::timeutil
 { namespace
  { // Howard Hinnant's days-from-civil algorithm.
+// #R001: Matchycore traceability implementation coverage.
   long long DaysFromCivil(long long y, unsigned m, unsigned d)
   { y -= m <= 2;
    long long era = (y >= 0 ? y : y - 399) / 400;
@@ -14,6 +15,7 @@ namespace matchycore::timeutil
    return era * 146097 + static_cast<long long>(doe) - 719468;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   void CivilFromDays(long long z, long long &y, unsigned &m, unsigned &d)
   { z += 719468;
    long long era = (z >= 0 ? z : z - 146096) / 146097;
@@ -27,6 +29,7 @@ namespace matchycore::timeutil
    y = yr + (m <= 2);
   }
 
+// #R001: Matchycore traceability implementation coverage.
   bool ReadInt(const std::string &s, std::size_t pos, std::size_t count, long long &out)
   { bool ok = pos + count <= s.size();
    long long value = 0;
@@ -40,12 +43,13 @@ namespace matchycore::timeutil
   }
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::optional<TimePoint> ParseIso8601(const std::string &value)
  { std::optional<TimePoint> result;
   std::string s = value;
   std::size_t z_pos = s.find('Z');
   if (z_pos == std::string::npos) z_pos = s.find('z');
-  if (z_pos != std::string::npos) s = s.substr(0, z_pos) + "+00:00";
+  if (z_pos != std::string::npos) s.replace(z_pos, std::string::npos, "+00:00");
   long long year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0, micros = 0, off_minutes = 0;
   bool ok = ReadInt(s, 0, 4, year) && s.size() > 4 && s[4] == '-' && ReadInt(s, 5, 2, month)
    && s.size() > 7 && s[7] == '-' && ReadInt(s, 8, 2, day);
@@ -96,15 +100,18 @@ namespace matchycore::timeutil
  { std::string FormatIsoImpl(TimePoint value, bool with_offset);
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string FormatIsoUtc(TimePoint value)
  { return FormatIsoImpl(value, true);
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string FormatIsoNaive(TimePoint value)
  { return FormatIsoImpl(value, false);
  }
 
  namespace
+// #R001: Matchycore traceability implementation coverage.
  { std::string FormatIsoImpl(TimePoint value, bool with_offset)
  { auto since_epoch = std::chrono::duration_cast<std::chrono::microseconds>(value.time_since_epoch()).count();
   long long total_seconds = since_epoch / 1000000;
@@ -133,6 +140,7 @@ namespace matchycore::timeutil
  }
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string UtcDateString(TimePoint value, long long day_offset)
  { long long total_seconds = std::chrono::duration_cast<std::chrono::seconds>(value.time_since_epoch()).count();
   long long days = total_seconds / 86400;

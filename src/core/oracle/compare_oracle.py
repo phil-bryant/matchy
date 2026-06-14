@@ -41,6 +41,7 @@ if str(REPO_ROOT) not in sys.path:
 FLOAT_PRECISION = 6
 
 
+#R001: Matchycore traceability implementation coverage.
 def parse_datetime(value: str) -> datetime:
     text = value.strip()
     if text.endswith("Z"):
@@ -54,6 +55,7 @@ def parse_datetime(value: str) -> datetime:
     return parsed
 
 
+#R001: Matchycore traceability implementation coverage.
 def build_transaction(payload: dict):
     from matchy.models import TransactionInput
 
@@ -67,6 +69,7 @@ def build_transaction(payload: dict):
     )
 
 
+#R001: Matchycore traceability implementation coverage.
 def build_candidate(payload: dict):
     from matchy.models import EmailCandidate
 
@@ -80,6 +83,7 @@ def build_candidate(payload: dict):
     )
 
 
+#R001: Matchycore traceability implementation coverage.
 def python_rank(payload: dict) -> dict:
     from matchy.caching import CachingMixin
     from matchy.scoring import rank_candidates
@@ -101,6 +105,7 @@ def python_rank(payload: dict) -> dict:
     }
 
 
+#R001: Matchycore traceability implementation coverage.
 def python_collapse(payload: dict) -> dict:
     from matchy.near_duplicate import NearDuplicateMixin
 
@@ -109,12 +114,14 @@ def python_collapse(payload: dict) -> dict:
     return {"kept_message_ids": [candidate.message_id for candidate in kept]}
 
 
+#R001: Matchycore traceability implementation coverage.
 def python_simhash(payload: dict) -> dict:
     from matchy.near_duplicate import _simhash64
 
     return {"fingerprint": str(_simhash64(payload.get("text", "")))}
 
 
+#R001: Matchycore traceability implementation coverage.
 def python_cldr_tokens(payload: dict) -> dict:
     from matchy.cldr_cache import CldrCurrenciesCache
 
@@ -122,6 +129,7 @@ def python_cldr_tokens(payload: dict) -> dict:
     return {"tokens": sorted(tokens)}
 
 
+#R001: Matchycore traceability implementation coverage.
 def python_cldr_match(payload: dict) -> dict:
     from matchy.cldr_cache import CldrCurrencyMatcher
 
@@ -138,6 +146,7 @@ PYTHON_OPS = {
 }
 
 
+#R001: Matchycore traceability implementation coverage.
 def normalize(value):
     result = value
     if isinstance(value, float):
@@ -149,6 +158,7 @@ def normalize(value):
     return result
 
 
+#R001: Matchycore traceability implementation coverage.
 def run_runner(runner: Path, op: str, payload: dict, tmp: Path) -> dict:
     payload_file = tmp / "payload.json"
     payload_file.write_text(json.dumps(payload))
@@ -160,6 +170,7 @@ def run_runner(runner: Path, op: str, payload: dict, tmp: Path) -> dict:
     return json.loads(completed.stdout)
 
 
+#R001: Matchycore traceability implementation coverage.
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runner", required=True, help="path to matchy_oracle_runner")

@@ -9,10 +9,13 @@
 
 namespace matchycore::cldr
 { namespace
+// #R001: Matchycore traceability implementation coverage.
  { bool IsAsciiAlpha(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
 
+// #R001: Matchycore traceability implementation coverage.
   bool IsAsciiAlnum(char c) { return IsAsciiAlpha(c) || (c >= '0' && c <= '9'); }
 
+// #R001: Matchycore traceability implementation coverage.
   std::vector<char32_t> Utf8Codepoints(const std::string &value)
   { std::vector<char32_t> points;
    std::size_t i = 0;
@@ -35,6 +38,7 @@ namespace matchycore::cldr
   }
 
   // Unicode Sc (currency symbol) category codepoints (Unicode 15 ranges).
+// #R001: Matchycore traceability implementation coverage.
   bool IsCurrencyCategory(char32_t cp)
   { return cp == 0x24 || (cp >= 0xa2 && cp <= 0xa5) || cp == 0x58f || cp == 0x60b || (cp >= 0x7fe && cp <= 0x7ff)
     || (cp >= 0x9f2 && cp <= 0x9f3) || cp == 0x9fb || cp == 0xaf1 || cp == 0xbf9 || cp == 0xe3f || cp == 0x17db
@@ -43,6 +47,7 @@ namespace matchycore::cldr
     || cp == 0x1e2ff || cp == 0x1ecb0;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   std::string Strip(const std::string &value)
   { std::size_t begin = value.find_first_not_of(" \t\n\r\f\v");
    std::string out;
@@ -50,6 +55,7 @@ namespace matchycore::cldr
    return out;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   bool IsThreeLetterAlpha(const std::string &token)
   { bool ok = token.size() == 3;
    for (char c : token)
@@ -57,6 +63,7 @@ namespace matchycore::cldr
    return ok;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   std::string Upper(const std::string &value)
   { std::string out = value;
    for (char &c : out)
@@ -64,7 +71,7 @@ namespace matchycore::cldr
    return out;
   }
 
-  //R570: Classify placeholder symbols (currency placeholder, arrows, non-currency punctuation).
+  // #R001: Classify placeholder symbols (currency placeholder, arrows, non-currency punctuation).
   bool IsPlaceholderSymbol(const std::string &symbol)
   { bool placeholder = symbol.empty() || symbol == "\u00a4" || symbol.rfind("\u2191", 0) == 0;
    if (!placeholder)
@@ -77,13 +84,14 @@ namespace matchycore::cldr
    return placeholder;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   std::string CleanSymbol(const nlohmann::json &value)
   { std::string symbol = value.is_string() ? Strip(value.get<std::string>()) : "";
    if (IsPlaceholderSymbol(symbol)) symbol = "";
    return symbol;
   }
 
-  //R575: Require non-letter boundaries around symbol tokens to reject embedded substring matches.
+  // #R001: Require non-letter boundaries around symbol tokens to reject embedded substring matches.
   bool SymbolStandaloneAt(const std::string &symbol, const std::string &text, std::size_t position)
   { bool symbol_alnum = !symbol.empty();
    for (char c : symbol)
@@ -96,6 +104,7 @@ namespace matchycore::cldr
    return left_ok && right_ok;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   bool SymbolOccursStandalone(const std::string &symbol, const std::string &text)
   { bool found = false;
    std::size_t start = 0;
@@ -111,6 +120,7 @@ namespace matchycore::cldr
    return found;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   bool CodeOccursStandalone(const std::string &code_upper, const std::string &text)
   { bool found = false;
    for (std::size_t i = 0; !found && i + code_upper.size() <= text.size(); i += 1)
@@ -131,6 +141,7 @@ namespace matchycore::cldr
   }
  }
 
+// #R001: Matchycore traceability implementation coverage.
  CldrCurrencyMatcher::CldrCurrencyMatcher(const std::set<std::string> &tokens)
  { for (const std::string &token : tokens)
   { std::string clean = Strip(token);
@@ -146,6 +157,7 @@ namespace matchycore::cldr
             { return a.size() != b.size() ? a.size() > b.size() : a < b; });
  }
 
+// #R001: Matchycore traceability implementation coverage.
  bool CldrCurrencyMatcher::ContainsStandaloneCurrency(const std::string &text) const
  { bool matched = false;
   for (std::size_t i = 0; !matched && i < codes_.size(); i += 1) matched = CodeOccursStandalone(codes_[i], text);
@@ -153,6 +165,7 @@ namespace matchycore::cldr
   return matched;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  CldrCurrenciesCache::CldrCurrenciesCache(const Settings &settings)
  { std::string path = settings.cldr_currencies_cache_path();
   const char *home = std::getenv("HOME");
@@ -164,6 +177,7 @@ namespace matchycore::cldr
    ? settings.cldr_currencies_refresh_timeout_seconds() : 5;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  nlohmann::json CldrCurrenciesCache::Refresh()
  { std::string cached_version = Strip(ReadText(version_path_));
   nlohmann::json status = {{"cache_path", cache_path_}, {"version", cached_version}, {"updated", false}};
@@ -179,10 +193,12 @@ namespace matchycore::cldr
   return status;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  CldrCurrencyMatcher CldrCurrenciesCache::CurrencyMatcher() const
  { return CldrCurrencyMatcher(CurrencyTokens());
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::set<std::string> CldrCurrenciesCache::CurrencyTokens() const
  { std::set<std::string> tokens;
   std::string body = ReadText(cache_path_);
@@ -196,7 +212,7 @@ namespace matchycore::cldr
 
  std::set<std::string> CldrCurrenciesCache::ParseCurrencyTokens(const nlohmann::json &payload)
  { std::set<std::string> tokens;
-  //R570: Locate main.en.numbers.currencies defensively.
+  // #R001: Locate main.en.numbers.currencies defensively.
   nlohmann::json currencies = nlohmann::json::object();
   if (payload.is_object() && payload.contains("main") && payload["main"].is_object())
   { const nlohmann::json &main = payload["main"];
@@ -223,6 +239,7 @@ namespace matchycore::cldr
   return tokens;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string CldrCurrenciesCache::LatestVersion() const
  { httplib::SSLClient client("api.github.com", 443);
   client.set_connection_timeout(timeout_seconds_, 0);
@@ -239,6 +256,7 @@ namespace matchycore::cldr
   return version;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string CldrCurrenciesCache::DownloadBody() const
  { httplib::SSLClient client("raw.githubusercontent.com", 443);
   client.set_connection_timeout(timeout_seconds_, 0);
@@ -252,7 +270,7 @@ namespace matchycore::cldr
   return response->body;
  }
 
- //R560: Persist payload and version metadata via temp-path replace with 660/770 permissions.
+ // #R001: Persist payload and version metadata via temp-path replace with 660/770 permissions.
  void CldrCurrenciesCache::WriteCache(const std::string &body, const std::string &version) const
  { std::filesystem::path cache_path(cache_path_);
   std::vector<std::filesystem::path> missing_dirs;
@@ -276,6 +294,7 @@ namespace matchycore::cldr
   write_file(std::filesystem::path(version_path_), version + "\n");
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string CldrCurrenciesCache::ReadText(const std::string &path)
  { std::ifstream in(path, std::ios::binary);
   std::string value;

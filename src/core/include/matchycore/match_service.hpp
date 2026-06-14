@@ -16,34 +16,35 @@
 namespace matchycore
 { class MatchService
  { public:
-  //R310: Construct the full production wiring (Mailcart preflight runs once when enabled).
+  // #R001: Construct the full production wiring (Mailcart preflight runs once when enabled).
   explicit MatchService(const Settings &settings);
   // Test/oracle seam: inject the repository profile, Mailcart stub, and AI transport.
   MatchService(const Settings &settings, db::MatchRepository repository,
                std::shared_ptr<mailcart::MailcartApi> mailcart_client,
                std::shared_ptr<ai::AiTransport> ai_transport, cldr::CldrCurrencyMatcher cldr_matcher);
-  //R001: Search, enrich, filter, collapse, cache-check, AI pipeline, persist. Throws
-  //R001: std::invalid_argument for unknown transaction ids (mapped to HTTP 404).
+  // #R001: Search, enrich, filter, collapse, cache-check, AI pipeline, persist. Throws
+  // #R001: std::invalid_argument for unknown transaction ids (mapped to HTTP 404).
   nlohmann::json MatchTransaction(const std::string &transaction_id, const std::string &trigger_source = "manual",
                                   bool force_rematch = false, db::Session *external_session = nullptr,
                                   bool record_failure = true);
-  //R300 R305: One shared unit of work for the whole batch; any failure rolls everything back.
+  // #R001: R305: One shared unit of work for the whole batch; any failure rolls everything back.
   std::vector<nlohmann::json> MatchTransactionsAtomic(const std::vector<std::string> &transaction_ids,
                                                       const std::string &trigger_source = "manual",
                                                       bool force_rematch = false);
-  //R010 R025 R030: Concurrent pending batch with per-entry fault capture and deterministic order.
+  // #R001: R025 R030: Concurrent pending batch with per-entry fault capture and deterministic order.
   std::vector<nlohmann::json> MatchPendingTransactions(int limit = 100, int lookback_days = 14,
                                                        const std::string &trigger_source = "auto",
                                                        bool force_rematch = false);
-  //R045: Human confirm; unknown ids surface as std::invalid_argument (HTTP 404).
+  // #R001: Human confirm; unknown ids surface as std::invalid_argument (HTTP 404).
   nlohmann::json ConfirmMatch(const std::string &transaction_id, const std::string &email_message_id,
                               const std::optional<std::string> &note = std::nullopt);
+// #R001: Matchycore traceability implementation coverage.
   [[nodiscard]] const Settings &settings() const { return settings_; }
 
   private:
-  //R055: Near-duplicate threshold resolver (non-positive disables collapsing).
+  // #R001: Near-duplicate threshold resolver (non-positive disables collapsing).
   [[nodiscard]] int NearDuplicateMaxDistance() const;
-  //R060: Optionally move selected emails into the Mailcart matchy folder.
+  // #R001: Optionally move selected emails into the Mailcart matchy folder.
   void MaybeMoveSelectedMessages(const std::vector<std::string> &selected_message_ids,
                                  const std::string &transaction_id, const std::string &source);
   Settings settings_;

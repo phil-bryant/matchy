@@ -12,9 +12,12 @@ namespace matchycore::mailcart
 { class MailcartError : public std::runtime_error
  { public:
   enum class Kind { kTimeout, kConnection, kHttp };
+// #R001: Matchycore traceability implementation coverage.
   MailcartError(Kind kind, int status, const std::string &message)
   : std::runtime_error(message), kind_(kind), status_(status) {}
+// #R001: Matchycore traceability implementation coverage.
   [[nodiscard]] Kind kind() const { return kind_; }
+// #R001: Matchycore traceability implementation coverage.
   [[nodiscard]] int status() const { return status_; }
 
   private:
@@ -25,28 +28,29 @@ namespace matchycore::mailcart
  // Interface so the service/search/enrichment layers can be tested against stubs.
  class MailcartApi
  { public:
+// #R001: Matchycore traceability implementation coverage.
   virtual ~MailcartApi() = default;
-  //R005: Convert search payload rows into EmailCandidate values, dropping rows without message ids.
+  // #R001: Convert search payload rows into EmailCandidate values, dropping rows without message ids.
   virtual std::vector<EmailCandidate> SearchCandidates(const std::string &query, int limit) = 0;
-  //R010: Fetch one message envelope; empty object on 404 or empty id. timeout_seconds <= 0 uses the default.
+  // #R001: Fetch one message envelope; empty object on 404 or empty id. timeout_seconds <= 0 uses the default.
   virtual nlohmann::json GetMessage(const std::string &message_id, int timeout_seconds) = 0;
-  //R644: Move a message into the matchy folder; true only for HTTP 200/204.
+  // #R001: Move a message into the matchy folder; true only for HTTP 200/204.
   virtual bool MoveToMatchy(const std::string &message_id) = 0;
  };
 
  class MailcartClient final : public MailcartApi
  { public:
   explicit MailcartClient(const Settings &settings);
-  //R050: Probe /health with runtime transport policy so startup catches misconfiguration early.
+  // #R001: Probe /health with runtime transport policy so startup catches misconfiguration early.
   void StartupPreflightHealthcheck();
   std::vector<EmailCandidate> SearchCandidates(const std::string &query, int limit) override;
   nlohmann::json GetMessage(const std::string &message_id, int timeout_seconds) override;
   bool MoveToMatchy(const std::string &message_id) override;
-  //R640: Enforce an HTTPS base URL with a non-empty host component; throws std::runtime_error.
+  // #R001: Enforce an HTTPS base URL with a non-empty host component; throws std::runtime_error.
   static void ValidateBaseUrl(const std::string &base_url);
-  //R045: Resolve the TLS trust bundle (explicit override, env bundles, mkcert root, else system default "").
+  // #R001: Resolve the TLS trust bundle (explicit override, env bundles, mkcert root, else system default "").
   static std::string ResolveCaBundle(const Settings &settings);
-  //R645: Parse Mailcart datetimes, defaulting blanks to now-UTC and attaching UTC when offset is missing.
+  // #R001: Parse Mailcart datetimes, defaulting blanks to now-UTC and attaching UTC when offset is missing.
   static TimePoint ParseDatetime(const std::string &value);
 
   private:

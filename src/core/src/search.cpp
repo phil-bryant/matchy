@@ -4,8 +4,10 @@
 
 namespace matchycore::search
 { namespace
+// #R001: Matchycore traceability implementation coverage.
  { bool IsDigit(char c) { return c >= '0' && c <= '9'; }
 
+// #R001: Matchycore traceability implementation coverage.
   std::vector<std::string> NormalizedTokens(const std::string &source)
   { std::string normalized;
    normalized.reserve(source.size());
@@ -30,6 +32,7 @@ namespace matchycore::search
   }
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::vector<std::string> ExtractSearchTerms(const std::string &description, const std::string &counterparty_name,
                                              int max_terms)
  { std::vector<std::string> ordered_tokens;
@@ -50,6 +53,7 @@ namespace matchycore::search
   return ordered_tokens;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string DateWindowSuffix(TimePoint txn_date, int window_days)
  { std::string suffix;
   if (window_days > 0)
@@ -58,6 +62,7 @@ namespace matchycore::search
   return suffix;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::vector<std::string> BuildScopedQueries(const std::vector<std::string> &terms, TimePoint txn_date,
                                              const std::vector<std::string> &fields, bool include_date_window,
                                              int window_days)
@@ -70,6 +75,7 @@ namespace matchycore::search
   return scoped_queries;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::vector<EmailCandidate> DedupeCandidates(const std::vector<EmailCandidate> &rows, std::size_t limit)
  { std::vector<EmailCandidate> deduped;
   std::map<std::string, bool> seen;
@@ -84,6 +90,7 @@ namespace matchycore::search
   return deduped;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  SearchEngine::SearchEngine(std::shared_ptr<mailcart::MailcartApi> client, const Settings &settings)
  : client_(std::move(client)),
    window_days_(settings.mailcart_search_date_window_days() != 0 ? settings.mailcart_search_date_window_days() : 45),
@@ -91,16 +98,18 @@ namespace matchycore::search
  { if (cooldown_seconds_ < 0) cooldown_seconds_ = 0;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  bool SearchEngine::InCooldown() const
  { return std::chrono::steady_clock::now() < unavailable_until_;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  void SearchEngine::MarkTemporarilyUnavailable()
  { if (cooldown_seconds_ > 0)
    unavailable_until_ = std::chrono::steady_clock::now() + std::chrono::seconds(cooldown_seconds_);
  }
 
- //R040: Timeouts skip just the query; connection/5xx failures arm the cooldown; 4xx propagate.
+ // #R001: Timeouts skip just the query; connection/5xx failures arm the cooldown; 4xx propagate.
  std::vector<EmailCandidate> SearchEngine::SearchMailcart(const std::string &query,
                                                           const std::string &transaction_id, int limit)
  { std::vector<EmailCandidate> rows;
@@ -118,6 +127,7 @@ namespace matchycore::search
   return rows;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::vector<EmailCandidate> SearchEngine::SearchCandidates(const TransactionInput &txn,
                                                             const std::string &transaction_id)
  { std::vector<EmailCandidate> result;

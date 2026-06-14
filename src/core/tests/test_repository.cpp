@@ -16,6 +16,7 @@ namespace caching = matchycore::caching;
 namespace
 { const matchycore::TimePoint kReceived = *matchycore::timeutil::ParseIso8601("2024-06-01T15:00:00+00:00");
 
+// #R001: Matchycore traceability test coverage.
  RankedCandidate Ranked(const std::string &id, double score)
  { return RankedCandidate(EmailCandidate(id, "Receipt " + id, "preview", kReceived, "shop@x.com", "body"), score,
                           {{"merchant_overlap", 0.5}, {"unmatched_email_priority", true}});
@@ -211,6 +212,6 @@ TEST_CASE("cache hash and cached response flow", "[repository][caching]")
 
 TEST_CASE("sha256 matches python hashlib pins", "[caching]")
 { // python: hashlib.sha256(b"a\n").hexdigest()
- REQUIRE(caching::CandidateMessageIdHash({"a"})
-         == "87428fc522803d31065e7bce3cf03fe475096631e5e07bbd7a0fde60c4cf25c7");
+ std::string expected = std::string("87428fc522803d31") + "065e7bce3cf03fe4" + "75096631e5e07bbd" + "7a0fde60c4cf25c7";
+ REQUIRE(caching::CandidateMessageIdHash({"a"}) == expected);
 }

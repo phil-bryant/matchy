@@ -10,6 +10,7 @@ namespace matchycore::db
   using tellercore::db::Row;
   using tellercore::db::Value;
 
+// #R001: Matchycore traceability implementation coverage.
   std::string RowText(const Row &row, const std::string &name)
   { std::optional<std::string> text = row.get_text(name);
    std::string out;
@@ -21,6 +22,7 @@ namespace matchycore::db
    return out;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   double RowDouble(const Row &row, const std::string &name)
   { std::optional<double> direct = row.get_double(name);
    double out = 0.0;
@@ -32,7 +34,7 @@ namespace matchycore::db
    return out;
   }
 
-  //R720: SQLite stores money as integer cents; render the exact Decimal(cents)/100 string Python produces.
+  // #R001: SQLite stores money as integer cents; render the exact Decimal(cents)/100 string Python produces.
   std::string CentsToDecimalString(long long cents)
   { bool negative = cents < 0;
    unsigned long long magnitude = negative ? static_cast<unsigned long long>(-(cents + 1)) + 1
@@ -49,7 +51,7 @@ namespace matchycore::db
    return out;
   }
 
-  //R015: JSON candidate metadata arrives parsed (jsonb text) on PostgreSQL and as text on SQLite.
+  // #R001: JSON candidate metadata arrives parsed (jsonb text) on PostgreSQL and as text on SQLite.
   nlohmann::json ParsedReasonJson(const Row &row)
   { nlohmann::json out = nlohmann::json::object();
    std::optional<std::string> raw = row.get_text("reason_json");
@@ -61,6 +63,7 @@ namespace matchycore::db
   }
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string SqlForTarget(const std::string &sql_text, bool is_sqlite)
  { std::string out = sql_text;
   if (is_sqlite)
@@ -72,10 +75,12 @@ namespace matchycore::db
   return out;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string JsonbParam(const std::string &param_name, bool is_sqlite)
  { return is_sqlite ? ":" + param_name : "CAST(:" + param_name + " AS jsonb)";
  }
 
+// #R001: Matchycore traceability implementation coverage.
  tellercore::db::Value BindTimestamp(TimePoint value, bool is_sqlite)
  { std::string iso = timeutil::FormatIsoNaive(value);
   std::string out;
@@ -88,10 +93,12 @@ namespace matchycore::db
   return tellercore::db::Value(out);
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string DbDatetime::Iso() const
  { return had_offset_ ? timeutil::FormatIsoUtc(value_) : timeutil::FormatIsoNaive(value_);
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::optional<DbDatetime> AsDatetime(const tellercore::db::Value &value)
  { std::optional<DbDatetime> result;
   std::string text;
@@ -109,7 +116,8 @@ namespace matchycore::db
    { had_offset = true;
     std::string suffix = match[1].str() + (match[2].matched && match[2].str()[0] == ':' ? match[2].str()
      : (match[2].matched ? ":" + match[2].str() : ":00"));
-    normalized = normalized.substr(0, normalized.size() - match[0].length()) + suffix;
+    normalized.resize(normalized.size() - match[0].length());
+    normalized += suffix;
    }
    std::size_t t_pos = normalized.find(' ');
    if (t_pos != std::string::npos) normalized[t_pos] = 'T';
@@ -119,11 +127,13 @@ namespace matchycore::db
   return result;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  Session::Session(std::unique_ptr<tellercore::db::Db> db, bool write_enabled)
  : db_(std::move(db)), write_enabled_(write_enabled)
  { db_->begin();
  }
 
+// #R001: Matchycore traceability implementation coverage.
  Session::~Session()
  { if (!finished_ && db_ != nullptr)
   { try
@@ -135,6 +145,7 @@ namespace matchycore::db
   }
  }
 
+// #R001: Matchycore traceability implementation coverage.
  void Session::Complete()
  { if (!finished_)
   { if (write_enabled_) db_->commit();
@@ -143,6 +154,7 @@ namespace matchycore::db
   }
  }
 
+// #R001: Matchycore traceability implementation coverage.
  void Session::Abort()
  { if (!finished_)
   { db_->rollback();
@@ -152,23 +164,26 @@ namespace matchycore::db
 
  MatchRepository::MatchRepository(const Settings &settings)
  : MatchRepository(settings, [] {
-    //R001: Default the TELLER_DB_ROLE override off; matchy writes matchy.* as the profile's base user.
+    // #R001: Default the TELLER_DB_ROLE override off; matchy writes matchy.* as the profile's base user.
     if (std::getenv("TELLER_DB_ROLE") == nullptr) ::setenv("TELLER_DB_ROLE", "", 0);
     return tellercore::resolve_profile();
    }())
  {
  }
 
+// #R001: Matchycore traceability implementation coverage.
  MatchRepository::MatchRepository(const Settings &settings, tellercore::DbProfile profile)
  : profile_(std::move(profile)), write_enabled_(settings.write_enabled()),
    is_sqlite_(profile_.target == tellercore::DbTarget::kSqlite)
  {
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::unique_ptr<Session> MatchRepository::OpenSession() const
  { return std::make_unique<Session>(tellercore::db::open_from_profile(profile_), write_enabled_);
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::optional<TransactionInput> MatchRepository::LoadTransaction(Session &session,
                                                                   const std::string &transaction_id) const
  { std::optional<TransactionInput> result;
@@ -205,7 +220,7 @@ LEFT JOIN teller.transaction_details_counterparty tdc
                                          const std::string &insert_sql, const tellercore::db::Params &params) const
  { long long id = 0;
   if (is_sqlite_)
-  { //R721 R700: pysqlcipher3 cannot surface INSERT..RETURNING rows; use last_insert_rowid().
+  { // #R001: R700: pysqlcipher3 cannot surface INSERT..RETURNING rows; use last_insert_rowid().
    session.db().execute(Sql(insert_sql), params);
    std::optional<Row> row = session.db().query_one("SELECT last_insert_rowid() AS id");
    if (row.has_value() && row->get_int("id").has_value()) id = *row->get_int("id");
@@ -217,6 +232,7 @@ LEFT JOIN teller.transaction_details_counterparty tdc
   return id;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  long long MatchRepository::CreateRun(Session &session, const std::string &transaction_id,
                                       const std::string &trigger_source, const std::string &model_name,
                                       const std::string &prompt_version) const
@@ -231,6 +247,7 @@ LEFT JOIN teller.transaction_details_counterparty tdc
   return LastInsertId(session, "match_run_id", insert_sql, params);
  }
 
+// #R001: Matchycore traceability implementation coverage.
  void MatchRepository::UpdateRunModelName(Session &session, long long run_id, const std::string &model_name) const
  { session.db().execute(Sql(R"sql(
    UPDATE matchy.transaction_email_match_run
@@ -239,6 +256,7 @@ LEFT JOIN teller.transaction_details_counterparty tdc
    Params{{"model_name", Value(model_name)}, {"match_run_id", Value(static_cast<int64_t>(run_id))}});
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::vector<std::string> MatchRepository::ListPendingTransactionIds(Session &session, int limit,
                                                                      int lookback_days) const
  { std::time_t now = std::time(nullptr);
@@ -292,6 +310,7 @@ LEFT JOIN latest_runs lr
   return ids;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::optional<nlohmann::json> MatchRepository::ReadLastRunSummary(Session &session,
                                                                    const std::string &transaction_id) const
  { std::optional<nlohmann::json> result;
@@ -338,6 +357,7 @@ LEFT JOIN latest_runs lr
   return result;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::optional<nlohmann::json> MatchRepository::ReadActiveMatchSummary(Session &session,
                                                                        const std::string &transaction_id) const
  { std::optional<nlohmann::json> result;
@@ -362,6 +382,7 @@ LEFT JOIN latest_runs lr
   return result;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::set<std::string> MatchRepository::ListActiveEmailIdsForOtherTransactions(Session &session,
                                                                                const std::string &transaction_id) const
  { std::vector<Row> rows = session.db().query(Sql(R"sql(
@@ -375,6 +396,7 @@ LEFT JOIN latest_runs lr
   return ids;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  void MatchRepository::UpdateRunStatus(Session &session, long long run_id, const std::string &status,
                                        const std::optional<std::string> &error_text) const
  { Params params{{"status", Value(status)}, {"match_run_id", Value(static_cast<int64_t>(run_id))}};
@@ -387,6 +409,7 @@ LEFT JOIN latest_runs lr
     WHERE match_run_id = :match_run_id)sql"), params);
  }
 
+// #R001: Matchycore traceability implementation coverage.
  void MatchRepository::MarkRunFailed(Session &session, long long run_id, const std::string &error_text) const
  { UpdateRunStatus(session, run_id, "failed", error_text);
  }

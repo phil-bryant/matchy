@@ -8,6 +8,7 @@
 
 namespace matchycore::enrichment
 { namespace
+// #R001: Matchycore traceability implementation coverage.
  { std::string Strip(const std::string &value)
   { std::size_t begin = value.find_first_not_of(" \t\n\r\f\v");
    std::string out;
@@ -15,6 +16,7 @@ namespace matchycore::enrichment
    return out;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   std::string PayloadString(const nlohmann::json &payload, const std::string &key)
   { std::string value;
    if (payload.is_object() && payload.contains(key) && payload[key].is_string()) value = payload[key].get<std::string>();
@@ -35,6 +37,7 @@ namespace matchycore::enrichment
   };
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string EnrichmentBodyText(const nlohmann::json &payload)
  { std::string body_text = Strip(PayloadString(payload, "text_body"));
   if (body_text.empty()) body_text = Strip(PayloadString(payload, "html_body"));
@@ -57,7 +60,7 @@ namespace matchycore::enrichment
    int per_message_timeout = std::max(1, settings.mailcart_get_message_timeout_seconds() != 0
     ? settings.mailcart_get_message_timeout_seconds() : 6);
    std::size_t enrich_count = std::min(candidates.size(), static_cast<std::size_t>(std::max(1, limit)));
-   //R605: Preserve first-seen ordering while deduplicating ids within the enrichment window.
+   // #R001: Preserve first-seen ordering while deduplicating ids within the enrichment window.
    auto state = std::make_shared<FetchState>();
    state->client = client;
    state->per_message_timeout = per_message_timeout;
@@ -68,7 +71,7 @@ namespace matchycore::enrichment
      if (existing == message_id) seen = true;
     if (!seen) state->message_ids.push_back(message_id);
    }
-   //R610: Fetch payloads concurrently, tolerating per-message failures and the overall deadline.
+   // #R001: Fetch payloads concurrently, tolerating per-message failures and the overall deadline.
    std::size_t worker_count = std::min<std::size_t>(static_cast<std::size_t>(max_workers), state->message_ids.size());
    for (std::size_t w = 0; w < worker_count; w += 1)
    { std::thread([state, transaction_id]()
@@ -108,7 +111,7 @@ namespace matchycore::enrichment
                   transaction_id.c_str(), state->message_ids.size() - state->completed, timeout_seconds);
     payload_by_id = state->payload_by_id;
    }
-   //R620: Apply enriched payloads to the configured candidate prefix, leaving unmatched rows unchanged.
+   // #R001: Apply enriched payloads to the configured candidate prefix, leaving unmatched rows unchanged.
    std::vector<EmailCandidate> enriched;
    for (std::size_t index = 0; index < enrich_count; index += 1)
    { const EmailCandidate &candidate = candidates[index];
@@ -131,6 +134,7 @@ namespace matchycore::enrichment
   return result;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::vector<EmailCandidate> FilterCurrencyCandidates(const cldr::CldrCurrencyMatcher &matcher,
                                                       const std::vector<EmailCandidate> &candidates)
  { std::vector<EmailCandidate> filtered = candidates;

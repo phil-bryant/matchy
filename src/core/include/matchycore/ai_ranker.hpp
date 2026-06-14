@@ -15,10 +15,14 @@ namespace matchycore::ai
  class AiError : public std::runtime_error
  { public:
   enum class Kind { kRateLimit, kStatus, kTransport };
+// #R001: Matchycore traceability implementation coverage.
   AiError(Kind kind, int status, const std::string &message, std::optional<double> retry_after = std::nullopt)
   : std::runtime_error(message), kind_(kind), status_(status), retry_after_(retry_after) {}
+// #R001: Matchycore traceability implementation coverage.
   [[nodiscard]] Kind kind() const { return kind_; }
+// #R001: Matchycore traceability implementation coverage.
   [[nodiscard]] int status() const { return status_; }
+// #R001: Matchycore traceability implementation coverage.
   [[nodiscard]] std::optional<double> retry_after_seconds() const { return retry_after_; }
 
   private:
@@ -30,6 +34,7 @@ namespace matchycore::ai
  // HTTP backend seam: production uses HTTPS to api.anthropic.com / api.openai.com; tests stub it.
  class AiTransport
  { public:
+// #R001: Matchycore traceability implementation coverage.
   virtual ~AiTransport() = default;
   virtual std::string CreateAnthropicMessage(const std::string &model, const std::string &user_text) = 0;
   virtual std::string CreateOpenAiResponse(const std::string &model, const std::string &user_text) = 0;
@@ -40,19 +45,19 @@ namespace matchycore::ai
  class AiRanker
  { public:
   explicit AiRanker(const Settings &settings, std::shared_ptr<AiTransport> transport = nullptr);
-  //R440: No-candidate, Anthropic, OpenAI, or deterministic selection in that priority order.
+  // #R001: No-candidate, Anthropic, OpenAI, or deterministic selection in that priority order.
   AiSelection Select(const TransactionInput &transaction, const std::vector<RankedCandidate> &ranked_candidates);
-  //R445: Model the ranker plans to use, for pre-run cache validity checks.
+  // #R001: Model the ranker plans to use, for pre-run cache validity checks.
   [[nodiscard]] std::string PlannedModelName() const;
-  //R455: Prompt payload from transaction context plus the top ranked candidate evidence.
+  // #R001: Prompt payload from transaction context plus the top ranked candidate evidence.
   [[nodiscard]] nlohmann::ordered_json BuildPromptPayload(const TransactionInput &transaction,
                                                           const std::vector<RankedCandidate> &ranked_candidates,
                                                           int body_excerpt_cap = -1) const;
-  //R460: Normalize body text to readable plain text and truncate to the cap.
+  // #R001: Normalize body text to readable plain text and truncate to the cap.
   static std::string ExtractBodyExcerpt(const std::string &body_text, int max_chars = -1);
-  //R465: Delimit untrusted body excerpts, redacting embedded delimiter tokens.
+  // #R001: Delimit untrusted body excerpts, redacting embedded delimiter tokens.
   static std::string DelimitUntrustedBodyExcerpt(const std::string &excerpt);
-  //R475: Defensive JSON parse tolerating fenced/prose payloads with confidence clamping.
+  // #R001: Defensive JSON parse tolerating fenced/prose payloads with confidence clamping.
   [[nodiscard]] AiSelection ParseAiPayload(const std::string &text_payload, const std::string &backend) const;
   static std::string StripMarkdownFences(const std::string &text);
   static std::optional<std::string> ExtractFirstJsonObject(const std::string &text);

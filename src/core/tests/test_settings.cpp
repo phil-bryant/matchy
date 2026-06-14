@@ -10,6 +10,7 @@ using matchycore::Settings;
 namespace
 { class EnvGuard
  { public:
+// #R001: Matchycore traceability test coverage.
   EnvGuard(const char *name, const char *value) : name_(name)
   { const char *old_value = std::getenv(name);
    if (old_value != nullptr) old_ = old_value;
@@ -18,6 +19,7 @@ namespace
    else ::unsetenv(name);
   }
 
+// #R001: Matchycore traceability test coverage.
   ~EnvGuard()
   { if (had_old_) ::setenv(name_.c_str(), old_.c_str(), 1);
    else ::unsetenv(name_.c_str());

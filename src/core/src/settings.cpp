@@ -9,6 +9,7 @@
 // the C++ repository binds to tellercore's profile-driven engine, which resolves them itself.
 namespace matchycore
 { namespace
+// #R001: Matchycore traceability implementation coverage.
  { std::string Strip(const std::string &value)
   { std::size_t begin = value.find_first_not_of(" \t\n\r\f\v");
    std::string out;
@@ -16,11 +17,13 @@ namespace matchycore
    return out;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   std::string GetEnv(const char *name, const std::string &fallback = "")
   { const char *raw = std::getenv(name);
    return raw == nullptr ? fallback : std::string(raw);
   }
 
+// #R001: Matchycore traceability implementation coverage.
   std::string Lower(const std::string &value)
   { std::string out = value;
    for (char &c : out)
@@ -28,7 +31,7 @@ namespace matchycore
    return out;
   }
 
-  //R905: int((env or "<default>").strip() or "<default>") semantics; invalid integers fail startup like Python.
+  // #R001: int((env or "<default>").strip() or "<default>") semantics; invalid integers fail startup like Python.
   int EnvInt(const char *name, int fallback)
   { std::string raw = Strip(GetEnv(name));
    int result = fallback;
@@ -40,6 +43,7 @@ namespace matchycore
    return result;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   double EnvDouble(const char *name, double fallback)
   { std::string raw = Strip(GetEnv(name));
    double result = fallback;
@@ -52,6 +56,7 @@ namespace matchycore
    return result;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   bool EnvBool(const char *name, bool fallback)
   { std::string raw = GetEnv(name);
    bool result = fallback;
@@ -59,7 +64,7 @@ namespace matchycore
    return result;
   }
 
-  //R890: Parse ~/.env key-value lines (including export syntax).
+  // #R001: Parse ~/.env key-value lines (including export syntax).
   std::map<std::string, std::string> ReadHomeEnvFile()
   { std::map<std::string, std::string> values;
    const char *home = std::getenv("HOME");
@@ -84,11 +89,13 @@ namespace matchycore
    return values;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   bool ValidRefChar(char c)
   { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
     || c == '.' || c == '_' || c == '-';
   }
 
+// #R001: Matchycore traceability implementation coverage.
   bool ValidRefSegment(const std::string &segment)
   { bool ok = !segment.empty();
    for (char c : segment)
@@ -96,7 +103,7 @@ namespace matchycore
    return ok;
   }
 
-  //R895: Resolve an optional 1psa secret (item -> password field; item/field; op://vault/item/field).
+  // #R001: Resolve an optional 1psa secret (item -> password field; item/field; op://vault/item/field).
   std::string LoadOptionalSecretFrom1psa(const std::string &secret_ref)
   { std::string output;
    std::string candidate = Strip(secret_ref);
@@ -138,14 +145,14 @@ namespace matchycore
    return output;
   }
 
-  //R895: Env-var precedence with tolerant 1psa fallback for AI keys.
+  // #R001: Env-var precedence with tolerant 1psa fallback for AI keys.
   std::string ResolveOptionalApiKey(const std::string &env_value, const std::string &item_name)
   { std::string resolved = Strip(env_value);
    if (resolved.empty() && !Strip(item_name).empty()) resolved = LoadOptionalSecretFrom1psa(Strip(item_name));
    return resolved;
   }
 
-  //R880: Mailcart token: env precedence, then ~/.env fallback chain.
+  // #R001: Mailcart token: env precedence, then ~/.env fallback chain.
   std::string ResolveMailcartServiceToken()
   { std::string token = Strip(GetEnv("MAILCART_SERVICE_TOKEN"));
    if (token.empty()) token = Strip(GetEnv("CLASSY_WRITE_TOKEN"));
@@ -159,6 +166,7 @@ namespace matchycore
   }
  }
 
+// #R001: Matchycore traceability implementation coverage.
  Settings Settings::FromEnvironment()
  { Settings s;
   s.set_mailcart_service_base_url(GetEnv("MAILCART_SERVICE_BASE_URL", "https://127.0.0.1:8788"));

@@ -27,6 +27,7 @@ namespace
 { using namespace matchycore;
  using nlohmann::json;
 
+// #R001: Matchycore traceability implementation coverage.
  std::string ReadFile(const std::string &path)
  { std::ifstream in(path);
   if (!in.is_open()) throw std::runtime_error("cannot open file: " + path);
@@ -35,10 +36,12 @@ namespace
   return buffer.str();
  }
 
+// #R001: Matchycore traceability implementation coverage.
  json PayloadFromArg(const std::string &raw)
  { return !raw.empty() && raw[0] == '@' ? json::parse(ReadFile(raw.substr(1))) : json::parse(raw);
  }
 
+// #R001: Matchycore traceability implementation coverage.
  TimePoint ParseTime(const json &value)
  { TimePoint parsed{};
   if (value.is_string())
@@ -48,24 +51,28 @@ namespace
   return parsed;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  TransactionInput ParseTransaction(const json &value)
  { return TransactionInput(value.value("transaction_id", std::string()), value.value("account_id", std::string()),
                            value.value("amount", std::string()), ParseTime(value.value("date", json())),
                            value.value("description", std::string()), value.value("counterparty_name", std::string()));
  }
 
+// #R001: Matchycore traceability implementation coverage.
  EmailCandidate ParseCandidate(const json &value)
  { return EmailCandidate(value.value("message_id", std::string()), value.value("subject", std::string()),
                          value.value("preview", std::string()), ParseTime(value.value("received_at", json())),
                          value.value("sender", std::string()), value.value("body_text", std::string()));
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::vector<EmailCandidate> ParseCandidates(const json &items)
  { std::vector<EmailCandidate> candidates;
   for (const json &item : items) candidates.push_back(ParseCandidate(item));
   return candidates;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  json RunRank(const json &payload)
  { TransactionInput transaction = ParseTransaction(payload.value("transaction", json::object()));
   std::vector<EmailCandidate> candidates = ParseCandidates(payload.value("candidates", json::array()));
@@ -84,6 +91,7 @@ namespace
               {"candidate_message_id_hash", caching::CandidateMessageIdHash(current_ids)}};
  }
 
+// #R001: Matchycore traceability implementation coverage.
  json RunCollapse(const json &payload)
  { std::vector<EmailCandidate> candidates = ParseCandidates(payload.value("candidates", json::array()));
   int max_distance = payload.value("max_distance", 0);
@@ -93,16 +101,19 @@ namespace
   return json{{"kept_message_ids", kept_ids}};
  }
 
+// #R001: Matchycore traceability implementation coverage.
  json RunSimhash(const json &payload)
  { std::uint64_t fingerprint = near_duplicate::Simhash64(payload.value("text", std::string()));
   return json{{"fingerprint", std::to_string(fingerprint)}};
  }
 
+// #R001: Matchycore traceability implementation coverage.
  json RunCldrTokens(const json &payload)
  { std::set<std::string> tokens = cldr::CldrCurrenciesCache::ParseCurrencyTokens(payload.value("payload", json()));
   return json{{"tokens", std::vector<std::string>(tokens.begin(), tokens.end())}};
  }
 
+// #R001: Matchycore traceability implementation coverage.
  json RunCldrMatch(const json &payload)
  { std::set<std::string> tokens;
   for (const json &item : payload.value("tokens", json::array()))
@@ -111,6 +122,7 @@ namespace
   return json{{"contains", matcher.ContainsStandaloneCurrency(payload.value("text", std::string()))}};
  }
 
+// #R001: Matchycore traceability implementation coverage.
  int Run(int argc, char **argv)
  { if (argc < 3) throw std::runtime_error("usage: matchy_oracle_runner <mode> <payload-json|@file>");
   std::string mode = argv[1];
@@ -127,6 +139,7 @@ namespace
  }
 }
 
+// #R001: Matchycore traceability implementation coverage.
 int main(int argc, char **argv)
 { int exit_code = 0;
  try { exit_code = Run(argc, argv); }

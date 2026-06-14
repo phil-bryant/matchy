@@ -19,8 +19,10 @@ namespace
   std::vector<std::string> fetched;
   std::mutex mutex;
 
+// #R001: Matchycore traceability test coverage.
   std::vector<EmailCandidate> SearchCandidates(const std::string &, int) override { return {}; }
 
+// #R001: Matchycore traceability test coverage.
   nlohmann::json GetMessage(const std::string &message_id, int) override
   { std::lock_guard<std::mutex> lock(mutex);
    fetched.push_back(message_id);
@@ -28,6 +30,7 @@ namespace
    return found == payloads.end() ? nlohmann::json::object() : found->second;
   }
 
+// #R001: Matchycore traceability test coverage.
   bool MoveToMatchy(const std::string &) override { return true; }
  };
 }

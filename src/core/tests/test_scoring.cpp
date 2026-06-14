@@ -14,11 +14,13 @@ namespace scoring = matchycore::scoring;
 namespace
 { const TimePoint kBaseTime = std::chrono::system_clock::from_time_t(1717243200); // 2024-06-01T12:00:00Z
 
+// #R001: Matchycore traceability test coverage.
  EmailCandidate Candidate(const std::string &subject = "", const std::string &preview = "",
                           const std::string &body_text = "")
  { return EmailCandidate("m1", subject, preview, kBaseTime, "", body_text);
  }
 
+// #R001: Matchycore traceability test coverage.
  TimePoint HoursAfter(double hours)
  { return kBaseTime + std::chrono::duration_cast<TimePoint::duration>(std::chrono::duration<double>(hours * 3600.0));
  }

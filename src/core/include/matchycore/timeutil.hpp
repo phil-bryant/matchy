@@ -6,6 +6,7 @@
 // Datetime helpers mirroring the Python reference (datetime.fromisoformat / isoformat with UTC).
 namespace matchycore::timeutil
 { // Parse ISO 8601 ("2024-06-01T12:00:00[.ffffff][Z|+HH:MM]" or date-only); naive values are treated as UTC.
+ // #R001: Matchycore traceability requirement anchor for time utilities.
  std::optional<TimePoint> ParseIso8601(const std::string &value);
 
  // Python datetime(..., tzinfo=utc).isoformat(): microseconds included only when non-zero, "+00:00" suffix.

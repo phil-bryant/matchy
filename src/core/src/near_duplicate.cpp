@@ -1,6 +1,5 @@
 #include "matchycore/near_duplicate.hpp"
 #include <array>
-#include <cstring>
 #include "matchycore/scoring.hpp"
 
 namespace matchycore::near_duplicate
@@ -26,8 +25,19 @@ namespace matchycore::near_duplicate
     {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
     {14, 10, 4, 8, 9, 15, 13, 6, 1, 12, 0, 2, 11, 7, 5, 3} };
 
+// #R001: Matchycore traceability implementation coverage.
   std::uint64_t RotR(std::uint64_t value, unsigned bits) { return (value >> bits) | (value << (64 - bits)); }
 
+// #R001: Matchycore traceability implementation coverage.
+  std::uint64_t Load64(const std::uint8_t *block, std::size_t index)
+  { std::uint64_t result = 0;
+   std::size_t offset = index * 8U;
+   for (std::size_t byte_index = 0; byte_index < 8U; byte_index += 1)
+    result |= static_cast<std::uint64_t>(block[offset + byte_index]) << (8U * byte_index);
+   return result;
+  }
+
+// #R001: Matchycore traceability implementation coverage.
   void Mix(std::array<std::uint64_t, 16> &v, int a, int b, int c, int d, std::uint64_t x, std::uint64_t y)
   { v[a] = v[a] + v[b] + x;
    v[d] = RotR(v[d] ^ v[a], 32);
@@ -39,9 +49,10 @@ namespace matchycore::near_duplicate
    v[b] = RotR(v[b] ^ v[c], 63);
   }
 
+// #R001: Matchycore traceability implementation coverage.
   void Compress(std::array<std::uint64_t, 8> &h, const std::uint8_t *block, std::uint64_t bytes_so_far, bool final)
   { std::array<std::uint64_t, 16> m{}, v{};
-   for (int i = 0; i < 16; i += 1) std::memcpy(&m[static_cast<std::size_t>(i)], block + i * 8, 8);
+   for (std::size_t i = 0; i < 16U; i += 1) m[i] = Load64(block, i);
    for (int i = 0; i < 8; i += 1)
    { v[static_cast<std::size_t>(i)] = h[static_cast<std::size_t>(i)];
     v[static_cast<std::size_t>(i + 8)] = kIv[static_cast<std::size_t>(i)];
@@ -64,6 +75,7 @@ namespace matchycore::near_duplicate
   }
 
   // Unkeyed BLAKE2b with an 8-byte digest, returned big-endian like Python's int.from_bytes(..., "big").
+// #R001: Matchycore traceability implementation coverage.
   std::uint64_t Blake2b8BigEndian(const std::string &data)
   { std::array<std::uint64_t, 8> h = kIv;
    h[0] ^= 0x01010000ULL ^ 8ULL;
@@ -74,7 +86,7 @@ namespace matchycore::near_duplicate
    }
    std::uint8_t block[128] = {0};
    std::size_t remaining = data.size() - offset;
-   std::memcpy(block, data.data() + offset, remaining);
+   for (std::size_t i = 0; i < remaining; i += 1) block[i] = static_cast<std::uint8_t>(data[offset + i]);
    Compress(h, block, data.size(), true);
    std::uint64_t result = 0;
    for (int byte_index = 0; byte_index < 8; byte_index += 1)
@@ -83,6 +95,7 @@ namespace matchycore::near_duplicate
   }
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::uint64_t Simhash64(const std::string &text)
  { std::array<int, 64> weights{};
   for (const std::string &token : scoring::RelevanceTokens(text))
@@ -98,10 +111,12 @@ namespace matchycore::near_duplicate
   return fingerprint;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  int HammingDistance(std::uint64_t left, std::uint64_t right)
  { return __builtin_popcountll(left ^ right);
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::vector<EmailCandidate> CollapseNearDuplicates(const std::vector<EmailCandidate> &candidates, int max_distance)
  { std::vector<EmailCandidate> collapsed;
   if (max_distance <= 0 || candidates.size() <= 1) collapsed = candidates;

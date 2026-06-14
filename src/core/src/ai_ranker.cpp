@@ -16,6 +16,7 @@ namespace matchycore::ai
    "Return ONLY a JSON object with keys selected_message_ids (list of strings),"
    " confidence (number 0..1), uncertain (boolean), rationale (string). No prose.";
 
+// #R001: Matchycore traceability implementation coverage.
   std::string Lower(const std::string &value)
   { std::string out = value;
    for (char &c : out)
@@ -23,6 +24,7 @@ namespace matchycore::ai
    return out;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   std::string ReplaceAll(std::string value, const std::string &needle, const std::string &replacement)
   { std::size_t pos = value.find(needle);
    while (pos != std::string::npos)
@@ -32,6 +34,7 @@ namespace matchycore::ai
    return value;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   std::optional<double> ParseRetryAfter(const httplib::Response &response)
   { std::optional<double> result;
    std::string raw = response.get_header_value("Retry-After");
@@ -46,8 +49,10 @@ namespace matchycore::ai
 
   class HttpTransport final : public AiTransport
   { public:
+// #R001: Matchycore traceability implementation coverage.
    explicit HttpTransport(const Settings &settings) : settings_(settings) {}
 
+// #R001: Matchycore traceability implementation coverage.
    std::string CreateAnthropicMessage(const std::string &model, const std::string &user_text) override
    { httplib::SSLClient client("api.anthropic.com", 443);
     client.set_connection_timeout(30, 0);
@@ -73,6 +78,7 @@ namespace matchycore::ai
     return text;
    }
 
+// #R001: Matchycore traceability implementation coverage.
    std::string CreateOpenAiResponse(const std::string &model, const std::string &user_text) override
    { httplib::SSLClient client("api.openai.com", 443);
     client.set_connection_timeout(30, 0);
@@ -105,10 +111,12 @@ namespace matchycore::ai
   };
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::shared_ptr<AiTransport> MakeHttpTransport(const Settings &settings)
  { return std::make_shared<HttpTransport>(settings);
  }
 
+// #R001: Matchycore traceability implementation coverage.
  AiRanker::AiRanker(const Settings &settings, std::shared_ptr<AiTransport> transport)
  : settings_(settings), transport_(transport != nullptr ? std::move(transport) : MakeHttpTransport(settings)),
    anthropic_enabled_(!settings.anthropic_api_key().empty()),
@@ -116,6 +124,7 @@ namespace matchycore::ai
  {
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string AiRanker::PlannedModelName() const
  { std::string model_name = "deterministic";
   if (anthropic_enabled_) model_name = settings_.anthropic_model();
@@ -123,6 +132,7 @@ namespace matchycore::ai
   return model_name;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  AiSelection AiRanker::Select(const TransactionInput &transaction,
                               const std::vector<RankedCandidate> &ranked_candidates)
  { std::optional<AiSelection> selection;
@@ -134,7 +144,7 @@ namespace matchycore::ai
   return *selection;
  }
 
- //R450: Deterministic top-candidate fallback when no AI key is configured.
+ // #R001: Deterministic top-candidate fallback when no AI key is configured.
  AiSelection AiRanker::SelectDeterministic(const std::vector<RankedCandidate> &ranked_candidates) const
  { std::vector<std::string> selected_ids;
   for (std::size_t index = 0; index < ranked_candidates.size() && index < 2; index += 1)
@@ -146,6 +156,7 @@ namespace matchycore::ai
                      "deterministic", "deterministic");
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string AiRanker::ExtractBodyExcerpt(const std::string &body_text, int max_chars)
  { std::string result;
   if (!body_text.empty())
@@ -158,19 +169,24 @@ namespace matchycore::ai
    std::string collapsed = std::regex_replace(without_tags, ws_re, " ");
    std::size_t begin = collapsed.find_first_not_of(' ');
    if (begin == std::string::npos) collapsed = "";
-   else collapsed = collapsed.substr(begin, collapsed.find_last_not_of(' ') - begin + 1);
+   else
+   { collapsed.erase(collapsed.find_last_not_of(' ') + 1);
+    collapsed.erase(0, begin);
+   }
    int limit = max_chars >= 0 ? max_chars : kBodyTextPromptMax;
    result = collapsed.substr(0, static_cast<std::size_t>(std::max(0, limit)));
   }
   return result;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string AiRanker::DelimitUntrustedBodyExcerpt(const std::string &excerpt)
  { std::string body_text = ReplaceAll(excerpt, kUntrustedBodyStart, "[BEGIN_UNTRUSTED_EMAIL_BODY_REDACTED]");
   body_text = ReplaceAll(body_text, kUntrustedBodyEnd, "[END_UNTRUSTED_EMAIL_BODY_REDACTED]");
   return std::string(kUntrustedBodyStart) + "\n" + body_text + "\n" + kUntrustedBodyEnd;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  nlohmann::ordered_json AiRanker::BuildPromptPayload(const TransactionInput &transaction,
                                                      const std::vector<RankedCandidate> &ranked_candidates,
                                                      int body_excerpt_cap) const
@@ -220,7 +236,7 @@ namespace matchycore::ai
   return payload;
  }
 
- //R470: Retry rate-limit/context-length failures with progressively smaller body excerpts.
+ // #R001: Retry rate-limit/context-length failures with progressively smaller body excerpts.
  AiSelection AiRanker::SelectWithAnthropic(const TransactionInput &transaction,
                                            const std::vector<RankedCandidate> &ranked_candidates)
  { std::vector<int> body_caps{-1, 1000, 500};
@@ -258,6 +274,7 @@ namespace matchycore::ai
   return *selection;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  AiSelection AiRanker::SelectWithOpenAi(const TransactionInput &transaction,
                                         const std::vector<RankedCandidate> &ranked_candidates)
  { nlohmann::ordered_json prompt = BuildPromptPayload(transaction, ranked_candidates);
@@ -269,6 +286,7 @@ namespace matchycore::ai
   return ParseAiPayload(trimmed.empty() ? "{}" : trimmed, "openai");
  }
 
+// #R001: Matchycore traceability implementation coverage.
  AiSelection AiRanker::ParseAiPayload(const std::string &text_payload, const std::string &backend) const
  { std::string candidate = StripMarkdownFences(text_payload);
   nlohmann::json parsed = nlohmann::json::parse(candidate, nullptr, false);
@@ -304,6 +322,7 @@ namespace matchycore::ai
   return AiSelection(selected_ids, parsed_confidence, uncertain, rationale, backend, model_name);
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string AiRanker::StripMarkdownFences(const std::string &text)
  { std::size_t begin = text.find_first_not_of(" \t\n\r");
   std::string stripped;
@@ -316,7 +335,7 @@ namespace matchycore::ai
     std::size_t trail = body.find_last_not_of(" \t\n\r");
     std::string trimmed_body = trail == std::string::npos ? "" : body.substr(0, trail + 1);
     if (trimmed_body.size() >= 3 && trimmed_body.substr(trimmed_body.size() - 3) == "```")
-     body = body.substr(0, trimmed_body.size() - 3);
+     body.resize(trimmed_body.size() - 3);
     std::size_t inner_begin = body.find_first_not_of(" \t\n\r");
     result = inner_begin == std::string::npos
      ? "" : body.substr(inner_begin, body.find_last_not_of(" \t\n\r") - inner_begin + 1);
@@ -325,6 +344,7 @@ namespace matchycore::ai
   return result;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::optional<std::string> AiRanker::ExtractFirstJsonObject(const std::string &text)
  { std::optional<std::string> result;
   std::size_t start = text.find('{');

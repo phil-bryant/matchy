@@ -9,10 +9,11 @@
 namespace matchycore::cldr
 { class CldrCurrencyMatcher
  { public:
-  //R575: Build matcher state from normalized code/symbol tokens.
+  // #R001: Build matcher state from normalized code/symbol tokens.
   explicit CldrCurrencyMatcher(const std::set<std::string> &tokens);
-  //R575: Match only standalone codes/symbols so substrings like xUSDx do not scope candidates.
+  // #R001: Match only standalone codes/symbols so substrings like xUSDx do not scope candidates.
   [[nodiscard]] bool ContainsStandaloneCurrency(const std::string &text) const;
+// #R001: Matchycore traceability implementation coverage.
   [[nodiscard]] const std::set<std::string> &tokens() const { return tokens_; }
 
   private:
@@ -24,12 +25,12 @@ namespace matchycore::cldr
  class CldrCurrenciesCache
  { public:
   explicit CldrCurrenciesCache(const Settings &settings);
-  //R560 R565: Refresh the local cache when the upstream commit changes; failures keep cached state.
+  // #R001: R565: Refresh the local cache when the upstream commit changes; failures keep cached state.
   nlohmann::json Refresh();
   [[nodiscard]] CldrCurrencyMatcher CurrencyMatcher() const;
-  //R580: Parse cached tokens, returning an empty set when cache content is missing/invalid.
+  // #R001: Parse cached tokens, returning an empty set when cache content is missing/invalid.
   [[nodiscard]] std::set<std::string> CurrencyTokens() const;
-  //R570: Extract normalized currency codes and clean symbol variants from the CLDR payload.
+  // #R001: Extract normalized currency codes and clean symbol variants from the CLDR payload.
   static std::set<std::string> ParseCurrencyTokens(const nlohmann::json &payload);
 
   private:

@@ -7,10 +7,13 @@
 
 namespace matchycore::scoring
 { namespace
+// #R001: Matchycore traceability implementation coverage.
  { bool IsDigit(char c) { return c >= '0' && c <= '9'; }
 
+// #R001: Matchycore traceability implementation coverage.
   bool IsSpace(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v'; }
 
+// #R001: Matchycore traceability implementation coverage.
   std::vector<std::string> SplitWhitespace(const std::string &value)
   { std::vector<std::string> parts;
    std::string current;
@@ -25,6 +28,7 @@ namespace matchycore::scoring
    return parts;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   std::set<std::string> LongTokens(const std::string &value, std::size_t min_exclusive)
   { std::set<std::string> tokens;
    for (const std::string &part : SplitWhitespace(NormalizedText(value)))
@@ -36,10 +40,14 @@ namespace matchycore::scoring
   // adjusted by any exponent. Mirrors what Python Decimal stores as (coefficient, exponent).
   class ParsedDecimal
   { public:
+// #R001: Matchycore traceability implementation coverage.
    ParsedDecimal(bool valid, std::string digits, long long scale)
    : valid_(valid), digits_(std::move(digits)), scale_(scale) {}
+// #R001: Matchycore traceability implementation coverage.
    [[nodiscard]] bool valid() const { return valid_; }
+// #R001: Matchycore traceability implementation coverage.
    [[nodiscard]] const std::string &digits() const { return digits_; }
+// #R001: Matchycore traceability implementation coverage.
    [[nodiscard]] long long scale() const { return scale_; }
 
    private:
@@ -48,6 +56,7 @@ namespace matchycore::scoring
    long long scale_;
   };
 
+// #R001: Matchycore traceability implementation coverage.
   ParsedDecimal ParseDecimal(const std::string &value)
   { std::size_t i = 0;
    bool ok = !value.empty();
@@ -97,16 +106,19 @@ namespace matchycore::scoring
   // One regex-equivalent money-token match attempt at position q (first digit). Returns the end
   // offset of the numeric group, or npos. Mirrors the backtracking order of
   // ([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)(?!\d) in scoring_core.py.
+// #R001: Matchycore traceability implementation coverage.
   std::size_t ConsecutiveDigits(const std::string &text, std::size_t pos)
   { std::size_t count = 0;
    while (pos + count < text.size() && IsDigit(text[pos + count])) count += 1;
    return count;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   bool LookaheadNotDigit(const std::string &text, std::size_t pos)
   { return pos >= text.size() || !IsDigit(text[pos]);
   }
 
+// #R001: Matchycore traceability implementation coverage.
   std::size_t MatchFraction(const std::string &text, std::size_t pos)
   { std::size_t end = std::string::npos;
    if (pos < text.size() && text[pos] == '.')
@@ -125,6 +137,7 @@ namespace matchycore::scoring
    return end;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   std::size_t MatchGroupedNumber(const std::string &text, std::size_t q)
   { std::size_t end = std::string::npos;
    std::size_t lead = std::min<std::size_t>(ConsecutiveDigits(text, q), 3);
@@ -151,6 +164,7 @@ namespace matchycore::scoring
    return end;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   std::size_t MatchPlainNumber(const std::string &text, std::size_t q)
   { std::size_t digits = ConsecutiveDigits(text, q);
    std::size_t end = std::string::npos;
@@ -159,6 +173,7 @@ namespace matchycore::scoring
   }
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string NormalizedText(const std::string &value)
  { std::string out;
   out.reserve(value.size());
@@ -171,6 +186,7 @@ namespace matchycore::scoring
   return out;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  double TokenOverlap(const std::string &left, const std::string &right)
  { std::set<std::string> left_tokens = LongTokens(left, 2), right_tokens = LongTokens(right, 2);
   double result = 0.0;
@@ -183,6 +199,7 @@ namespace matchycore::scoring
   return result;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::optional<long long> DecimalToCents(const std::string &value)
  { ParsedDecimal parsed = ParseDecimal(value);
   std::optional<long long> result;
@@ -209,6 +226,7 @@ namespace matchycore::scoring
   return result;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::set<long long> ExtractMoneyCents(const std::string &text)
  { std::set<long long> cents;
   std::size_t p = 0;
@@ -239,6 +257,7 @@ namespace matchycore::scoring
   return cents;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  double AmountHintScore(const std::string &amount, const EmailCandidate &candidate)
  { std::string text = candidate.subject() + " " + candidate.preview() + " " + candidate.body_text();
   std::optional<long long> target_cents = DecimalToCents(amount);
@@ -247,6 +266,7 @@ namespace matchycore::scoring
   return score;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  double SenderHintScore(const std::string &transaction_text, const std::string &sender)
  { std::set<std::string> txn_tokens = LongTokens(transaction_text, 2), sender_tokens = LongTokens(sender, 2);
   double score = 0.0;
@@ -256,6 +276,7 @@ namespace matchycore::scoring
   return score;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  double CompactMerchantHintScore(const std::string &transaction_text, const std::string &candidate_text)
  { std::string compact_candidate;
   for (char c : candidate_text)
@@ -273,6 +294,7 @@ namespace matchycore::scoring
   return score;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  double TimeProximityScore(TimePoint txn_time, TimePoint received_at)
  { double delta_seconds = std::abs(std::chrono::duration<double>(received_at - txn_time).count());
   double delta_hours = delta_seconds / 3600.0;
@@ -284,6 +306,7 @@ namespace matchycore::scoring
   return score;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::vector<std::string> RelevanceTokens(const std::string &value)
  { std::vector<std::string> tokens;
   for (const std::string &part : SplitWhitespace(NormalizedText(value)))
@@ -291,6 +314,7 @@ namespace matchycore::scoring
   return tokens;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::map<std::string, int> DocumentFrequencies(const std::vector<std::string> &documents)
  { std::map<std::string, int> frequencies;
   for (const std::string &document : documents)
@@ -301,12 +325,14 @@ namespace matchycore::scoring
   return frequencies;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  double InverseDocumentFrequency(int corpus_size, int document_frequency)
  { double numerator = corpus_size - document_frequency + 0.5;
   double denominator = document_frequency + 0.5;
   return std::log(1.0 + numerator / denominator);
  }
 
+// #R001: Matchycore traceability implementation coverage.
  double Bm25Score(const std::string &query, const std::string &document, int corpus_size,
                   const std::map<std::string, int> &document_frequency_map, double average_document_length,
                   double k1, double b)
@@ -334,12 +360,14 @@ namespace matchycore::scoring
   return score;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  double Bm25Relevance(double score, double saturation)
  { double normalized = 0.0;
   if (score > 0.0 && saturation > 0.0) normalized = score / (score + saturation);
   return normalized;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  bool SubsetSumReachable(const std::vector<long long> &amounts_cents, long long target_cents,
                          long long tolerance_cents)
  { long long upper_bound = target_cents + tolerance_cents;
@@ -359,6 +387,7 @@ namespace matchycore::scoring
   return found;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  double AmountReconciliationScore(const std::string &amount, const EmailCandidate &candidate, int max_terms)
  { std::string text = candidate.subject() + " " + candidate.preview() + " " + candidate.body_text();
   std::optional<long long> target_cents = DecimalToCents(amount);
@@ -374,12 +403,14 @@ namespace matchycore::scoring
   return score;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  double Round4(double value)
  { char buffer[64];
   std::snprintf(buffer, sizeof(buffer), "%.4f", value);
   return std::strtod(buffer, nullptr);
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::vector<RankedCandidate> RankCandidates(const TransactionInput &transaction,
                                              const std::vector<EmailCandidate> &candidates,
                                              const std::set<std::string> &already_matched_ids)

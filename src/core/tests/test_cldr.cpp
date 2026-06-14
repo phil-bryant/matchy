@@ -5,6 +5,7 @@
 namespace cldr = matchycore::cldr;
 
 namespace
+// #R001: Matchycore traceability test coverage.
 { nlohmann::json SamplePayload()
  { nlohmann::json currencies;
   currencies["USD"] = {{"displayName", "US Dollar"}, {"symbol", "$"}, {"symbol-alt-narrow", "$"}};

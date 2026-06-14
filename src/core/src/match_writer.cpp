@@ -8,6 +8,7 @@ namespace matchycore::db
  { using tellercore::db::Params;
   using tellercore::db::Value;
 
+// #R001: Matchycore traceability implementation coverage.
   Value OptionalText(const std::string &text)
   { return text.empty() ? Value(std::monostate{}) : Value(text);
   }
@@ -46,7 +47,7 @@ namespace matchycore::db
             THEN NULL ELSE CURRENT_TIMESTAMP END
    ))sql");
   for (const RankedCandidate &ranked : candidates)
-  { //R680: preview falls back to the first 240 body characters when the body exists.
+  { // #R001: preview falls back to the first 240 body characters when the body exists.
    const EmailCandidate &candidate = ranked.candidate();
    std::string preview = candidate.body_text().empty() ? candidate.preview()
     : (candidate.preview().empty() ? candidate.body_text().substr(0, 240) : candidate.preview());
@@ -67,6 +68,7 @@ namespace matchycore::db
   }
  }
 
+// #R001: Matchycore traceability implementation coverage.
  bool MatchRepository::HasActiveMatch(Session &session, const std::string &email_message_id) const
  { std::optional<tellercore::db::Row> row = session.db().query_one(Sql(R"sql(
    SELECT 1 AS present
@@ -77,6 +79,7 @@ namespace matchycore::db
   return row.has_value();
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::vector<std::string> MatchRepository::PersistAiResult(Session &session, const std::string &transaction_id,
                                                            long long run_id,
                                                            const std::vector<RankedCandidate> &ranked_candidates,
@@ -169,6 +172,7 @@ namespace matchycore::db
   return selected;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  void MatchRepository::DeactivateActiveMatch(Session &session, const std::string &transaction_id) const
  { session.db().execute(Sql(R"sql(
    UPDATE matchy.transaction_email_match
@@ -177,6 +181,7 @@ namespace matchycore::db
    Params{{"transaction_id", Value(transaction_id)}});
  }
 
+// #R001: Matchycore traceability implementation coverage.
  long long MatchRepository::InsertHumanConfirmedMatch(Session &session, const std::string &transaction_id,
                                                       const std::string &email_message_id,
                                                       const std::optional<std::string> &note) const

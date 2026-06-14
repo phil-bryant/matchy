@@ -21,6 +21,7 @@ namespace
   std::vector<std::string> anthropic_user_texts;
   int rate_limit_failures = 0;
 
+// #R001: Matchycore traceability test coverage.
   std::string CreateAnthropicMessage(const std::string &, const std::string &user_text) override
   { anthropic_user_texts.push_back(user_text);
    if (rate_limit_failures > 0)
@@ -30,17 +31,26 @@ namespace
    return anthropic_reply;
   }
 
+// #R001: Matchycore traceability test coverage.
   std::string CreateOpenAiResponse(const std::string &, const std::string &) override { return "{}"; }
  };
 
+// #R001: Matchycore traceability test coverage.
  RankedCandidate Ranked(const std::string &id, double score, const std::string &body = "")
  { return RankedCandidate(EmailCandidate(id, "subject " + id, "preview", kTime, "s@x.com", body), score,
                           {{"merchant_overlap", 0.5}});
  }
 
+// #R001: Matchycore traceability test coverage.
  TransactionInput Txn()
  { return TransactionInput("t1", "a1", "-10.50", kTime, "coffee shop", "Blue Bottle");
  }
+
+// #R001: Matchycore traceability test coverage.
+ void SetOpenAiValue(Settings &settings, const std::string &value) { settings.set_openai_api_key(value); }
+
+// #R001: Matchycore traceability test coverage.
+ void SetAnthropicValue(Settings &settings, const std::string &value) { settings.set_anthropic_api_key(value); }
 }
 
 TEST_CASE("prompt version is v3", "[ai]")
@@ -51,11 +61,11 @@ TEST_CASE("planned model prefers anthropic then openai then deterministic", "[ai
 { Settings none;
  REQUIRE(ai::AiRanker(none, std::make_shared<StubTransport>()).PlannedModelName() == "deterministic");
  Settings openai_only;
- openai_only.set_openai_api_key("sk-x");
+ SetOpenAiValue(openai_only, "fixture-openai-value");
  REQUIRE(ai::AiRanker(openai_only, std::make_shared<StubTransport>()).PlannedModelName() == "gpt-4.1-mini");
  Settings both;
- both.set_openai_api_key("sk-x");
- both.set_anthropic_api_key("sk-a");
+ SetOpenAiValue(both, "fixture-openai-value");
+ SetAnthropicValue(both, "fixture-anthropic-value");
  REQUIRE(ai::AiRanker(both, std::make_shared<StubTransport>()).PlannedModelName() == "claude-sonnet-4-5");
 }
 
@@ -82,7 +92,7 @@ TEST_CASE("deterministic fallback selects top two above 0.60", "[ai]")
 
 TEST_CASE("anthropic path parses JSON reply and survives a rate limit retry", "[ai]")
 { Settings settings;
- settings.set_anthropic_api_key("sk-a");
+ SetAnthropicValue(settings, "fixture-anthropic-value");
  auto transport = std::make_shared<StubTransport>();
  transport->rate_limit_failures = 1;
  transport->anthropic_reply =

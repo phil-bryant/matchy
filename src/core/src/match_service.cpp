@@ -11,10 +11,12 @@
 
 namespace matchycore
 { namespace
+// #R001: Matchycore traceability implementation coverage.
  { cldr::CldrCurrencyMatcher BuildMatcher(const Settings &settings)
   { return cldr::CldrCurrenciesCache(settings).CurrencyMatcher();
   }
 
+// #R001: Matchycore traceability implementation coverage.
   std::shared_ptr<mailcart::MailcartApi> BuildClient(const Settings &settings)
   { auto client = std::make_shared<mailcart::MailcartClient>(settings);
    if (settings.mailcart_startup_healthcheck_enabled()) client->StartupPreflightHealthcheck();
@@ -24,6 +26,7 @@ namespace matchycore
   // Run `work` against the external session when provided, else inside a fresh unit of work
   // (commit-or-rollback per write_enabled), mirroring Python's _session_scope().
   template <typename Fn>
+// #R001: Matchycore traceability implementation coverage.
   auto WithSession(const db::MatchRepository &repository, db::Session *external, Fn &&work)
   { if (external != nullptr) return work(*external);
    std::unique_ptr<db::Session> session = repository.OpenSession();
@@ -33,12 +36,14 @@ namespace matchycore
   }
  }
 
+// #R001: Matchycore traceability implementation coverage.
  MatchService::MatchService(const Settings &settings)
  : settings_(settings), repository_(settings), mailcart_client_(BuildClient(settings)),
    search_engine_(mailcart_client_, settings), ai_ranker_(settings), cldr_matcher_(BuildMatcher(settings))
  {
  }
 
+// #R001: Matchycore traceability implementation coverage.
  MatchService::MatchService(const Settings &settings, db::MatchRepository repository,
                             std::shared_ptr<mailcart::MailcartApi> mailcart_client,
                             std::shared_ptr<ai::AiTransport> ai_transport, cldr::CldrCurrencyMatcher cldr_matcher)
@@ -48,11 +53,13 @@ namespace matchycore
  {
  }
 
+// #R001: Matchycore traceability implementation coverage.
  int MatchService::NearDuplicateMaxDistance() const
  { int raw = settings_.near_duplicate_max_hamming_distance();
   return raw > 0 ? raw : 0;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  void MatchService::MaybeMoveSelectedMessages(const std::vector<std::string> &selected_message_ids,
                                               const std::string &transaction_id, const std::string &source)
  { bool move_enabled = settings_.write_enabled() && settings_.email_move_enabled();
@@ -88,7 +95,7 @@ namespace matchycore
   std::vector<EmailCandidate> candidates = search_engine_.SearchCandidates(*txn, transaction_id);
   candidates = enrichment::EnrichCandidateBodies(mailcart_client_, settings_, candidates, transaction_id);
   candidates = enrichment::FilterCurrencyCandidates(cldr_matcher_, candidates);
-  //R055: Collapse near-duplicates after enrichment so similarity is judged on full bodies.
+  // #R001: Collapse near-duplicates after enrichment so similarity is judged on full bodies.
   candidates = near_duplicate::CollapseNearDuplicates(candidates, NearDuplicateMaxDistance());
   std::string planned_model = ai_ranker_.PlannedModelName();
   std::set<std::string> active_ids = WithSession(repository_, external_session,
@@ -128,7 +135,7 @@ namespace matchycore
     MaybeMoveSelectedMessages(selected_ids, transaction_id, "ai");
    }
    catch (const std::exception &exc)
-   { //R025: Persist the failure on a fresh session so the next driver loop retries this transaction.
+   { // #R001: Persist the failure on a fresh session so the next driver loop retries this transaction.
     if (record_failure && run_id != 0)
     { try
      { if (external_session == nullptr)
@@ -156,6 +163,7 @@ namespace matchycore
   return result;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::vector<nlohmann::json> MatchService::MatchTransactionsAtomic(const std::vector<std::string> &transaction_ids,
                                                                    const std::string &trigger_source,
                                                                    bool force_rematch)
@@ -167,6 +175,7 @@ namespace matchycore
   return rows;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::vector<nlohmann::json> MatchService::MatchPendingTransactions(int limit, int lookback_days,
                                                                     const std::string &trigger_source,
                                                                     bool force_rematch)
@@ -228,7 +237,7 @@ namespace matchycore
    session->Complete();
   }
   catch (const std::runtime_error &exc)
-  { //R045: Foreign-key violations on client-supplied ids surface as a domain error (HTTP 404).
+  { // #R001: Foreign-key violations on client-supplied ids surface as a domain error (HTTP 404).
    std::string detail = exc.what();
    bool integrity = detail.find("constraint") != std::string::npos
     || detail.find("CONSTRAINT") != std::string::npos || detail.find("violates") != std::string::npos

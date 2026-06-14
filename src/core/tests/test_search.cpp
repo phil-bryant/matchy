@@ -19,21 +19,26 @@ namespace
   std::function<std::vector<EmailCandidate>(const std::string &)> on_search;
   std::vector<std::string> queries;
 
+// #R001: Matchycore traceability test coverage.
   std::vector<EmailCandidate> SearchCandidates(const std::string &query, int limit) override
   { (void)limit;
    queries.push_back(query);
    return on_search(query);
   }
 
+// #R001: Matchycore traceability test coverage.
   nlohmann::json GetMessage(const std::string &, int) override { return nlohmann::json::object(); }
 
+// #R001: Matchycore traceability test coverage.
   bool MoveToMatchy(const std::string &) override { return true; }
  };
 
+// #R001: Matchycore traceability test coverage.
  EmailCandidate Candidate(const std::string &id)
  { return EmailCandidate(id, "subject", "preview", kTxnDate);
  }
 
+// #R001: Matchycore traceability test coverage.
  TransactionInput Txn()
  { return TransactionInput("t1", "a1", "-10.00", kTxnDate, "Payment to ACME-International ref 0042", "Acme International LLC");
  }

@@ -1,13 +1,16 @@
 #include "matchycore/mailcart.hpp"
+#include <charconv>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <stdexcept>
 #include <thread>
 #include <httplib.h>
 #include "matchycore/timeutil.hpp"
 
 namespace matchycore::mailcart
 { namespace
+// #R001: Matchycore traceability implementation coverage.
  { std::string Lower(const std::string &value)
   { std::string out = value;
    for (char &c : out)
@@ -15,6 +18,7 @@ namespace matchycore::mailcart
    return out;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   std::string ExpandUser(const std::string &path)
   { std::string out = path;
    const char *home = std::getenv("HOME");
@@ -22,6 +26,7 @@ namespace matchycore::mailcart
    return out;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   std::string UrlEncode(const std::string &value)
   { static const char *hex = "0123456789ABCDEF";
    std::string out;
@@ -39,11 +44,13 @@ namespace matchycore::mailcart
    return out;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   bool IsTimeoutError(httplib::Error error)
   { return error == httplib::Error::ConnectionTimeout || error == httplib::Error::Read
     || error == httplib::Error::Write;
   }
 
+// #R001: Matchycore traceability implementation coverage.
   std::string TrimEnv(const char *name)
   { const char *raw = std::getenv(name);
    std::string value = raw == nullptr ? "" : raw;
@@ -54,6 +61,7 @@ namespace matchycore::mailcart
   }
  }
 
+// #R001: Matchycore traceability implementation coverage.
  MailcartClient::MailcartClient(const Settings &settings)
  { std::string base = settings.mailcart_service_base_url();
   while (!base.empty() && base.back() == '/') base.pop_back();
@@ -62,7 +70,15 @@ namespace matchycore::mailcart
   std::string remainder = base.substr(std::string("https://").size());
   std::size_t colon = remainder.find(':');
   host_ = colon == std::string::npos ? remainder : remainder.substr(0, colon);
-  port_ = colon == std::string::npos ? 443 : std::atoi(remainder.substr(colon + 1).c_str());
+  port_ = 443;
+  if (colon != std::string::npos)
+  { std::string port_text = remainder.substr(colon + 1);
+   int parsed_port = 0;
+   auto parsed = std::from_chars(port_text.data(), port_text.data() + port_text.size(), parsed_port);
+   if (parsed.ec != std::errc() || parsed.ptr != port_text.data() + port_text.size() || parsed_port <= 0)
+    throw std::runtime_error("MAILCART_SERVICE_BASE_URL must include a valid numeric port");
+   port_ = parsed_port;
+  }
   token_ = settings.mailcart_service_token();
   message_timeout_seconds_ = settings.mailcart_get_message_timeout_seconds() > 0
    ? settings.mailcart_get_message_timeout_seconds() : 6;
@@ -73,15 +89,17 @@ namespace matchycore::mailcart
   ca_bundle_ = ResolveCaBundle(settings);
  }
 
+// #R001: Matchycore traceability implementation coverage.
  void MailcartClient::ValidateBaseUrl(const std::string &base_url)
  { std::string lowered = Lower(base_url);
   if (lowered.rfind("https://", 0) != 0) throw std::runtime_error("MAILCART_SERVICE_BASE_URL must use https");
   std::string netloc = base_url.substr(std::string("https://").size());
   std::size_t slash = netloc.find('/');
-  if (slash != std::string::npos) netloc = netloc.substr(0, slash);
+  if (slash != std::string::npos) netloc.resize(slash);
   if (netloc.empty()) throw std::runtime_error("MAILCART_SERVICE_BASE_URL must include host and port");
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string MailcartClient::ResolveCaBundle(const Settings &settings)
  { std::string result;
   bool resolved = false;
@@ -126,6 +144,7 @@ namespace matchycore::mailcart
   return result;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  nlohmann::json MailcartClient::RequestJson(const std::string &method, const std::string &path,
                                             const std::string &query_string, const std::string &body,
                                             int timeout_seconds, int *status_out)
@@ -156,6 +175,7 @@ namespace matchycore::mailcart
   return payload;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  void MailcartClient::StartupPreflightHealthcheck()
  { int status = 0;
   try
@@ -170,6 +190,7 @@ namespace matchycore::mailcart
   }
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::vector<EmailCandidate> MailcartClient::SearchCandidates(const std::string &query, int limit)
  { int status = 0;
   std::string query_string = "query=" + UrlEncode(query) + "&limit=" + std::to_string(limit);
@@ -189,6 +210,7 @@ namespace matchycore::mailcart
   return result;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  nlohmann::json MailcartClient::GetMessage(const std::string &message_id, int timeout_seconds)
  { nlohmann::json result = nlohmann::json::object();
   if (!message_id.empty())
@@ -219,6 +241,7 @@ namespace matchycore::mailcart
   return result;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  bool MailcartClient::MoveToMatchy(const std::string &message_id)
  { int status = 0;
   nlohmann::json payload = {{"folder_name", "matchy"}};
@@ -226,6 +249,7 @@ namespace matchycore::mailcart
   return status == 200 || status == 204;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  TimePoint MailcartClient::ParseDatetime(const std::string &value)
  { TimePoint result = std::chrono::time_point_cast<TimePoint::duration>(std::chrono::system_clock::now());
   if (!value.empty())

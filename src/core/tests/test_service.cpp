@@ -20,10 +20,13 @@ namespace
   std::vector<EmailCandidate> results;
   std::vector<std::string> moved;
 
+// #R001: Matchycore traceability test coverage.
   std::vector<EmailCandidate> SearchCandidates(const std::string &, int) override { return results; }
 
+// #R001: Matchycore traceability test coverage.
   nlohmann::json GetMessage(const std::string &, int) override { return nlohmann::json::object(); }
 
+// #R001: Matchycore traceability test coverage.
   bool MoveToMatchy(const std::string &message_id) override
   { moved.push_back(message_id);
    return true;
@@ -32,11 +35,14 @@ namespace
 
  class StubTransport final : public matchycore::ai::AiTransport
  { public:
+// #R001: Matchycore traceability test coverage.
   std::string CreateAnthropicMessage(const std::string &, const std::string &) override { return "{}"; }
 
+// #R001: Matchycore traceability test coverage.
   std::string CreateOpenAiResponse(const std::string &, const std::string &) override { return "{}"; }
  };
 
+// #R001: Matchycore traceability test coverage.
  MatchService BuildService(const matchycore::testfx::Fixture &fixture, std::shared_ptr<StubMailcart> stub,
                            Settings settings = Settings{})
  { settings.set_mailcart_body_enrichment_enabled(false);

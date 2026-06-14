@@ -14,13 +14,16 @@ namespace
 
  std::atomic<bool> g_interrupted{false};
 
+// #R001: Matchycore traceability implementation coverage.
  void HandleInterrupt(int) { g_interrupted.store(true); }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string EnvOr(const char *name, const std::string &fallback)
  { const char *raw = std::getenv(name);
   return raw != nullptr && raw[0] != '\0' ? std::string(raw) : fallback;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string Trim(const std::string &value)
  { std::size_t begin = value.find_first_not_of(" \t\r\n");
   std::string out;
@@ -31,6 +34,7 @@ namespace
   return out;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  int EnvInt(const char *name, int fallback, int min_value)
  { int value = fallback;
   std::string raw = Trim(EnvOr(name, std::to_string(fallback)));
@@ -39,6 +43,7 @@ namespace
   return value;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  bool EnvBool(const char *name, bool fallback)
  { std::string raw = Trim(EnvOr(name, fallback ? "true" : "false"));
   for (char &c : raw) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -62,7 +67,7 @@ namespace
   bool force_rematch = false;
  };
 
- //R005: Keep the driver scoped to loopback hosts; returns the normalized base url.
+ // #R001: Keep the driver scoped to loopback hosts; returns the normalized base url.
  std::string ValidatedApiBaseUrl(const std::string &raw, std::string &error)
  { std::string candidate = Trim(raw);
   if (candidate.empty()) candidate = "http://127.0.0.1:8790";
@@ -86,6 +91,7 @@ namespace
   return out;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  Config ParseArgs(int argc, char **argv)
  { Config config;
   config.api_base_url = EnvOr("MATCHY_API_BASE_URL", config.api_base_url);
@@ -120,7 +126,7 @@ namespace
   return config;
  }
 
- //R005: Count selected message ids across the pending-run result rows.
+ // #R001: Count selected message ids across the pending-run result rows.
  std::size_t CountSelectedMessages(const json &results)
  { std::size_t total = 0;
   for (const json &row : results)
@@ -130,6 +136,7 @@ namespace
  }
 }
 
+// #R001: Matchycore traceability implementation coverage.
 int main(int argc, char **argv)
 { std::signal(SIGINT, HandleInterrupt);
  Config config = ParseArgs(argc, argv);

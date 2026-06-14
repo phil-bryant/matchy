@@ -10,16 +10,18 @@
 
 namespace matchycore::caching
 { namespace
- { //R020: Completed-evaluation statuses; `failed` is excluded so transient errors self-heal.
+ { // #R001: Completed-evaluation statuses; `failed` is excluded so transient errors self-heal.
   const std::set<std::string> kCacheHitStatuses{"succeeded", "needs_review", "no_candidates"};
 
   // Compact SHA-256 (FIPS 180-4) so caching does not depend on OpenSSL in DB-only builds.
   class Sha256
   { public:
+// #R001: Matchycore traceability implementation coverage.
    void Update(const std::string &data)
    { for (char c : data) Byte(static_cast<std::uint8_t>(c));
    }
 
+// #R001: Matchycore traceability implementation coverage.
    std::string Hexdigest()
    { std::uint64_t bit_length = total_ * 8;
     Byte(0x80, true);
@@ -31,6 +33,7 @@ namespace matchycore::caching
    }
 
    private:
+// #R001: Matchycore traceability implementation coverage.
    void Byte(std::uint8_t value, bool padding = false)
    { buffer_[buffer_len_] = value;
     buffer_len_ += 1;
@@ -41,8 +44,10 @@ namespace matchycore::caching
     }
    }
 
+// #R001: Matchycore traceability implementation coverage.
    static std::uint32_t Rotr(std::uint32_t x, unsigned n) { return (x >> n) | (x << (32 - n)); }
 
+// #R001: Matchycore traceability implementation coverage.
    void Compress()
    { static constexpr std::array<std::uint32_t, 64> k =
     { 0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -99,6 +104,7 @@ namespace matchycore::caching
    std::uint64_t total_ = 0;
   };
 
+// #R001: Matchycore traceability implementation coverage.
   std::string JsonString(const nlohmann::json &row, const char *key)
   { std::string out;
    if (row.contains(key) && row[key].is_string()) out = row[key].get<std::string>();
@@ -106,6 +112,7 @@ namespace matchycore::caching
   }
  }
 
+// #R001: Matchycore traceability implementation coverage.
  nlohmann::json RankedCandidateCacheRows(const std::vector<RankedCandidate> &ranked_candidates)
  { nlohmann::json rows = nlohmann::json::array();
   for (const RankedCandidate &ranked : ranked_candidates)
@@ -126,6 +133,7 @@ namespace matchycore::caching
   return rows;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string CandidateSetHash(const nlohmann::json &candidate_cache_rows)
  { std::vector<nlohmann::json> normalized_rows;
   for (const nlohmann::json &row : candidate_cache_rows)
@@ -163,6 +171,7 @@ namespace matchycore::caching
   return digest.Hexdigest();
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string CandidateMessageIdHash(const std::vector<std::string> &message_ids)
  { std::vector<std::string> sorted_ids = message_ids;
   std::sort(sorted_ids.begin(), sorted_ids.end());
@@ -174,6 +183,7 @@ namespace matchycore::caching
   return digest.Hexdigest();
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::optional<nlohmann::json> MaybeCachedResponse(const db::MatchRepository &repository, db::Session &session,
                                                    const std::string &transaction_id, std::size_t candidate_count,
                                                    const std::string &planned_model, const std::string &current_hash,

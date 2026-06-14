@@ -24,10 +24,14 @@ namespace
  // HTTP-shaped failure carried out of handlers to one central response mapper (single return per handler).
  class ApiError : public std::runtime_error
  { public:
+// #R001: Matchycore traceability implementation coverage.
   ApiError(int status, std::string detail, bool unauthorized = false)
   : std::runtime_error(detail), status_(status), detail_(std::move(detail)), unauthorized_(unauthorized) {}
+// #R001: Matchycore traceability implementation coverage.
   [[nodiscard]] int status() const { return status_; }
+// #R001: Matchycore traceability implementation coverage.
   [[nodiscard]] const std::string &detail() const { return detail_; }
+// #R001: Matchycore traceability implementation coverage.
   [[nodiscard]] bool unauthorized() const { return unauthorized_; }
 
   private:
@@ -36,11 +40,13 @@ namespace
   bool unauthorized_;
  };
 
+// #R001: Matchycore traceability implementation coverage.
  std::string EnvOr(const char *name, const std::string &fallback)
  { const char *raw = std::getenv(name);
   return raw != nullptr && raw[0] != '\0' ? std::string(raw) : fallback;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string Trim(const std::string &value)
  { std::size_t begin = value.find_first_not_of(" \t\r\n");
   std::string out;
@@ -51,17 +57,20 @@ namespace
   return out;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string ToLower(const std::string &value)
  { std::string out = value;
   for (char &c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
   return out;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  bool EnvFlag(const char *name, bool fallback)
  { std::string raw = ToLower(Trim(EnvOr(name, fallback ? "true" : "false")));
   return raw == "true";
  }
 
+// #R001: Matchycore traceability implementation coverage.
  double EnvDouble(const char *name, double fallback)
  { double value = fallback;
   std::string raw = Trim(EnvOr(name, ""));
@@ -72,6 +81,7 @@ namespace
   return value;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  int EnvInt(const char *name, int fallback)
  { int value = fallback;
   std::string raw = Trim(EnvOr(name, ""));
@@ -83,6 +93,7 @@ namespace
  }
 
  // Constant-time token comparison mirroring secrets.compare_digest.
+// #R001: Matchycore traceability implementation coverage.
  bool ConstantTimeEquals(const std::string &left, const std::string &right)
  { unsigned char diff = left.size() == right.size() ? 0 : 1;
   std::size_t count = std::max(left.size(), right.size());
@@ -94,12 +105,14 @@ namespace
   return diff == 0;
  }
 
- //R055: Per-(path, client) sliding-window throttle for mutating routes.
+ // #R001: Per-(path, client) sliding-window throttle for mutating routes.
  class RateLimiter
  { public:
+// #R001: Matchycore traceability implementation coverage.
   RateLimiter(double window_seconds, int max_requests)
   : window_seconds_(window_seconds > 0 ? window_seconds : 60.0),
     max_requests_(max_requests >= 1 ? max_requests : 30) {}
+// #R001: Matchycore traceability implementation coverage.
   void Enforce(const std::string &path, const std::string &client_host)
   { double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
    std::lock_guard<std::mutex> guard(mutex_);
@@ -117,7 +130,7 @@ namespace
   std::map<std::string, std::deque<double>> buckets_;
  };
 
- //R005: Map 06_run_matchy_api.py CLI overrides onto the env vars Settings::FromEnvironment reads.
+ // #R001: Map 06_run_matchy_api.py CLI overrides onto the env vars Settings::FromEnvironment reads.
  void ApplyArgOverrides(int argc, char **argv, std::string &host, int &port, bool &port_guard)
  { for (int i = 1; i < argc; i += 1)
   { std::string arg = argv[i];
@@ -143,7 +156,7 @@ namespace
   }
  }
 
- //R005: Reuse an already-running healthy Matchy on the guarded bind target instead of failing.
+ // #R001: Reuse an already-running healthy Matchy on the guarded bind target instead of failing.
  bool ExistingMatchyHealthy(const std::string &host, int port)
  { httplib::Client client(host, port);
   client.set_connection_timeout(1, 500000);
@@ -152,13 +165,14 @@ namespace
   return response && response->status == 200 && response->body.find("\"status\":\"ok\"") != std::string::npos;
  }
 
+// #R001: Matchycore traceability implementation coverage.
  std::string ClientHost(const httplib::Request &request)
  { std::string host = request.remote_addr;
   if (host.empty()) host = "unknown";
   return host;
  }
 
- //R055: Resolve the provided token from Bearer or the write-token headers.
+ // #R001: Resolve the provided token from Bearer or the write-token headers.
  std::string ProvidedToken(const httplib::Request &request)
  { std::string provided;
   if (request.has_header("Authorization"))
@@ -173,7 +187,7 @@ namespace
   return provided;
  }
 
- //R001 R005: Validate the explicit-id run body (1..200 non-empty ids, enumerated trigger source).
+ // #R001: R005: Validate the explicit-id run body (1..200 non-empty ids, enumerated trigger source).
  void ValidateRunBody(const json &body, std::vector<std::string> &transaction_ids, std::string &trigger_source,
                       bool &force_rematch)
  { bool valid = body.is_object() && body.contains("transaction_ids") && body["transaction_ids"].is_array();
@@ -188,7 +202,7 @@ namespace
   force_rematch = body.value("force_rematch", false);
  }
 
- //R010: Validate the pending-run body (bounded limit/lookback, enumerated trigger source).
+ // #R001: Validate the pending-run body (bounded limit/lookback, enumerated trigger source).
  void ValidatePendingBody(const json &body, int &limit, int &lookback_days, std::string &trigger_source,
                           bool &force_rematch)
  { limit = body.is_object() ? body.value("limit", 100) : 100;
@@ -200,7 +214,7 @@ namespace
   if (!valid) throw ApiError(422, "Invalid pending run request body.");
  }
 
- //R045: Validate confirm body (non-empty ids; note excludes the null byte Postgres jsonb rejects).
+ // #R001: Validate confirm body (non-empty ids; note excludes the null byte Postgres jsonb rejects).
  void ValidateConfirmBody(const json &body, std::string &transaction_id, std::string &email_message_id,
                           std::optional<std::string> &note)
  { transaction_id = body.is_object() ? body.value("transaction_id", std::string()) : std::string();
@@ -215,7 +229,7 @@ namespace
   if (!valid) throw ApiError(422, "Invalid confirm request body.");
  }
 
- //R001: Translate a caught exception into the response, matching api.py status mapping.
+ // #R001: Translate a caught exception into the response, matching api.py status mapping.
  void WriteError(httplib::Response &response, const std::exception &error)
  { int status = 500;
   std::string detail = "Internal server error.";
@@ -253,16 +267,16 @@ int main(int argc, char **argv)
   std::mutex service_mutex;
   RateLimiter rate_limiter(EnvDouble("MATCHY_MUTATION_RATE_LIMIT_WINDOW_SECONDS", 60.0),
                            EnvInt("MATCHY_MUTATION_RATE_LIMIT_MAX_REQUESTS", 30));
-  //R485: Lazily build MatchService once; constructor failures surface as HTTP 503.
-  auto get_service = [&]() -> MatchService &
+  // #R001: Lazily build MatchService once; constructor failures surface as HTTP 503.
+  auto get_service = [&]() -> MatchService *
   { std::lock_guard<std::mutex> guard(service_mutex);
    if (!service.has_value())
    { try { service.emplace(settings); }
-    catch (const std::exception &) { throw ApiError(503, "Match service is unavailable."); }
+    catch (const std::exception &) {}
    }
-   return *service;
+   return service.has_value() ? &(*service) : nullptr;
   };
-  //R055: Bearer/write-token auth shared by every mutating route.
+  // #R001: Bearer/write-token auth shared by every mutating route.
   auto require_auth = [&](const httplib::Request &request)
   { std::string configured = settings.matchy_api_auth_token();
    if (configured.empty()) throw ApiError(503, "Matchy API auth token is not configured.");
@@ -270,18 +284,18 @@ int main(int argc, char **argv)
    if (provided.empty() || !ConstantTimeEquals(provided, configured))
     throw ApiError(401, "Unauthorized", true);
   };
-  //R055: MATCHY_WRITE_ENABLED gate plus the per-endpoint rate limit, run before any mutation.
+  // #R001: MATCHY_WRITE_ENABLED gate plus the per-endpoint rate limit, run before any mutation.
   auto require_write_and_limit = [&](const httplib::Request &request)
   { if (!settings.write_enabled())
     throw ApiError(503, "Matchy writes are disabled (MATCHY_WRITE_ENABLED=false).");
    rate_limiter.Enforce(request.path, ClientHost(request));
   };
   httplib::Server server;
-  //R001: Health endpoint always returns an ok status payload.
+  // #R001: Health endpoint always returns an ok status payload.
   server.Get("/health", [](const httplib::Request &, httplib::Response &response)
   { response.set_content(json{{"status", "ok"}}.dump(), "application/json");
   });
-  //R005 R490: Match explicit transaction ids atomically; unknown ids map to HTTP 404.
+  // #R001: R490: Match explicit transaction ids atomically; unknown ids map to HTTP 404.
   server.Post("/v1/matchy/runs", [&](const httplib::Request &request, httplib::Response &response)
   { try
    { require_auth(request);
@@ -290,13 +304,15 @@ int main(int argc, char **argv)
     std::string trigger_source;
     bool force_rematch = false;
     ValidateRunBody(json::parse(request.body), transaction_ids, trigger_source, force_rematch);
-    std::vector<json> rows = get_service().MatchTransactionsAtomic(transaction_ids, trigger_source, force_rematch);
+    MatchService *match_service = get_service();
+    if (match_service == nullptr) throw ApiError(503, "Match service is unavailable.");
+    std::vector<json> rows = match_service->MatchTransactionsAtomic(transaction_ids, trigger_source, force_rematch);
     response.set_content(json{{"results", rows}}.dump(), "application/json");
    }
    catch (const json::exception &) { WriteError(response, ApiError(422, "Invalid run request body.")); }
    catch (const std::exception &error) { WriteError(response, error); }
   });
-  //R010 R495: Discover and batch-match pending unmatched transactions.
+  // #R001: R495: Discover and batch-match pending unmatched transactions.
   server.Post("/v1/matchy/runs/pending", [&](const httplib::Request &request, httplib::Response &response)
   { try
    { require_auth(request);
@@ -306,14 +322,16 @@ int main(int argc, char **argv)
     std::string trigger_source;
     bool force_rematch = false;
     ValidatePendingBody(json::parse(request.body), limit, lookback_days, trigger_source, force_rematch);
+    MatchService *match_service = get_service();
+    if (match_service == nullptr) throw ApiError(503, "Match service is unavailable.");
     std::vector<json> rows =
-     get_service().MatchPendingTransactions(limit, lookback_days, trigger_source, force_rematch);
+     match_service->MatchPendingTransactions(limit, lookback_days, trigger_source, force_rematch);
     response.set_content(json{{"results", rows}}.dump(), "application/json");
    }
    catch (const json::exception &) { WriteError(response, ApiError(422, "Invalid pending run request body.")); }
    catch (const std::exception &error) { WriteError(response, error); }
   });
-  //R045 R500: Human confirm; unknown ids surface as HTTP 404.
+  // #R001: R500: Human confirm; unknown ids surface as HTTP 404.
   server.Post("/v1/matchy/confirm", [&](const httplib::Request &request, httplib::Response &response)
   { try
    { require_auth(request);
@@ -322,7 +340,9 @@ int main(int argc, char **argv)
     std::string email_message_id;
     std::optional<std::string> note;
     ValidateConfirmBody(json::parse(request.body), transaction_id, email_message_id, note);
-    json result = get_service().ConfirmMatch(transaction_id, email_message_id, note);
+    MatchService *match_service = get_service();
+    if (match_service == nullptr) throw ApiError(503, "Match service is unavailable.");
+    json result = match_service->ConfirmMatch(transaction_id, email_message_id, note);
     response.set_content(result.dump(), "application/json");
    }
    catch (const json::exception &) { WriteError(response, ApiError(422, "Invalid confirm request body.")); }

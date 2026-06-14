@@ -12,6 +12,7 @@
 // SQLCipher-backed teller schema fixture mirroring tellercore's test fixture, with the minimal
 // account graph one matchy transaction needs (institution -> account -> details -> transaction).
 namespace matchycore::testfx
+// #R001: Matchycore traceability test coverage.
 { inline std::string ReadFile(const std::string &path)
  { std::ifstream in(path);
   if (!in.is_open()) throw std::runtime_error("cannot open file: " + path);
@@ -22,6 +23,7 @@ namespace matchycore::testfx
 
  class Fixture
  { public:
+// #R001: Matchycore traceability test coverage.
   Fixture()
   { std::random_device rd;
    dir_ = std::filesystem::temp_directory_path() / ("matchycore-test-" + std::to_string(rd()));
@@ -51,11 +53,13 @@ namespace matchycore::testfx
    )sql");
   }
 
+// #R001: Matchycore traceability test coverage.
   ~Fixture()
   { std::error_code ec;
    std::filesystem::remove_all(dir_, ec);
   }
 
+// #R001: Matchycore traceability test coverage.
   [[nodiscard]] tellercore::DbProfile Profile() const
   { tellercore::DbProfile profile;
    profile.name = "sqlite";
@@ -65,6 +69,7 @@ namespace matchycore::testfx
    return profile;
   }
 
+// #R001: Matchycore traceability test coverage.
   [[nodiscard]] db::MatchRepository Repository(bool write_enabled = true) const
   { Settings settings;
    settings.set_write_enabled(write_enabled);
