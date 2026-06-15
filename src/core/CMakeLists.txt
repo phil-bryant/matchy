@@ -99,7 +99,13 @@ if(MATCHYCORE_BUILD_TOOLS AND MATCHYCORE_ENABLE_HTTP AND MATCHYCORE_ENABLE_DB)
   target_link_libraries(matchy_driver PRIVATE matchycore httplib::httplib OpenSSL::SSL OpenSSL::Crypto)
 
   add_executable(matchy_oracle_runner tools/oracle_runner.cpp)
-  target_link_libraries(matchy_oracle_runner PRIVATE matchycore)
+  target_link_libraries(matchy_oracle_runner PRIVATE matchycore httplib::httplib OpenSSL::SSL OpenSSL::Crypto)
+  if(MATCHYCORE_ENABLE_DB)
+    get_filename_component(MATCHY_TELLER_SQLITE_DDL_TOOL
+      "${MATCHYCORE_TELLER_CORE_DIR}/../sql/sqlite/create_database.sql" ABSOLUTE)
+    target_compile_definitions(matchy_oracle_runner PRIVATE
+      TELLER_SQLITE_DDL_PATH="${MATCHY_TELLER_SQLITE_DDL_TOOL}")
+  endif()
 endif()
 
 if(MATCHYCORE_BUILD_TESTS)
@@ -111,13 +117,15 @@ if(MATCHYCORE_BUILD_TESTS)
   set(MATCHYCORE_TEST_SOURCES
     tests/test_smoke.cpp
     tests/test_scoring.cpp
-    tests/test_near_duplicate.cpp)
+    tests/test_near_duplicate.cpp
+    tests/test_api_contract.cpp)
   if(MATCHYCORE_ENABLE_HTTP)
     list(APPEND MATCHYCORE_TEST_SOURCES
       tests/test_mailcart.cpp tests/test_search.cpp tests/test_enrichment.cpp tests/test_cldr.cpp tests/test_ai_ranker.cpp)
   endif()
   if(MATCHYCORE_ENABLE_DB)
-    list(APPEND MATCHYCORE_TEST_SOURCES tests/test_settings.cpp tests/test_repository.cpp)
+    list(APPEND MATCHYCORE_TEST_SOURCES
+      tests/test_settings.cpp tests/test_repository.cpp tests/test_caching.cpp tests/test_match_writer.cpp)
   endif()
   if(MATCHYCORE_ENABLE_HTTP AND MATCHYCORE_ENABLE_DB)
     list(APPEND MATCHYCORE_TEST_SOURCES tests/test_service.cpp)

@@ -96,3 +96,23 @@
   [ "$status" -eq 0 ]
   [[ "$output" == *".gitignore"* ]]
 }
+
+@test "compiled binaries remain ignored" {
+  #R050: Compiled binary artifacts must be excluded from version control.
+  #R050-T01: bin/* probe paths are reported ignored.
+  run git check-ignore -v "bin/matchy_api"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *".gitignore"* ]]
+  [[ "$output" == *"bin/*"* ]]
+}
+
+@test "cxx core build trees remain ignored" {
+  #R055: Generated C++ core build trees must be excluded from version control.
+  #R055-T01: C++ build-tree probe paths are reported ignored.
+  run git check-ignore -v "src/core/build/compile_commands.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *".gitignore"* ]]
+  run git check-ignore -v "src/core/build-debug/compile_commands.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *".gitignore"* ]]
+}

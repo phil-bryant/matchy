@@ -1,0 +1,61 @@
+{
+  "scenarios": [
+    {
+      "name": "match_transaction_strong_match",
+      "op": "match_transaction",
+      "payload": {
+        "transaction_id": "txn-1",
+        "trigger_source": "manual",
+        "force_rematch": false,
+        "candidates": [
+          {
+            "message_id": "m-strong",
+            "subject": "Your Blue Bottle Coffee receipt",
+            "preview": "Receipt from Blue Bottle Coffee",
+            "received_at": "2024-06-01T13:00:00Z",
+            "sender": "receipts@bluebottle.com",
+            "body_text": "BLUE BOTTLE COFFEE purchase total 10.50 thank you"
+          },
+          {
+            "message_id": "m-weak",
+            "subject": "Weekly newsletter",
+            "preview": "this week in news",
+            "received_at": "2024-05-10T09:00:00Z",
+            "sender": "news@example.com",
+            "body_text": "completely unrelated newsletter content"
+          }
+        ]
+      }
+    },
+    {
+      "name": "match_transaction_no_candidates",
+      "op": "match_transaction",
+      "payload": {
+        "transaction_id": "txn-2",
+        "trigger_source": "manual",
+        "force_rematch": false,
+        "candidates": []
+      }
+    },
+    {
+      "name": "match_pending_batch",
+      "op": "match_pending",
+      "payload": {
+        "limit": 100,
+        "lookback_days": 36500,
+        "trigger_source": "auto",
+        "force_rematch": false,
+        "candidates": []
+      }
+    },
+    {
+      "name": "confirm_human_match",
+      "op": "confirm",
+      "payload": {
+        "transaction_id": "txn-1",
+        "email_message_id": "m-confirmed",
+        "note": "human verified"
+      }
+    }
+  ]
+}

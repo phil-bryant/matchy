@@ -40,6 +40,30 @@ def _resolve_mkcert_root_ca() -> str:
     return resolved
 
 
+class _NoDbDastService:
+    #R015: Explicit-id writes report domain misses when DAST runs without seeded DB fixtures.
+    def match_transactions_atomic(
+        self, transaction_ids, trigger_source="manual", force_rematch=False  # noqa: ANN001
+    ):
+        raise ValueError(f"DAST no-DB service has no seeded transaction ids: {transaction_ids}")
+
+    #R015: Pending scans return an empty batch instead of writing to the developer database.
+    def match_pending_transactions(
+        self, limit=100, lookback_days=14, trigger_source="auto", force_rematch=False  # noqa: ANN001
+    ):
+        return []
+
+    #R015: Confirm writes report domain misses when DAST runs without seeded DB fixtures.
+    def confirm_match(self, transaction_id, email_message_id, note=None):  # noqa: ANN001
+        raise ValueError(f"DAST no-DB service has no seeded confirm ids: {transaction_id}/{email_message_id}")
+
+
+#R015: Install the no-DB service stub unless the dynamic lane explicitly enables DB integration.
+def _install_no_db_service_stub(matchy_api_module) -> None:  # noqa: ANN001
+    if os.environ.get("DAST_DB_INTEGRATION", "false").strip().lower() != "true":
+        matchy_api_module.MatchService = lambda _settings: _NoDbDastService()
+
+
 #R010: Bind host/port/TLS from the dynamic-lane environment contract and serve the matchy app over HTTPS.
 def main() -> None:
     home_certs = Path.home() / ".teller"
@@ -65,8 +89,11 @@ def main() -> None:
         os.environ["MATCHY_ENABLE_API_DOCS"] = "true"
     if not os.environ.get("MATCHY_MUTATION_RATE_LIMIT_MAX_REQUESTS", "").strip():
         os.environ["MATCHY_MUTATION_RATE_LIMIT_MAX_REQUESTS"] = "1000"
-    from matchy.api import create_app
-    uvicorn.run(create_app(), host=host, port=port, ssl_certfile=cert, ssl_keyfile=key, log_level="warning")
+    import matchy.api as matchy_api
+    _install_no_db_service_stub(matchy_api)
+    uvicorn.run(
+        matchy_api.create_app(), host=host, port=port, ssl_certfile=cert, ssl_keyfile=key, log_level="warning"
+    )
 
 
 #R001: Run only when invoked directly so the module stays importable for unit tests.

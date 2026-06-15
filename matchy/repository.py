@@ -18,7 +18,7 @@ from .models import TransactionInput
 from .settings import Settings
 
 
-#R030: Resolve owned-schema table references for the active backend target.
+#R035: Resolve owned-schema table references for the active backend target.
 def _sql(sql_text: str):
     return text(sql_for_target(sql_text))
 

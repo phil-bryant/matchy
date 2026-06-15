@@ -116,6 +116,7 @@ def test_sqlite_profile_target_skips_postgres_credential_resolution(monkeypatch:
     _clear_secret_env(monkeypatch)
     monkeypatch.setattr("matchy.settings._teller_profile_target", lambda: "sqlite")
 
+    #R882: Stub proves sqlite target skips Postgres credential resolution.
     def _no_db_resolution(self):  # noqa: ANN001
         raise AssertionError("sqlite target must not resolve postgres credentials")
 

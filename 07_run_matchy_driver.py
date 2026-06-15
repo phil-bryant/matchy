@@ -3,12 +3,15 @@
 import argparse
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import os
+import subprocess
 import time
 from time import perf_counter
 from urllib.parse import urlparse
 
 import requests
 
+DEFAULT_ENGINE = "cpp"
+_CMAKE_BUILD_TYPE_ARG = "-DCMAKE_BUILD_TYPE=RelWithDebInfo"  # pragma: allowlist secret
 DEFAULT_API_BASE_URL = "http://127.0.0.1:8790"
 DEFAULT_LIMIT = 10
 DEFAULT_LOOKBACK_DAYS = 14
@@ -133,6 +136,8 @@ def _post_pending_run_with_profile_heartbeat(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Matchy pending-transaction driver")
+    #R015: Engine selection (cpp default, python opt-in) is exposed for the C++ cutover with A/B testing.
+    parser.add_argument("--engine", choices=["cpp", "python"], default=None)
     #R010: Driver startup profiling logs are opt-in via --profile.
     parser.add_argument("--profile", action="store_true", default=False)
     parser.add_argument("--api-base-url", default=os.environ.get("MATCHY_API_BASE_URL", DEFAULT_API_BASE_URL))
@@ -161,10 +166,61 @@ def _count_selected_messages(results: list[dict]) -> int:
     return total
 
 
+#R015: Resolve the runtime engine, defaulting to the C++ core with a Python opt-out.
+def _resolve_engine(args: argparse.Namespace) -> str:
+    engine = (args.engine or os.environ.get("MATCHY_ENGINE", DEFAULT_ENGINE)).strip().lower()
+    if engine not in {"cpp", "python"}:
+        engine = DEFAULT_ENGINE
+    return engine
+
+
+#R015: Build the C++ matchycore tool on demand so the cutover entrypoint is self-contained.
+def _ensure_cpp_binary(repo_root: str, target: str) -> str:
+    core_dir = os.path.join(repo_root, "src", "core")
+    build_dir = os.path.join(core_dir, "build")
+    binary = os.path.join(build_dir, target)
+    if not os.path.isfile(binary):
+        subprocess.run(["cmake", "-S", core_dir, "-B", build_dir, _CMAKE_BUILD_TYPE_ARG], check=True)
+        subprocess.run(["cmake", "--build", build_dir, "--target", target, "-j", str(os.cpu_count() or 4)], check=True)
+    if not os.path.isfile(binary):
+        raise SystemExit(f"Failed to build C++ {target} at {binary}")
+    return binary
+
+
+#R015: Translate the parsed driver flags into the C++ matchy_driver argument vector.
+def _cpp_driver_passthrough(args: argparse.Namespace) -> list[str]:
+    passthrough = [
+        "--api-base-url", str(args.api_base_url),
+        "--limit", str(args.limit),
+        "--lookback-days", str(args.lookback_days),
+        "--interval-seconds", str(args.interval_seconds),
+        "--timeout-seconds", str(args.timeout_seconds),
+        "--max-runs", str(args.max_runs),
+        "--trigger-source", str(args.trigger_source),
+        "--api-auth-token", str(args.api_auth_token),
+    ]
+    if args.once:
+        passthrough.append("--once")
+    if args.force_rematch:
+        passthrough.append("--force-rematch")
+    if args.profile:
+        passthrough.append("--profile")
+    return passthrough
+
+
+#R015: Hand off to the authoritative C++ matchy_driver binary, mirroring the driver's flag contract.
+def _exec_cpp_driver(args: argparse.Namespace) -> None:
+    repo_root = os.path.dirname(os.path.abspath(__file__))
+    binary = _ensure_cpp_binary(repo_root, "matchy_driver")
+    os.execv(binary, [binary, *_cpp_driver_passthrough(args)])
+
+
 #R005: Loop on an interval and call pending-run endpoint with deterministic defaults or env overrides.
 def _run_driver_loop() -> int:
     startup_started_at = perf_counter()
     args = _parse_args()
+    if _resolve_engine(args) == "cpp":
+        _exec_cpp_driver(args)
     _startup_log(startup_started_at, "args-parsed", profile_enabled=args.profile)
     api_base_url = _validated_api_base_url(args.api_base_url)
     _startup_log(startup_started_at, "api-base-url-validated", f"api_base_url={api_base_url}", profile_enabled=args.profile)

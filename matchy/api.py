@@ -16,6 +16,7 @@ from .service import MatchService
 from .settings import Settings
 
 NonEmptyId = Annotated[str, Field(min_length=1)]
+TransactionId = Annotated[str, Field(min_length=1, pattern=r"^txn_[A-Za-z0-9_-]+$")]
 SafeOptionalNote = Annotated[str, Field(pattern=r"^[^\x00]*$")]
 LOGGER = logging.getLogger(__name__)
 
@@ -46,8 +47,8 @@ class PendingMatchRunRequest(BaseModel):
 
 
 class ConfirmRequest(BaseModel):
-    #R045: Confirm endpoint ids are required and note excludes null bytes that Postgres rejects in jsonb payloads.
-    transaction_id: NonEmptyId
+    #R045: Confirm endpoint ids are required, transaction ids use teller's txn_ prefix, and note excludes null bytes.
+    transaction_id: TransactionId
     email_message_id: NonEmptyId
     note: SafeOptionalNote | None = None
 

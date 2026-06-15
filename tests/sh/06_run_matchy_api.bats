@@ -28,7 +28,7 @@ teardown() {
   #R001-T01: Script executes in fixture and reaches uvicorn launch path.
   #R005: uvicorn bind host/port are deterministic for local runs.
   #R005-T01: Host/port match deterministic default bind settings.
-  run env MATCHY_PORT_GUARD="false" PYTHONPATH="${FIXTURE_ROOT}" python3 "${FIXTURE_ROOT}/06_run_matchy_api.py"
+  run env MATCHY_PORT_GUARD="false" PYTHONPATH="${FIXTURE_ROOT}" python3 "${FIXTURE_ROOT}/06_run_matchy_api.py" --engine python
   [ "$status" -eq 0 ]
   [[ "$output" == *"host=127.0.0.1"* ]]
   [[ "$output" == *"port=8790"* ]]
@@ -40,7 +40,15 @@ teardown() {
 @test "run script emits startup profiling logs only with --profile" {
   #R010: --profile enables startup timing logs for launcher startup phases.
   #R010-T02: Startup profiling lines are emitted when --profile is supplied.
-  run env MATCHY_PORT_GUARD="false" PYTHONPATH="${FIXTURE_ROOT}" python3 "${FIXTURE_ROOT}/06_run_matchy_api.py" --profile
+  run env MATCHY_PORT_GUARD="false" PYTHONPATH="${FIXTURE_ROOT}" python3 "${FIXTURE_ROOT}/06_run_matchy_api.py" --engine python --profile
   [ "$status" -eq 0 ]
   [[ "$output" == *"[matchy-startup +"* ]]
+}
+
+@test "engine selection keeps the in-process python app opt-in" {
+  #R015: --engine python runs the in-process uvicorn app instead of the C++ runtime.
+  #R015-T01: Selecting the python engine reaches the uvicorn launch path.
+  run env MATCHY_PORT_GUARD="false" PYTHONPATH="${FIXTURE_ROOT}" python3 "${FIXTURE_ROOT}/06_run_matchy_api.py" --engine python
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"uvicorn-run host=127.0.0.1"* ]]
 }

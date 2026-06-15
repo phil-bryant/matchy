@@ -7,6 +7,8 @@
 import logging
 from types import SimpleNamespace
 
+import pytest
+
 from matchy.cldr_cache import CldrCurrencyMatcher
 from matchy.service import MatchService
 
@@ -281,6 +283,8 @@ def test_service_confirm_match_delegates_to_repository() -> None:
         #R045: Test helper supports this requirement-focused scenario.
         def session(self): return FakeRepo.Ctx()
         #R045: Test helper supports this requirement-focused scenario.
+        def load_transaction(self, _s, txn): return SimpleNamespace(transaction_id=txn)
+        #R045: Test helper supports this requirement-focused scenario.
         def deactivate_active_match(self, _s, txn): calls.append(("deact", txn))
         #R045: Test helper supports this requirement-focused scenario.
         def insert_human_confirmed_match(self, _s, txn, eml, note):
@@ -297,7 +301,30 @@ def test_service_confirm_match_delegates_to_repository() -> None:
     service._repository = FakeRepo()
     service._mailcart_client = FakeMailcartClient()
     service._settings = SimpleNamespace(email_move_enabled=True, write_enabled=True)
-    result = service.confirm_match("t123", "e456", "note")
-    assert calls == [("deact", "t123"), ("insert", "t123", "e456", "note")]
+    result = service.confirm_match("txn_123", "e456", "note")
+    assert calls == [("deact", "txn_123"), ("insert", "txn_123", "e456", "note")]
     assert moved == ["e456"]
     assert result == {"status": "confirmed", "match_id": 321}
+
+
+def test_service_confirm_match_maps_unknown_transaction_to_value_error() -> None:
+    #R045-T01: confirm_match maps unknown transaction ids before attempting confirm writes.
+    class FakeRepo:
+        class Ctx:
+            #R045: Test helper supports this requirement-focused scenario.
+            def __enter__(self): return object()
+            #R045: Test helper supports this requirement-focused scenario.
+            def __exit__(self, *a): return False
+        #R045: Test helper supports this requirement-focused scenario.
+        def session(self): return FakeRepo.Ctx()
+        #R045: Test helper supports this requirement-focused scenario.
+        def load_transaction(self, _s, _txn): return None
+        #R045: Test helper supports this requirement-focused scenario.
+        def deactivate_active_match(self, _s, _txn): raise AssertionError("should not write")
+
+    service = object.__new__(MatchService)
+    service._repository = FakeRepo()
+    service._mailcart_client = SimpleNamespace(move_to_matchy=lambda _message_id: True)
+    service._settings = SimpleNamespace(email_move_enabled=True, write_enabled=True)
+    with pytest.raises(ValueError):
+        service.confirm_match("txn_missing", "e456", "note")

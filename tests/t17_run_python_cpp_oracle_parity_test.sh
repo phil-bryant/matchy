@@ -23,6 +23,10 @@ cmake -S "${CORE_DIR}" -B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE=RelWithDebInfo >/dev
 cmake --build "${BUILD_DIR}" -j "$(sysctl -n hw.ncpu)" --target matchy_oracle_runner >/dev/null
 
 #R010: Diff normalized JSON scenarios between the Python reference and the C++ oracle runner.
+# Deterministic scoring/caching/near-duplicate/CLDR ops plus end-to-end DB+Mailcart+AI scenarios
+# (seeded SQLCipher fixture, stubbed Mailcart/AI) so every migrated layer is parity-proven.
 "${VENV_PY}" "${CORE_DIR}/oracle/compare_oracle.py" \
-  --runner "${BUILD_DIR}/matchy_oracle_runner"
+  --runner "${BUILD_DIR}/matchy_oracle_runner" \
+  --scenarios "${CORE_DIR}/oracle/scenarios.json" \
+  --e2e-scenarios "${CORE_DIR}/oracle/scenarios_e2e.json"
 echo "t17: Python/C++ oracle parity passed"

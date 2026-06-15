@@ -5,13 +5,18 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
-from .db_target import bind_timestamp, is_sqlite, jsonb_param, sql_for_target
+from .db_target import bind_timestamp, is_sqlite, sql_for_target
 from .models import AiSelection, RankedCandidate
 
 
-#R030: Resolve owned-schema table references for the active backend target.
+#R035: Resolve owned-schema table references for the active backend target.
 def _sql(sql_text: str):
     return text(sql_for_target(sql_text))
+
+
+#R035: Select backend-specific static SQL to avoid string-built query templates.
+def _jsonb_sql(postgres_sql: str, sqlite_sql: str) -> str:
+    return sqlite_sql if is_sqlite() else postgres_sql
 
 
 class MatchWriterMixin:
@@ -22,7 +27,8 @@ class MatchWriterMixin:
             preview = ranked.candidate.preview or ranked.candidate.body_text[:240] if ranked.candidate.body_text else ranked.candidate.preview
             session.execute(
                 _sql(
-                    f"""
+                    _jsonb_sql(
+                    """
                     INSERT INTO matchy.transaction_email_candidate (
                         match_run_id,
                         transaction_id,
@@ -42,7 +48,37 @@ class MatchWriterMixin:
                         :email_message_id,
                         :email_received_at,
                         :score,
-                        {jsonb_param("reason_json")},
+                        CAST(:reason_json AS jsonb),
+                        :is_unmatched_email_priority,
+                        :is_selected_by_ai,
+                        :cached_subject,
+                        :cached_sender,
+                        :cached_snippet,
+                        CASE WHEN :cached_subject IS NULL AND :cached_sender IS NULL AND :cached_snippet IS NULL
+                             THEN NULL ELSE CURRENT_TIMESTAMP END
+                    )
+                    """,
+                    """
+                    INSERT INTO matchy.transaction_email_candidate (
+                        match_run_id,
+                        transaction_id,
+                        email_message_id,
+                        email_received_at,
+                        score,
+                        reason_json,
+                        is_unmatched_email_priority,
+                        is_selected_by_ai,
+                        cached_subject,
+                        cached_sender,
+                        cached_snippet,
+                        cached_fetched_at
+                    ) VALUES (
+                        :match_run_id,
+                        :transaction_id,
+                        :email_message_id,
+                        :email_received_at,
+                        :score,
+                        :reason_json,
                         :is_unmatched_email_priority,
                         :is_selected_by_ai,
                         :cached_subject,
@@ -52,6 +88,7 @@ class MatchWriterMixin:
                              THEN NULL ELSE CURRENT_TIMESTAMP END
                     )
                     """
+                    )
                 ),
                 {
                     "match_run_id": match_run_id,
@@ -116,7 +153,8 @@ class MatchWriterMixin:
         if not ranked_candidates or not selected_ids:
             session.execute(
                 _sql(
-                    f"""
+                    _jsonb_sql(
+                    """
                     INSERT INTO matchy.transaction_email_match (
                         transaction_id,
                         email_message_id,
@@ -131,12 +169,34 @@ class MatchWriterMixin:
                         NULL,
                         'ai_no_match_found',
                         :ai_confidence,
-                        {jsonb_param("explanation_json")},
+                        CAST(:explanation_json AS jsonb),
+                        'ai',
+                        :selected_at,
+                        TRUE
+                    )
+                    """,
+                    """
+                    INSERT INTO matchy.transaction_email_match (
+                        transaction_id,
+                        email_message_id,
+                        state,
+                        ai_confidence,
+                        explanation_json,
+                        selected_by,
+                        selected_at,
+                        active
+                    ) VALUES (
+                        :transaction_id,
+                        NULL,
+                        'ai_no_match_found',
+                        :ai_confidence,
+                        :explanation_json,
                         'ai',
                         :selected_at,
                         TRUE
                     )
                     """
+                    )
                 ),
                 {
                     "transaction_id": transaction_id,
@@ -163,7 +223,8 @@ class MatchWriterMixin:
                 continue
             session.execute(
                 _sql(
-                    f"""
+                    _jsonb_sql(
+                    """
                     INSERT INTO matchy.transaction_email_match (
                         transaction_id,
                         email_message_id,
@@ -178,12 +239,34 @@ class MatchWriterMixin:
                         :email_message_id,
                         :state,
                         :ai_confidence,
-                        {jsonb_param("explanation_json")},
+                        CAST(:explanation_json AS jsonb),
+                        'ai',
+                        :selected_at,
+                        TRUE
+                    )
+                    """,
+                    """
+                    INSERT INTO matchy.transaction_email_match (
+                        transaction_id,
+                        email_message_id,
+                        state,
+                        ai_confidence,
+                        explanation_json,
+                        selected_by,
+                        selected_at,
+                        active
+                    ) VALUES (
+                        :transaction_id,
+                        :email_message_id,
+                        :state,
+                        :ai_confidence,
+                        :explanation_json,
                         'ai',
                         :selected_at,
                         TRUE
                     )
                     """
+                    )
                 ),
                 {
                     "transaction_id": transaction_id,
@@ -205,7 +288,8 @@ class MatchWriterMixin:
         if conflict_detected and not selected:
             session.execute(
                 _sql(
-                    f"""
+                    _jsonb_sql(
+                    """
                     INSERT INTO matchy.transaction_email_match (
                         transaction_id,
                         email_message_id,
@@ -220,12 +304,34 @@ class MatchWriterMixin:
                         NULL,
                         'ai_candidate_uncertain',
                         :ai_confidence,
-                        {jsonb_param("explanation_json")},
+                        CAST(:explanation_json AS jsonb),
+                        'ai',
+                        :selected_at,
+                        TRUE
+                    )
+                    """,
+                    """
+                    INSERT INTO matchy.transaction_email_match (
+                        transaction_id,
+                        email_message_id,
+                        state,
+                        ai_confidence,
+                        explanation_json,
+                        selected_by,
+                        selected_at,
+                        active
+                    ) VALUES (
+                        :transaction_id,
+                        NULL,
+                        'ai_candidate_uncertain',
+                        :ai_confidence,
+                        :explanation_json,
                         'ai',
                         :selected_at,
                         TRUE
                     )
                     """
+                    )
                 ),
                 {
                     "transaction_id": transaction_id,
@@ -262,13 +368,23 @@ class MatchWriterMixin:
     def insert_human_confirmed_match(self, session, transaction_id: str, email_message_id: str, note: str | None) -> int:
         now = datetime.now(tz=timezone.utc)
         explanation = {"note": note} if note else {}
-        insert_sql = f"""
+        insert_sql = _jsonb_sql(
+            """
             INSERT INTO matchy.transaction_email_match (
                 transaction_id, email_message_id, state, selected_by, selected_at, active, explanation_json
             ) VALUES (
-                :transaction_id, :email_message_id, 'human_confirmed_ai_match', 'human', :selected_at, TRUE, {jsonb_param("explanation")}
+                :transaction_id, :email_message_id, 'human_confirmed_ai_match', 'human',
+                :selected_at, TRUE, CAST(:explanation AS jsonb)
             )
-        """
+            """,
+            """
+            INSERT INTO matchy.transaction_email_match (
+                transaction_id, email_message_id, state, selected_by, selected_at, active, explanation_json
+            ) VALUES (
+                :transaction_id, :email_message_id, 'human_confirmed_ai_match', 'human', :selected_at, TRUE, :explanation
+            )
+            """,
+        )
         params = {
             "transaction_id": transaction_id,
             "email_message_id": email_message_id,

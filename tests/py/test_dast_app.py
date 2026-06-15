@@ -4,6 +4,7 @@ import importlib
 from types import SimpleNamespace
 
 import dast_app
+import pytest
 
 
 def test_dast_app_imports_without_starting_server() -> None:
@@ -34,6 +35,19 @@ def test_resolve_tls_overrides_take_precedence(monkeypatch) -> None:
     monkeypatch.delenv("TELLER_CLASSIFIER_TLS_CERT_FILE", raising=False)
     resolved = dast_app._resolve(["MATCHY_API_TLS_CERT_FILE", "TELLER_CLASSIFIER_TLS_CERT_FILE"], "/default/cert.pem")
     assert resolved == "/custom/cert.pem"
+
+
+def test_no_db_service_stub_maps_writes_without_database(monkeypatch) -> None:
+    #R015-T01: Disabled DB integration installs a service stub that avoids database writes.
+    api_module = SimpleNamespace(MatchService=lambda _settings: object())
+    monkeypatch.setenv("DAST_DB_INTEGRATION", "false")
+    dast_app._install_no_db_service_stub(api_module)
+    service = api_module.MatchService(object())
+    assert service.match_pending_transactions() == []
+    with pytest.raises(ValueError):
+        service.match_transactions_atomic(["txn_0"])
+    with pytest.raises(ValueError):
+        service.confirm_match("txn_0", "eml_0")
 
 
 def test_resolve_mkcert_root_ca_uses_home_library_path_when_present(monkeypatch, tmp_path) -> None:

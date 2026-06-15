@@ -300,6 +300,17 @@ def test_api_confirm_endpoint_rejects_note_with_null_byte() -> None:
     assert response.status_code == 422
 
 
+def test_api_confirm_endpoint_rejects_invalid_transaction_id_shape() -> None:
+    #R045: Confirm request validation rejects generated non-transaction id shapes before DB writes.
+    #R045-T04: Python test lane exists for confirm endpoint transaction id shape validation.
+    response = TestClient(create_app()).post(
+        "/v1/matchy/confirm",
+        json={"transaction_id": "0", "email_message_id": "eml_456", "note": "ok"},
+        headers=_auth_headers(),
+    )
+    assert response.status_code == 422
+
+
 def test_api_startup_log_emits_when_enabled(monkeypatch, capsys) -> None:
     #R480-T01: Startup logging emits elapsed-phase lines only when MATCHY_STARTUP_LOG=true.
     monkeypatch.setenv("MATCHY_STARTUP_LOG", "true")

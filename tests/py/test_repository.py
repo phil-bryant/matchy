@@ -1,5 +1,6 @@
 #R001: Python test lane coverage for repository password requirement.
 #R005: Python test lane coverage for session commit/rollback behavior.
+#R035: Python test lane coverage for repository SQL target adaptation.
 #R010: Python test lane coverage for pending transaction discovery.
 #R015: Python test lane coverage for last-run and active-match summaries.
 
@@ -8,6 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 import inspect
 from types import SimpleNamespace
 
+import matchy.repository as repository
 from matchy.models import AiSelection, EmailCandidate, RankedCandidate
 from matchy.repository import MatchRepository
 
@@ -64,6 +66,13 @@ def test_repository_session_context_commits_and_rollbacks_through_fake_session()
         pass
     third = sessions[-1]
     assert third.commits == 0 and third.rollbacks == 1 and third.closed == 1
+
+
+def test_repository_sql_helper_delegates_to_target_adapter() -> None:
+    #R035: Repository SQL helper must route statements through backend adaptation.
+    #R035-T01: Python test lane exists for repository SQL target adaptation.
+    source = inspect.getsource(repository._sql)
+    assert "sql_for_target(sql_text)" in source
 
 
 def test_repository_pending_transaction_query_returns_ordered_transaction_ids() -> None:

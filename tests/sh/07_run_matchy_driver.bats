@@ -54,7 +54,7 @@ teardown() {
   #R005: Driver posts deterministic payload fields with env-var overrides.
   #R005-T01: Posted URL, payload, and timeout reflect configured values.
   export MATCHY_TEST_CALLS_FILE="${TEST_TMPDIR}/calls.jsonl"
-  run env PYTHONPATH="${FIXTURE_ROOT}" MATCHY_DRIVER_ONCE="true" MATCHY_API_BASE_URL="http://127.0.0.1:8790" MATCHY_DRIVER_LIMIT="9" MATCHY_DRIVER_LOOKBACK_DAYS="3" MATCHY_DRIVER_TRIGGER_SOURCE="auto" MATCHY_DRIVER_TIMEOUT_SECONDS="7" python3 "${FIXTURE_ROOT}/07_run_matchy_driver.py"
+  run env PYTHONPATH="${FIXTURE_ROOT}" MATCHY_DRIVER_ONCE="true" MATCHY_API_BASE_URL="http://127.0.0.1:8790" MATCHY_DRIVER_LIMIT="9" MATCHY_DRIVER_LOOKBACK_DAYS="3" MATCHY_DRIVER_TRIGGER_SOURCE="auto" MATCHY_DRIVER_TIMEOUT_SECONDS="7" python3 "${FIXTURE_ROOT}/07_run_matchy_driver.py" --engine python
   [ "$status" -eq 0 ]
   [[ "$output" == *"driver_run=1 status=ok"* ]]
   [[ "$output" == *"batch_size=1 selected_messages=2"* ]]
@@ -75,7 +75,7 @@ teardown() {
 @test "driver --profile emits startup timing logs" {
   #R010: --profile enables startup timing logs for driver initialization phases.
   #R010-T02: One-shot run with --profile emits startup profiling lines.
-  run env PYTHONPATH="${FIXTURE_ROOT}" MATCHY_DRIVER_ONCE="true" python3 "${FIXTURE_ROOT}/07_run_matchy_driver.py" --profile
+  run env PYTHONPATH="${FIXTURE_ROOT}" MATCHY_DRIVER_ONCE="true" python3 "${FIXTURE_ROOT}/07_run_matchy_driver.py" --engine python --profile
   [ "$status" -eq 0 ]
   [[ "$output" == *"[matchy-driver-startup +"* ]]
   [[ "$output" == *"driver_run=1 status=ok"* ]]
@@ -84,8 +84,16 @@ teardown() {
 @test "driver --profile emits waiting heartbeat while request is in flight" {
   #R010: --profile surfaces in-flight wait heartbeats during long pending-run HTTP calls.
   #R010-T03: Delayed pending call emits run-waiting heartbeat logs under --profile.
-  run env PYTHONPATH="${FIXTURE_ROOT}" MATCHY_DRIVER_ONCE="true" MATCHY_TEST_POST_SLEEP_SECONDS="6" python3 "${FIXTURE_ROOT}/07_run_matchy_driver.py" --profile
+  run env PYTHONPATH="${FIXTURE_ROOT}" MATCHY_DRIVER_ONCE="true" MATCHY_TEST_POST_SLEEP_SECONDS="6" python3 "${FIXTURE_ROOT}/07_run_matchy_driver.py" --engine python --profile
   [ "$status" -eq 0 ]
   [[ "$output" == *"run-waiting"* ]]
+  [[ "$output" == *"driver_run=1 status=ok"* ]]
+}
+
+@test "engine selection keeps the in-process python loop opt-in" {
+  #R015: --engine python runs the in-process requests loop instead of the C++ runtime.
+  #R015-T01: Selecting the python engine posts the pending run via the in-process loop.
+  run env PYTHONPATH="${FIXTURE_ROOT}" MATCHY_DRIVER_ONCE="true" python3 "${FIXTURE_ROOT}/07_run_matchy_driver.py" --engine python
+  [ "$status" -eq 0 ]
   [[ "$output" == *"driver_run=1 status=ok"* ]]
 }

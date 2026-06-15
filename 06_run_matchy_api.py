@@ -4,6 +4,7 @@ import argparse
 import http.client
 import os
 import socket
+import subprocess
 from time import perf_counter
 
 import uvicorn
@@ -11,6 +12,8 @@ import uvicorn
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8790
 DEFAULT_API_AUTH_TOKEN = "matchy-local-dev-token"
+DEFAULT_ENGINE = "cpp"
+_CMAKE_BUILD_TYPE_ARG = "-DCMAKE_BUILD_TYPE=RelWithDebInfo"  # pragma: allowlist secret
 
 
 #R005: Port guard checks deterministic host/port occupancy before startup.
@@ -46,6 +49,8 @@ def _is_matchy_healthy(host: str, port: int) -> bool:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Matchy API")
+    #R015: Engine selection (cpp default, python opt-in) is exposed for the C++ cutover with A/B testing.
+    parser.add_argument("--engine", choices=["cpp", "python"], default=None)
     #R010: Startup profiling logs are opt-in via --profile.
     parser.add_argument("--host", default=os.environ.get("MATCHY_API_HOST", DEFAULT_HOST))
     parser.add_argument("--port", type=int, default=int(os.environ.get("MATCHY_API_PORT", str(DEFAULT_PORT)) or DEFAULT_PORT))
@@ -85,9 +90,63 @@ def _startup_log(start_time_seconds: float, phase: str, details: str = "", profi
         print(f"[matchy-startup +{elapsed_seconds:7.3f}s] {phase}{suffix}", flush=True)
 
 
+#R015: Resolve the runtime engine, defaulting to the C++ core with a Python opt-out.
+def _resolve_engine(args: argparse.Namespace) -> str:
+    engine = (args.engine or os.environ.get("MATCHY_ENGINE", DEFAULT_ENGINE)).strip().lower()
+    if engine not in {"cpp", "python"}:
+        engine = DEFAULT_ENGINE
+    return engine
+
+
+#R015: Build the C++ matchycore tool on demand so the cutover entrypoint is self-contained.
+def _ensure_cpp_binary(repo_root: str, target: str) -> str:
+    core_dir = os.path.join(repo_root, "src", "core")
+    build_dir = os.path.join(core_dir, "build")
+    binary = os.path.join(build_dir, target)
+    if not os.path.isfile(binary):
+        subprocess.run(["cmake", "-S", core_dir, "-B", build_dir, _CMAKE_BUILD_TYPE_ARG], check=True)
+        subprocess.run(["cmake", "--build", build_dir, "--target", target, "-j", str(os.cpu_count() or 4)], check=True)
+    if not os.path.isfile(binary):
+        raise SystemExit(f"Failed to build C++ {target} at {binary}")
+    return binary
+
+
+#R015: Translate the parsed launcher flags into the C++ matchy_api argument vector.
+def _cpp_api_passthrough(args: argparse.Namespace) -> list[str]:
+    passthrough = ["--host", str(args.host), "--port", str(args.port)]
+    if args.profile:
+        passthrough.append("--profile")
+    if args.port_guard is True:
+        passthrough.append("--port-guard")
+    if args.port_guard is False:
+        passthrough.append("--no-port-guard")
+    if args.mailcart_body_enrichment is not None:
+        passthrough += ["--mailcart-body-enrichment", args.mailcart_body_enrichment]
+    if args.mailcart_body_enrichment_limit is not None:
+        passthrough += ["--mailcart-body-enrichment-limit", str(args.mailcart_body_enrichment_limit)]
+    if args.mailcart_body_enrichment_timeout_seconds is not None:
+        passthrough += ["--mailcart-body-enrichment-timeout-seconds", str(args.mailcart_body_enrichment_timeout_seconds)]
+    if args.mailcart_body_enrichment_max_workers is not None:
+        passthrough += ["--mailcart-body-enrichment-max-workers", str(args.mailcart_body_enrichment_max_workers)]
+    if args.mailcart_get_message_timeout_seconds is not None:
+        passthrough += ["--mailcart-get-message-timeout-seconds", str(args.mailcart_get_message_timeout_seconds)]
+    if args.pending_max_workers is not None:
+        passthrough += ["--pending-max-workers", str(args.pending_max_workers)]
+    return passthrough
+
+
+#R015: Hand off to the authoritative C++ matchy_api binary, mirroring the launcher's flag contract.
+def _exec_cpp_api(args: argparse.Namespace) -> None:
+    repo_root = os.path.dirname(os.path.abspath(__file__))
+    binary = _ensure_cpp_binary(repo_root, "matchy_api")
+    os.execv(binary, [binary, *_cpp_api_passthrough(args)])
+
+
 if __name__ == "__main__":
     startup_started_at = perf_counter()
     args = _parse_args()
+    if _resolve_engine(args) == "cpp":
+        _exec_cpp_api(args)
     os.environ["MATCHY_STARTUP_LOG"] = "true" if args.profile else "false"
     os.environ["MATCHY_RUNTIME_PROFILE"] = "true" if args.profile else "false"
     existing_api_auth_token = os.environ.get("MATCHY_API_AUTH_TOKEN", "").strip()

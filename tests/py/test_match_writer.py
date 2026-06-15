@@ -1,3 +1,4 @@
+#R035: Python test lane coverage for match-writer SQL target adaptation.
 #R680: Python test lane coverage for cached candidate metadata on insert.
 #R685: Python test lane coverage for active-match conflict query.
 #R690: Python test lane coverage for AI result persistence paths.
@@ -6,7 +7,15 @@
 
 import inspect
 
+import matchy.match_writer as match_writer
 from matchy.repository import MatchRepository
+
+
+def test_match_writer_sql_helper_delegates_to_target_adapter() -> None:
+    #R035: Match-writer SQL helper must route statements through backend adaptation.
+    #R035-T01: Python test lane exists for match-writer SQL target adaptation.
+    source = inspect.getsource(match_writer._sql)
+    assert "sql_for_target(sql_text)" in source
 
 
 def test_insert_candidates_sql_includes_cached_metadata_columns() -> None:

@@ -12,6 +12,11 @@ Design: `insert_candidates` writes `cached_subject`, `cached_sender`, `cached_sn
 Tests:
 - R680-T01: Verify candidate insert SQL includes cached metadata columns and values.
 
+R035  Statement: Route match-writer SQL through backend-target adaptation.
+Design: The local `_sql` helper wraps `sql_for_target` before constructing SQLAlchemy text so writer SQL shares the same PostgreSQL/SQLite table-name adaptation as repository SQL.
+Tests:
+- R035-T01: Inspect the match-writer `_sql` helper and verify it delegates through `sql_for_target`.
+
 R685  Statement: Detect conflicting active matches before persisting selected AI candidates.
 Design: `has_active_match` queries active rows by `email_message_id` and returns a boolean conflict signal used by AI result persistence.
 Tests:
@@ -35,5 +40,6 @@ Tests:
 ## Changelog
 
 - 2026-06-05: Extracted R030 (cached candidate metadata on insert) plus the AI-result/human-confirm write methods from `repository.py` into `match_writer.py`/`MatchWriterMixin`.
+- 2026-06-14: Added R035 for match-writer SQL target-adaptation delegation.
 - 2026-06-06: Rebased match-writer traceability onto shard-1 ID band R680-R700 with anchored tests.
 - 2026-06-12: Made all writer SQL dual-target via `matchy/db_target.py`: jsonb casts collapse to plain text binds on SQLite, timestamps bind as ISO text on SQLite, and the human-confirm insert reads `last_insert_rowid()` on SQLite where the DBAPI cannot surface `INSERT..RETURNING` rows.

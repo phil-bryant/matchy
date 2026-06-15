@@ -21,6 +21,11 @@ from the matchy or teller classifier TLS variables, defaulting to the local clas
 Tests:
 - R010-T01: TLS cert/key resolution prefers explicit matchy overrides over the default certificate pair.
 
+R015  Statement: Skip real database writes when the dynamic lane is not seeded for DB integration.
+Design: When `DAST_DB_INTEGRATION` is not `true`, install a MatchService stub that maps explicit-id and confirm writes to domain misses and returns an empty pending batch, so Schemathesis can scan the API contract without locking or mutating the developer database.
+Tests:
+- R015-T01: With DB integration disabled, the installed service stub returns empty pending results and raises domain misses for explicit-id writes.
+
 R400  Statement: Resolve the mkcert local root CA path so DAST can trust local HTTPS services.
 Design: `_resolve_mkcert_root_ca` first checks `~/Library/Application Support/mkcert/rootCA.pem`, then falls back to
 `mkcert -CAROOT/rootCA.pem`, and returns an empty value when neither location resolves an existing file.
@@ -30,4 +35,5 @@ Tests:
 
 ## Changelog
 
+- 2026-06-14: Added no-DB MatchService stub for unseeded DAST contract scans.
 - 2026-06-06: Added R400 mkcert root-CA resolution requirement and anchored tests for local TLS trust bootstrap.

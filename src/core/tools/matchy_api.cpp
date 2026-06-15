@@ -3,7 +3,12 @@
 // (health, runs, runs/pending, confirm) with Bearer auth, the write-enabled gate, and
 // per-endpoint mutation rate limiting so the existing driver and classy stack keep working.
 #include <httplib.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <deque>
 #include <map>
@@ -12,6 +17,7 @@
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
+#include "matchycore/api_contract.hpp"
 #include "matchycore/cldr.hpp"
 #include "matchycore/match_service.hpp"
 #include "matchycore/settings.hpp"
@@ -19,26 +25,12 @@
 namespace
 { using matchycore::MatchService;
  using matchycore::Settings;
+ using matchycore::apicontract::ApiError;
+ using matchycore::apicontract::ErrorOutcome;
+ using matchycore::apicontract::ValidateConfirmBody;
+ using matchycore::apicontract::ValidatePendingBody;
+ using matchycore::apicontract::ValidateRunBody;
  using nlohmann::json;
-
- // HTTP-shaped failure carried out of handlers to one central response mapper (single return per handler).
- class ApiError : public std::runtime_error
- { public:
-// #R001: Matchycore traceability implementation coverage.
-  ApiError(int status, std::string detail, bool unauthorized = false)
-  : std::runtime_error(detail), status_(status), detail_(std::move(detail)), unauthorized_(unauthorized) {}
-// #R001: Matchycore traceability implementation coverage.
-  [[nodiscard]] int status() const { return status_; }
-// #R001: Matchycore traceability implementation coverage.
-  [[nodiscard]] const std::string &detail() const { return detail_; }
-// #R001: Matchycore traceability implementation coverage.
-  [[nodiscard]] bool unauthorized() const { return unauthorized_; }
-
-  private:
-  int status_;
-  std::string detail_;
-  bool unauthorized_;
- };
 
 // #R001: Matchycore traceability implementation coverage.
  std::string EnvOr(const char *name, const std::string &fallback)
@@ -143,6 +135,10 @@ namespace
    else if (arg == "--port") port = std::stoi(next());
    else if (arg == "--no-port-guard") port_guard = false;
    else if (arg == "--port-guard") port_guard = true;
+   else if (arg == "--profile")
+   { setenv("MATCHY_STARTUP_LOG", "true", 1);
+    setenv("MATCHY_RUNTIME_PROFILE", "true", 1);
+   }
    else if (arg == "--mailcart-body-enrichment") setenv("MATCHY_MAILCART_BODY_ENRICHMENT", next().c_str(), 1);
    else if (arg == "--mailcart-body-enrichment-limit")
     setenv("MATCHY_MAILCART_BODY_ENRICHMENT_LIMIT", next().c_str(), 1);
@@ -187,65 +183,54 @@ namespace
   return provided;
  }
 
- // #R001: R005: Validate the explicit-id run body (1..200 non-empty ids, enumerated trigger source).
- void ValidateRunBody(const json &body, std::vector<std::string> &transaction_ids, std::string &trigger_source,
-                      bool &force_rematch)
- { bool valid = body.is_object() && body.contains("transaction_ids") && body["transaction_ids"].is_array();
-  if (valid) valid = !body["transaction_ids"].empty() && body["transaction_ids"].size() <= 200;
-  if (valid)
-   for (const json &item : body["transaction_ids"])
-    if (!item.is_string() || item.get<std::string>().empty()) valid = false;
-  trigger_source = body.value("trigger_source", std::string("manual"));
-  if (trigger_source != "auto" && trigger_source != "manual" && trigger_source != "retry") valid = false;
-  if (!valid) throw ApiError(422, "Invalid run request body.");
-  for (const json &item : body["transaction_ids"]) transaction_ids.push_back(item.get<std::string>());
-  force_rematch = body.value("force_rematch", false);
- }
-
- // #R001: Validate the pending-run body (bounded limit/lookback, enumerated trigger source).
- void ValidatePendingBody(const json &body, int &limit, int &lookback_days, std::string &trigger_source,
-                          bool &force_rematch)
- { limit = body.is_object() ? body.value("limit", 100) : 100;
-  lookback_days = body.is_object() ? body.value("lookback_days", 14) : 14;
-  trigger_source = body.is_object() ? body.value("trigger_source", std::string("auto")) : "auto";
-  force_rematch = body.is_object() ? body.value("force_rematch", false) : false;
-  bool valid = limit >= 1 && limit <= 500 && lookback_days >= 1 && lookback_days <= 365;
-  if (trigger_source != "auto" && trigger_source != "manual" && trigger_source != "retry") valid = false;
-  if (!valid) throw ApiError(422, "Invalid pending run request body.");
- }
-
- // #R001: Validate confirm body (non-empty ids; note excludes the null byte Postgres jsonb rejects).
- void ValidateConfirmBody(const json &body, std::string &transaction_id, std::string &email_message_id,
-                          std::optional<std::string> &note)
- { transaction_id = body.is_object() ? body.value("transaction_id", std::string()) : std::string();
-  email_message_id = body.is_object() ? body.value("email_message_id", std::string()) : std::string();
-  bool valid = !transaction_id.empty() && !email_message_id.empty();
-  note = std::nullopt;
-  if (body.is_object() && body.contains("note") && !body["note"].is_null())
-  { std::string note_value = body["note"].get<std::string>();
-   if (note_value.find('\0') != std::string::npos) valid = false;
-   note = note_value;
+ // #R001: Detect whether a TCP listener already occupies the guarded bind target.
+ bool PortInUse(const std::string &host, int port)
+ { bool in_use = false;
+  int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (fd >= 0)
+  { sockaddr_in addr{};
+   addr.sin_family = AF_INET;
+   addr.sin_port = htons(static_cast<std::uint16_t>(port));
+   std::string ip = host == "localhost" ? std::string("127.0.0.1") : host;
+   if (::inet_pton(AF_INET, ip.c_str(), &addr.sin_addr) == 1)
+    if (::connect(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) == 0) in_use = true;
+   ::close(fd);
   }
-  if (!valid) throw ApiError(422, "Invalid confirm request body.");
+  return in_use;
+ }
+
+ // #R001: Minimal OpenAPI 3.0 document describing the four production routes (docs parity with create_app()).
+ json OpenApiSpec()
+ { json post = json{{"responses", {{"200", {{"description", "Match results."}}}}}};
+  return json{
+   {"openapi", "3.0.2"},
+   {"info", {{"title", "matchy"}, {"version", "0.1.0"}}},
+   {"paths", {
+    {"/health", {{"get", {{"responses", {{"200", {{"description", "Service is healthy."}}}}}}}}},
+    {"/v1/matchy/runs", {{"post", post}}},
+    {"/v1/matchy/runs/pending", {{"post", post}}},
+    {"/v1/matchy/confirm", {{"post", post}}}}}};
+ }
+
+ // #R001: Swagger/Redoc CDN HTML mirroring FastAPI's docs pages, pointed at /openapi.json.
+ std::string DocsHtml(const std::string &title, bool redoc)
+ { std::string head = "<!DOCTYPE html><html><head><title>" + title + "</title></head><body>";
+  std::string body = redoc
+   ? "<redoc spec-url='/openapi.json'></redoc>"
+     "<script src='https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js'></script>"
+   : "<div id='swagger-ui'></div>"
+     "<link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/swagger-ui-dist/swagger-ui.css'>"
+     "<script src='https://cdn.jsdelivr.net/npm/swagger-ui-dist/swagger-ui-bundle.js'></script>"
+     "<script>window.onload=function(){SwaggerUIBundle({url:'/openapi.json',dom_id:'#swagger-ui'});};</script>";
+  return head + body + "</body></html>";
  }
 
  // #R001: Translate a caught exception into the response, matching api.py status mapping.
  void WriteError(httplib::Response &response, const std::exception &error)
- { int status = 500;
-  std::string detail = "Internal server error.";
-  bool unauthorized = false;
-  if (const ApiError *api_error = dynamic_cast<const ApiError *>(&error))
-  { status = api_error->status();
-   detail = api_error->detail();
-   unauthorized = api_error->unauthorized();
-  }
-  else if (dynamic_cast<const std::invalid_argument *>(&error) != nullptr)
-  { status = 404;
-   detail = "No transaction matched the supplied transaction_id.";
-  }
-  if (unauthorized) response.set_header("WWW-Authenticate", "Bearer");
-  response.status = status;
-  response.set_content(json{{"detail", detail}}.dump(), "application/json");
+ { ErrorOutcome outcome = matchycore::apicontract::MapError(error);
+  if (outcome.unauthorized()) response.set_header("WWW-Authenticate", "Bearer");
+  response.status = outcome.status();
+  response.set_content(outcome.body().dump(), "application/json");
  }
 }
 
@@ -257,8 +242,14 @@ int main(int argc, char **argv)
  int exit_code = 0;
  if (std::string(EnvOr("MATCHY_API_AUTH_TOKEN", "")).empty())
   setenv("MATCHY_API_AUTH_TOKEN", "matchy-local-dev-token", 1);
- bool reuse_existing = port_guard && ExistingMatchyHealthy(host, port);
- if (reuse_existing)
+ bool port_in_use = port_guard && PortInUse(host, port);
+ bool reuse_existing = port_in_use && ExistingMatchyHealthy(host, port);
+ bool port_conflict = port_in_use && !reuse_existing;
+ if (port_conflict)
+ { std::fprintf(stderr, "Port %d is already in use by another process.\n", port);
+  exit_code = 1;
+ }
+ else if (reuse_existing)
   std::printf("Matchy API already running on %s:%d; reusing existing process.\n", host.c_str(), port);
  else
  { Settings settings = Settings::FromEnvironment();
@@ -295,6 +286,18 @@ int main(int argc, char **argv)
   server.Get("/health", [](const httplib::Request &, httplib::Response &response)
   { response.set_content(json{{"status", "ok"}}.dump(), "application/json");
   });
+  // #R001: Optional OpenAPI/docs surfaces, gated by MATCHY_ENABLE_API_DOCS to mirror create_app().
+  if (EnvFlag("MATCHY_ENABLE_API_DOCS", false))
+  { server.Get("/openapi.json", [](const httplib::Request &, httplib::Response &response)
+   { response.set_content(OpenApiSpec().dump(), "application/json");
+   });
+   server.Get("/docs", [](const httplib::Request &, httplib::Response &response)
+   { response.set_content(DocsHtml("matchy - Swagger UI", false), "text/html");
+   });
+   server.Get("/redoc", [](const httplib::Request &, httplib::Response &response)
+   { response.set_content(DocsHtml("matchy - ReDoc", true), "text/html");
+   });
+  }
   // #R001: R490: Match explicit transaction ids atomically; unknown ids map to HTTP 404.
   server.Post("/v1/matchy/runs", [&](const httplib::Request &request, httplib::Response &response)
   { try
@@ -342,7 +345,10 @@ int main(int argc, char **argv)
     ValidateConfirmBody(json::parse(request.body), transaction_id, email_message_id, note);
     MatchService *match_service = get_service();
     if (match_service == nullptr) throw ApiError(503, "Match service is unavailable.");
-    json result = match_service->ConfirmMatch(transaction_id, email_message_id, note);
+    json result;
+    try { result = match_service->ConfirmMatch(transaction_id, email_message_id, note); }
+    catch (const std::invalid_argument &)
+    { throw ApiError(404, "Unknown transaction or email message for confirmation."); }
     response.set_content(result.dump(), "application/json");
    }
    catch (const json::exception &) { WriteError(response, ApiError(422, "Invalid confirm request body.")); }

@@ -26,11 +26,12 @@ Tests:
 - R015-T01: Enable the CLDR startup refresh flag, stub the cache object, create the app, and verify the cache refresh was called.
 
 R045  Statement: Expose a human-confirm API endpoint with input validation and domain error mapping.
-Design: Register `POST /v1/matchy/confirm`, validate `transaction_id`/`email_message_id` as non-empty ids, reject null bytes in `note`, and translate service `ValueError` to HTTP 404.
+Design: Register `POST /v1/matchy/confirm`, validate `transaction_id` as a non-empty `txn_`-prefixed id and `email_message_id` as non-empty, reject null bytes in `note`, and translate service `ValueError` to HTTP 404.
 Tests:
 - R045-T01: Stub service error and verify `/v1/matchy/confirm` returns 404.
 - R045-T02: Stub service success and verify `/v1/matchy/confirm` delegates transaction, message id, and note.
 - R045-T03: Submit a note containing a null byte and verify `/v1/matchy/confirm` returns 422.
+- R045-T04: Submit an invalid confirm transaction id shape and verify `/v1/matchy/confirm` returns 422.
 
 R055  Statement: Protect and throttle mutating run/confirm endpoints at the API boundary.
 Design: Require auth for `POST /v1/matchy/runs`, `/v1/matchy/runs/pending`, and `/v1/matchy/confirm` using `MATCHY_API_AUTH_TOKEN` via either `Authorization: Bearer <token>` or write-token header aliases (`X-Matchy-Write-Token`/`X-Teller-Write-Token`). Enforce `MATCHY_WRITE_ENABLED=true` before mutating operations and apply per-endpoint in-process rate limiting to reject bursts with HTTP 429, with deployment knobs via `MATCHY_MUTATION_RATE_LIMIT_MAX_REQUESTS` and `MATCHY_MUTATION_RATE_LIMIT_WINDOW_SECONDS`.
@@ -81,3 +82,4 @@ Tests:
 - 2026-06-04: Added R055 Bearer-auth requirement for mutating API endpoints.
 - 2026-06-06: Added R480-R500 startup/service-dispatch requirements and anchored tests for run/pending/confirm helper paths.
 - 2026-06-07: Expanded R055 with write-token header aliases, write-enable gating, and mutating endpoint rate limiting.
+- 2026-06-14: Tightened confirm transaction-id validation to reject generated non-transaction ids before DB writes.

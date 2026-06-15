@@ -65,6 +65,7 @@ namespace
   std::string api_auth_token = "matchy-local-dev-token";
   bool once = false;
   bool force_rematch = false;
+  bool profile = false;
  };
 
  // #R001: Keep the driver scoped to loopback hosts; returns the normalized base url.
@@ -122,6 +123,7 @@ namespace
    else if (arg == "--api-auth-token") config.api_auth_token = next();
    else if (arg == "--once") config.once = true;
    else if (arg == "--force-rematch") config.force_rematch = true;
+   else if (arg == "--profile") { config.profile = true; setenv("MATCHY_RUNTIME_PROFILE", "true", 1); }
   }
   return config;
  }
@@ -152,6 +154,11 @@ int main(int argc, char **argv)
   bool keep_running = true;
   while (keep_running && !g_interrupted.load())
   { run_counter += 1;
+   if (config.profile)
+   { std::printf("[matchy-runtime] driver_request run=%d lookback_days=%d limit=%d\n",
+                 run_counter, config.lookback_days, config.limit);
+    std::fflush(stdout);
+   }
    std::string status_text = "ok";
    std::string failure_text;
    json results = json::array();

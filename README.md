@@ -37,11 +37,14 @@ and FileVault (`t10`) lanes stay local. It is kept correct and manually runnable
      - `openai_api_key` (default 1psa item; override `MATCHY_OPENAI_API_KEY_1PSA_ITEM`; env override `OPENAI_API_KEY`)
      - If neither is available, Matchy falls back to deterministic scoring only.
 3. Start API:
-  - `./06_run_matchy_api.py`
+  - `./06_run_matchy_api.py` (defaults to the authoritative C++ `matchy_api` runtime, building it on demand)
+  - `./06_run_matchy_api.py --engine python` (in-process FastAPI/uvicorn app, for A/B testing against the C++ runtime)
   - `./06_run_matchy_api.py --profile` (enable startup timing/profiling logs)
    - Options are available as CLI args (for example `--mailcart-body-enrichment-limit`, `--mailcart-body-enrichment-timeout-seconds`, `--mailcart-get-message-timeout-seconds`, `--pending-max-workers`) so local runs do not require env-var-only control.
+   - Engine can also be selected via `MATCHY_ENGINE=cpp|python`.
 4. Run driver:
-  - `./07_run_matchy_driver.py --once`
+  - `./07_run_matchy_driver.py --once` (defaults to the authoritative C++ `matchy_driver` runtime)
+  - `./07_run_matchy_driver.py --engine python --once` (in-process requests loop, for A/B testing)
   - `./07_run_matchy_driver.py --profile` (startup + in-flight request heartbeat logs every 5s while waiting)
 
 ## Test
@@ -70,20 +73,44 @@ Excluded from the parallel batch: setup scripts (`01`–`04`) and integration en
 
 Use `./08_clean_generated_files.sh` to clear generated artifacts between runs (moves outputs to `~/.Trash`).
 
-## C++ core (in-progress migration)
+## C++ core (authoritative runtime; Python retained for A/B)
 
-Matchy is migrating its engine to a C++20 core under [`src/core/`](src/core/) (`matchycore`), following the
-completed `../classy` migration and the in-flight `../teller` one. The Python stack stays authoritative until
-Python/C++ oracle parity is green; both run side by side. Build/test via the thin root `Makefile`:
+Matchy's engine has been ported to a C++20 core under [`src/core/`](src/core/) (`matchycore`), following the
+completed `../classy` migration and the in-flight `../teller` one. The numbered launchers (`06_`/`07_`) now
+default to the C++ `matchy_api`/`matchy_driver` binaries (`--engine cpp`, the default), and the Python
+implementation is retained behind `--engine python` (env `MATCHY_ENGINE=python`) so it can be A/B compared
+before any retirement. Parity across the deterministic, DB, Mailcart, and AI layers is enforced by the
+extended oracle lane (`make parity` / t17). Build/test via the thin root `Makefile`:
 
 ```bash
 make core      # build libmatchycore + matchy_api/matchy_driver/matchy_oracle_runner (cmake, C++20)
 make test      # t15: Catch2 unit suite
 make sanitize  # t16: rebuild under ASan+UBSan and rerun the suite
-make parity    # t17: diff matchy's Python reference vs the C++ core over oracle/scenarios.json
+make parity    # t17: deterministic + end-to-end (DB/Mailcart/AI) Python vs C++ oracle diff
 make run       # build + launch the C++ matchy API on :8790 (REST contract preserved)
 make driver    # build + run the C++ pending-run driver once
 ```
+
+### Manual A/B: C++ runtime vs Python fallback
+
+The launchers default to the C++ runtime; `--engine python` runs the in-process Python stack on the
+same `:8790` contract. To compare both against the same Teller DB snapshot:
+
+```bash
+# Terminal 1 - authoritative C++ API
+./06_run_matchy_api.py                       # or: ./06_run_matchy_api.py --engine cpp
+# Terminal 2 - drive one batch and confirm /health + a pending run
+curl -s localhost:8790/health
+./07_run_matchy_driver.py --once
+
+# Then stop the C++ API and repeat with the Python engine to diff responses:
+./06_run_matchy_api.py --engine python
+./07_run_matchy_driver.py --engine python --once
+```
+
+Both engines expose `GET /health`, `POST /v1/matchy/runs`, `/runs/pending`, and `/confirm` with identical
+request/response shapes and Bearer auth, so responses can be compared field-by-field. Layer-level byte parity
+(scoring, DB persistence, Mailcart, deterministic AI) is proven automatically by `make parity` (t17).
 
 The C++ API (`tools/matchy_api.cpp`) and driver (`tools/matchy_driver.cpp`) preserve the existing REST
 contract and CLI behavior, so the driver and the classy stack keep working unchanged. The DB layer and the

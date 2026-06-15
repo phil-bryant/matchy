@@ -49,6 +49,7 @@ def sql_for_target(sql_text: str) -> str:
     if not _IS_SQLITE:
         return sql_text
 
+    #R035: Rewrite owned-schema references to SQLite mirror table names.
     def _sqlite_ref(match: re.Match[str]) -> str:
         schema_name = match.group(1)
         table_name = match.group(2)

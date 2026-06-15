@@ -17,6 +17,11 @@ Design: Session context manager commits after successful work, rolls back on exc
 Tests:
 - R005-T01: Use a fake session factory and verify commit on success and rollback on failure.
 
+R035  Statement: Route repository SQL through backend-target adaptation.
+Design: The local `_sql` helper wraps `sql_for_target` before constructing SQLAlchemy text so repository reads/writes use PostgreSQL SQL unchanged and SQLite mirror-table SQL when the active teller profile targets SQLite.
+Tests:
+- R035-T01: Inspect the repository `_sql` helper and verify it delegates through `sql_for_target`.
+
 R015  Statement: Expose the most recent match run summary (run + candidate id set) and the active match row for cache-hit short-circuiting in the service layer.
 Design: `read_last_run_summary(transaction_id)` returns `{match_run_id, status, model_name, prompt_version, candidate_message_ids}` for the newest `transaction_email_match_run` row for the transaction or `None` when no runs exist. `read_active_match_summary(transaction_id)` returns the active `transaction_email_match` row's `{match_id, email_message_id, state, ai_confidence, selected_by}` or `None`. Together they let `MatchService.match_transaction` decide whether the current search result is identical to the previous evaluation (same candidate id set + same model + same prompt version) and therefore whether the AI call can be skipped. Cache state is persisted in Postgres (no in-process cache) so matchy can be restarted freely without re-paying AI cost.
 Tests:
@@ -67,6 +72,7 @@ Tests:
 ## Changelog
 
 - 2026-05-18: Added repository requirements for initialization guard and session lifecycle.
+- 2026-06-14: Added R035 for repository SQL target-adaptation delegation.
 - 2026-05-18: Added R010 pending transaction discovery requirements for batch match drivers.
 - 2026-05-19: Broadened R010 to re-queue `ai_candidate_uncertain` and AI-only `ai_no_match_found` rows so transient Mailcart/Graph failures self-heal on subsequent matchy runs while human-authoritative states (`human_confirmed_ai_match`, `human_overrode_ai_match`, human-marked `ai_no_match_found`) remain sticky.
 - 2026-05-19: Added R015 cache-read helpers so the service layer can short-circuit redundant AI evaluations using the already-persisted match_run + candidate state.

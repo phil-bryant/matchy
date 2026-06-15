@@ -27,14 +27,20 @@ LOGGER = logging.getLogger(__name__)
 
 class MatchService(SearchMixin, EnrichmentMixin, NearDuplicateMixin, CachingMixin, EmailMoveMixin):
     #R310: Run Mailcart startup preflight exactly once during initialization when enabled.
-    def __init__(self, settings: Settings):
+    # Optional repository/mailcart_client/ai_ranker/cldr_currency_matcher kwargs are an additive test/oracle
+    # injection seam (mirroring the C++ MatchService inject ctor); defaults reproduce production wiring exactly.
+    def __init__(self, settings: Settings, *, repository=None, mailcart_client=None, ai_ranker=None,
+                 cldr_currency_matcher=None):
         self._settings = settings
-        self._repository = MatchRepository(settings)
-        self._mailcart_client = MailcartClient(settings)
-        if bool(getattr(settings, "mailcart_startup_healthcheck_enabled", True)):
+        self._repository = repository if repository is not None else MatchRepository(settings)
+        self._mailcart_client = mailcart_client if mailcart_client is not None else MailcartClient(settings)
+        if mailcart_client is None and bool(getattr(settings, "mailcart_startup_healthcheck_enabled", True)):
             self._mailcart_client.startup_preflight_healthcheck()
-        self._ai_ranker = AiRanker(settings)
-        self._cldr_currency_matcher = CldrCurrenciesCache(settings).currency_matcher()
+        self._ai_ranker = ai_ranker if ai_ranker is not None else AiRanker(settings)
+        self._cldr_currency_matcher = (
+            cldr_currency_matcher if cldr_currency_matcher is not None
+            else CldrCurrenciesCache(settings).currency_matcher()
+        )
         cooldown_seconds = int(getattr(settings, "mailcart_failure_cooldown_seconds", 15) or 15)
         if cooldown_seconds < 0:
             cooldown_seconds = 0
@@ -269,13 +275,19 @@ class MatchService(SearchMixin, EnrichmentMixin, NearDuplicateMixin, CachingMixi
         match_id = None
         try:
             with self._repository.session() as session:
+                if self._repository.load_transaction(session, transaction_id) is None:
+                    raise ValueError(
+                        f"Unknown transaction_id or email_message_id for confirmation: {transaction_id}/{email_message_id}"
+                    )
                 self._repository.deactivate_active_match(session, transaction_id)
                 match_id = self._repository.insert_human_confirmed_match(
                     session, transaction_id, email_message_id, note
                 )
-        except IntegrityError as exc:
-            raise ValueError(
-                f"Unknown transaction_id or email_message_id for confirmation: {transaction_id}/{email_message_id}"
-            ) from exc
+        except Exception as exc:
+            if isinstance(exc, IntegrityError) or "FOREIGN KEY constraint failed" in str(exc):
+                raise ValueError(
+                    f"Unknown transaction_id or email_message_id for confirmation: {transaction_id}/{email_message_id}"
+                ) from exc
+            raise
         self._maybe_move_selected_messages([email_message_id], transaction_id=transaction_id, source="human_confirm")
         return {"status": "confirmed", "match_id": match_id}

@@ -165,9 +165,12 @@ no-match states, but not human-settled states).
 
 ## C++ Core Migration (matchycore)
 
-Matchy is mid-migration from Python to a C++20 core, following the completed `../classy` migration and the
-in-flight `../teller` one. The Python stack above remains authoritative and untouched until Python/C++ oracle
-parity is green; the C++ core is built and tested alongside it. The portable core lives under
+Matchy has completed its port from Python to a C++20 core, following the completed `../classy` migration and
+the in-flight `../teller` one. The numbered launchers ([`06_run_matchy_api.py`](06_run_matchy_api.py) and
+[`07_run_matchy_driver.py`](07_run_matchy_driver.py)) now default to the authoritative C++ `matchy_api`/
+`matchy_driver` runtime (`--engine cpp`); the Python stack is retained behind `--engine python` (env
+`MATCHY_ENGINE=python`) so it can be A/B compared before any retirement. Parity across the deterministic, DB,
+Mailcart, and AI layers is enforced by the extended Python/C++ oracle lane (t17). The portable core lives under
 [`src/core/`](src/core/) (`include/matchycore/*.hpp`, `src/*.cpp`, `tests/` Catch2, `tools/`, `oracle/`,
 `CMakeLists.txt`) and is driven by a thin root [`Makefile`](Makefile) plus numbered lanes.
 
@@ -180,9 +183,10 @@ parity is green; the C++ core is built and tested alongside it. The portable cor
 | `ai_ranker.py` (Anthropic -> OpenAI -> deterministic, prompt `v3`) | `src/ai_ranker.cpp` |
 | `settings.py`, `repository.py`, `match_writer.py`, `db_target.py`, `caching.py` | `src/{settings,repository,match_writer,caching}.cpp` over `libtellercore` |
 | `service.py` + `email_move.py` (mixins) | `src/match_service.cpp` (one composed class) |
-| `api.py` + `06_run_matchy_api.py` | `tools/matchy_api.cpp` (cpp-httplib server on :8790) |
+| `api.py` + `06_run_matchy_api.py` | `tools/matchy_api.cpp` (cpp-httplib server on :8790) + `include/matchycore/api_contract.hpp` (request validation + error mapping) |
 | `07_run_matchy_driver.py` | `tools/matchy_driver.cpp` |
-| Python/C++ parity harness | `tools/oracle_runner.cpp` + `oracle/compare_oracle.py` |
+| `runtime_profile.py` | `--profile` flag on `matchy_api`/`matchy_driver` (sets `MATCHY_RUNTIME_PROFILE`, emits the same breadcrumbs) |
+| Python/C++ parity harness | `tools/oracle_runner.cpp` + `oracle/compare_oracle.py` (deterministic ops plus end-to-end DB+Mailcart+AI scenarios in `oracle/scenarios_e2e.json`) |
 
 Build/test entrypoints: `make core` (cmake, C++20, `-Wall -Wextra -Wpedantic -Werror`), `make test` (t15
 Catch2 units), `make sanitize` (t16 ASan+UBSan), `make parity` (t17 Python/C++ oracle diff), `make run`
